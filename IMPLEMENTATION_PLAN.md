@@ -262,6 +262,23 @@ CREATE TABLE strength_standards (
 
 ## 3. Step-by-Step Atomic Execution Plan
 
+### Implementation Progress & Milestone Tracker
+
+| Phase | Step | Name | Status | Verified Deliverables |
+| :--- | :--- | :--- | :--- | :--- |
+| **Phase 0** | **0.1** | **Monorepo Governance & Canonical JSON Schemas** | **`[x] COMPLETED`** | Section 8 in `AGENTS.md`, ADR-026/027 in `docs/DECISIONS.md`, `workout_export.schema.json`, `calibrated_parameters.schema.json` validated |
+| | **0.2** | **Mobile Expo TypeScript & Jest Harness** | **`[x] COMPLETED`** | Expo SDK init, strict tsconfig, ts-jest, `src/core/types/index.ts`, smoke tests verified |
+| | **0.3** | **Companion Python 3.11+ & Pytest Harness** | **`[x] COMPLETED`** | `pyproject.toml`, `requirements.txt`, Pydantic v2 `schemas.py`, 8/8 pytest suite, strict mypy verified |
+| **Phase 1** | 1.1–1.6 | Foundation & Minimum Viable Logger | `[ ] PENDING` | Core in-gym logger, domain math, SQLite repositories |
+| **Phase 2** | 2.1–2.4 | Advanced Workout Mechanics & Onboarding | `[ ] PENDING` | Supersets, unilateral logging, CSV import, JSON export |
+| **Phase 3** | 3.1–3.4 | Meso-Cycles, Records & Strength Standards | `[ ] PENDING` | Program blocks, PR tables, SBD standards, DOTS scores |
+| **Phase 4** | 4.1–4.3 | Autonomous Progression Engine | `[ ] PENDING` | Condition-action rules, proposal banners, generator wizard |
+| **Phase 5** | 5.1–5.3 | Body Composition & Psychological Profiling | `[ ] PENDING` | Anthropometry, Navy body fat, psychological matrix |
+| **Phase 6** | 6.1–6.4 | Companion Analysis Engine & Streamlit UI | `[ ] PENDING` | Linear Kalman filter, Banister model, Streamlit dashboard |
+| **Phase 7** | 7.1–7.2 | Cloud Synchronization & Social Leaderboards | `[ ] PENDING` | Supabase RLS migrations, offline-first sync queue |
+
+---
+
 Each phase is divided into small, self-contained **Steps**. Every step specifies:
 
 * **Scope**: The exact files to create or update.
@@ -270,43 +287,46 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 
 ---
 
-### Phase 0: Repository Governance, Contracts & Workspace Scaffolding
+### Phase 0: Repository Governance, Contracts & Workspace Scaffolding [COMPLETED ✅]
 
 *Goal: Establish strict workspace boundaries, canonical JSON schemas, and testing harnesses for both TypeScript and Python.*
 
-#### Step 0.1: Monorepo Governance & Canonical JSON Schemas
+#### Step 0.1: Monorepo Governance & Canonical JSON Schemas [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified against schema validators.
 * **Scope**: `AGENTS.md`, `docs/DECISIONS.md`, `schemas/workout_export.schema.json`, `schemas/calibrated_parameters.schema.json`.
 * **Deliverables**:
-1. Add Section 8 ("Monorepo Execution & Working Directory Rules") to `AGENTS.md` enforcing `mobile/` and `companion/` isolation.
-2. Add `ADR-026` to `docs/DECISIONS.md` documenting `weight` (effective mechanical load in kg) vs `raw_input_weight` (user-typed load in kg), and clarifying that the +10% deadlift adjustment applies only to static linear equations, never to the Tier 2 Kalman filter.
-3. Create `schemas/workout_export.schema.json` (JSON Schema Draft 7) matching Section 2 tables.
-4. Create `schemas/calibrated_parameters.schema.json` for companion-exported $(1\text{RM}, k)$ parameters.
+1. Add Section 8 ("Monorepo Execution & Working Directory Rules") to `AGENTS.md` enforcing `mobile/` and `companion/` isolation. *(Done)*
+2. Add `ADR-026` to `docs/DECISIONS.md` documenting `weight` (effective mechanical load in kg) vs `raw_input_weight` (user-typed load in kg), and clarifying that the +10% deadlift adjustment applies only to static linear equations, never to the Tier 2 Kalman filter. *(Done, also ADR-027 added)*
+3. Create `schemas/workout_export.schema.json` (JSON Schema Draft 7) matching Section 2 tables. *(Done)*
+4. Create `schemas/calibrated_parameters.schema.json` for companion-exported $(1\text{RM}, k)$ parameters. *(Done)*
 
 
-* **Verification Gate**: Validate that both `.schema.json` files parse as valid JSON via `python -m json.tool schemas/workout_export.schema.json > /dev/null`.
+* **Verification Gate**: Validate that both `.schema.json` files parse as valid JSON via `python -m json.tool schemas/workout_export.schema.json > /dev/null`. *(Verified: Exit code 0)*
 
-#### Step 0.2: Mobile Expo TypeScript & Jest Harness Initialization
+#### Step 0.2: Mobile Expo TypeScript & Jest Harness Initialization [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx tsc --noEmit` and `npx jest`.
 * **Scope**: `mobile/package.json`, `mobile/tsconfig.json`, `mobile/jest.config.js`, `mobile/src/core/types/index.ts`.
 * **Deliverables**:
-1. Initialize the Expo TypeScript project inside `mobile/` with strict TypeScript (`"strict": true`).
-2. Configure Jest (`jest-expo` or `ts-jest`) for fast headless unit testing of `mobile/src/core/` and `mobile/src/services/`.
-3. Define all core TypeScript interfaces and enums in `mobile/src/core/types/index.ts` matching the SQLite schema and domain entities.
+1. Initialize the Expo TypeScript project inside `mobile/` with strict TypeScript (`"strict": true`). *(Done)*
+2. Configure Jest (`ts-jest`) for fast headless unit testing of `mobile/src/core/` and `mobile/src/services/`. *(Done)*
+3. Define all core TypeScript interfaces and enums in `mobile/src/core/types/index.ts` matching the SQLite schema and domain entities. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest --passWithNoTests`.
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest --passWithNoTests`. *(Verified: 3 tests passed in 0.7s, tsc exited 0)*
 
-#### Step 0.3: Companion Python 3.11+ & Pytest Harness Initialization
+#### Step 0.3: Companion Python 3.11+ & Pytest Harness Initialization [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `pytest` and `mypy --strict`.
 * **Scope**: `companion/pyproject.toml`, `companion/requirements.txt`, `companion/src/ingestion/schemas.py`, `companion/tests/test_schemas.py`.
 * **Deliverables**:
-1. Create `companion/pyproject.toml` and `companion/requirements.txt` (`pydantic>=2.6`, `numpy>=1.26`, `scipy>=1.12`, `pandas>=2.2`, `streamlit>=1.32`, `plotly>=5.20`, `pytest>=8.0`, `mypy>=1.8`).
-2. Implement Pydantic v2 models in `companion/src/ingestion/schemas.py` mirroring `schemas/workout_export.schema.json` and `schemas/calibrated_parameters.schema.json`.
-3. Write unit tests in `companion/tests/test_schemas.py` verifying valid and invalid mock JSON payloads against the Pydantic models.
+1. Create `companion/pyproject.toml` and `companion/requirements.txt` (`pydantic>=2.6`, `numpy>=1.26`, `scipy>=1.12`, `pandas>=2.2`, `streamlit>=1.32`, `plotly>=5.20`, `pytest>=8.0`, `mypy>=1.8`). *(Done)*
+2. Implement Pydantic v2 models in `companion/src/ingestion/schemas.py` mirroring `schemas/workout_export.schema.json` and `schemas/calibrated_parameters.schema.json`. *(Done)*
+3. Write unit tests in `companion/tests/test_schemas.py` verifying valid and invalid mock JSON payloads against the Pydantic models. *(Done)*
 
 
-* **Verification Gate**: Run `pytest companion/tests/test_schemas.py` and `mypy --strict companion/src/ingestion/schemas.py`.
+* **Verification Gate**: Run `pytest companion/tests/test_schemas.py` and `mypy --strict companion/src/ingestion/schemas.py`. *(Verified: 8/8 pytest tests passed in 0.10s, mypy --strict 0 issues)*
 
 ---
 

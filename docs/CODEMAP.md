@@ -15,13 +15,30 @@ c:/Programmering/Eget/Workout_suite/
 │   ├── workout_export.schema.json
 │   └── calibrated_parameters.schema.json
 ├── mobile/                     # Isolated React Native (Expo TypeScript) workspace
-│   └── README.md
+│   ├── app.json
+│   ├── App.tsx
+│   ├── index.ts
+│   ├── jest.config.js
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── README.md
+│   └── src/
+│       └── core/
+│           └── types/
+│               ├── index.ts
+│               └── __tests__/types.test.ts
 ├── companion/                  # Isolated Python 3.11+ analytics workspace
 │   ├── pyproject.toml
 │   ├── requirements.txt
 │   ├── README.md
+│   ├── src/
+│   │   ├── __init__.py
+│   │   └── ingestion/
+│   │       ├── __init__.py
+│   │       └── schemas.py      # Pydantic v2 export & calibration models
 │   └── tests/
-│       └── __init__.py
+│       ├── __init__.py
+│       └── test_schemas.py     # Schema validation and boundary test suite
 └── docs/                       # Architecture documentation and decision records
     ├── ARCHITECTURE.md         # Subsystem responsibilities, data flow, and build commands
     ├── CODEMAP.md              # Current navigation index and symbol directory
@@ -34,6 +51,13 @@ c:/Programmering/Eget/Workout_suite/
 - **Companion (`companion/`)**: Working directory for all Python commands (`pip`, `pytest`, `mypy`, `streamlit`), executed strictly within `companion/.venv`.
 - **Cross-Stack Synchrony**: Any SQLite or export payload alteration impacting JSON must simultaneously update `schemas/*.schema.json` and `companion/src/ingestion/schemas.py`.
 
+### 1.2 Current Implementation Status
+- **Current Phase**: **Phase 0: Repository Governance, Contracts & Workspace Scaffolding** — **COMPLETED ✅**
+  - **Step 0.1**: `[x]` Completed — Workspace governance in `AGENTS.md`, ADR-026/ADR-027 in `docs/DECISIONS.md`, JSON schemas in `schemas/`.
+  - **Step 0.2**: `[x]` Completed — Mobile Expo SDK init, strict `tsconfig.json`, `jest.config.js`, `mobile/src/core/types/index.ts`, and Jest smoke tests verified.
+  - **Step 0.3**: `[x]` Completed — Companion virtual environment, `pyproject.toml`, `requirements.txt`, Pydantic v2 `schemas.py`, and 8/8 pytest suite verified with strict mypy.
+- **Next Up**: **Phase 1: Foundation & Minimum Viable Logger (Core In-Gym Tracking)** $\rightarrow$ **Step 1.1: Domain Core Math** (1RM Heuristic, Load Normalizer, Plate Solver, Units).
+- For complete phase-by-phase status, refer to the [Implementation Progress & Milestone Tracker](file:///c:/Programmering/Eget/Workout_suite/IMPLEMENTATION_PLAN.md#3-step-by-step-atomic-execution-plan).
 
 ---
 

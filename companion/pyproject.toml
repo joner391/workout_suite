@@ -7,7 +7,7 @@ name = "workout-suite-companion"
 version = "0.1.0"
 description = "Analytical and scientific modeling companion suite for Workout Suite"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.6",
     "numpy>=1.26",
@@ -28,7 +28,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
