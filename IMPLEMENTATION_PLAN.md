@@ -271,7 +271,8 @@ CREATE TABLE strength_standards (
 | | **0.3** | **Companion Python 3.11+ & Pytest Harness** | **`[x] COMPLETED`** | `pyproject.toml`, `requirements.txt`, Pydantic v2 `schemas.py`, 8/8 pytest suite, strict mypy verified |
 | **Phase 1** | **1.1** | **Domain Core Math** | **`[x] COMPLETED`** | `unitConversion.ts`, `heuristic1rm.ts`, `loadNormalizer.ts`, `plateCalculator.ts`, 75 unit tests verified |
 | | **1.2** | **Repository Interfaces & In-Memory Mocks** | **`[x] COMPLETED`** | `IExerciseRepository`, `IWorkoutRepository`, `IGearRepository`, `IUserSettingsRepository`, 4 in-memory mocks, 62 unit tests verified |
-| | 1.3–1.6 | Repositories, Logger Services & UI | `[ ] PENDING` | SQLite persistence, active logger UI, crash recovery |
+| | **1.3** | **SQLite Schema & Concrete Repositories** | **`[x] COMPLETED`** | `schema.ts`, 46 default exercises seed, 6 gear items seed, 4 SQLite repositories, 52 unit tests verified |
+| | 1.4–1.6 | Logger Services & UI | `[ ] PENDING` | Active session service, rest timer, logger UI, crash recovery dialog |
 | **Phase 2** | 2.1–2.4 | Advanced Workout Mechanics & Onboarding | `[ ] PENDING` | Supersets, unilateral logging, CSV import, JSON export |
 | **Phase 3** | 3.1–3.4 | Meso-Cycles, Records & Strength Standards | `[ ] PENDING` | Program blocks, PR tables, SBD standards, DOTS scores |
 | **Phase 4** | 4.1–4.3 | Autonomous Progression Engine | `[ ] PENDING` | Condition-action rules, proposal banners, generator wizard |
@@ -361,16 +362,18 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 * **Verification Gate**: Run `cd mobile && npx jest src/database/mocks && npx tsc --noEmit`. *(Verified: 62/62 tests passed in 1.62s, tsc exited 0)*
 
 
-#### Step 1.3: SQLite Schema Migrations, Seed Catalog & Concrete Repositories
+#### Step 1.3: SQLite Schema Migrations, Seed Catalog & Concrete Repositories [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx tsc --noEmit` and Jest SQL query generation & mapping tests against mocked SQLite driver.
 * **Scope**: `mobile/src/database/schema.ts`, `mobile/src/database/seeds/defaultExercises.ts`, `mobile/src/database/repositories/SQLiteExerciseRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserSettingsRepository.ts`.
 * **Deliverables**:
-1. Implement `schema.ts` using the modern Expo SDK `expo-sqlite` async API (`openDatabaseAsync`, `execAsync`, `runAsync`, `getAllAsync`, `getFirstAsync`) with `PRAGMA journal_mode = WAL;`, `PRAGMA foreign_keys = ON;`, and `PRAGMA user_version` migrations.
-2. Seed 40+ foundational exercises (Barbell SBD, OHP, Rows, Dumbbell, Cable, Machine, Bodyweight) with accurate `load_mode`, `is_compound`, `is_bodyweight`, `parent_exercise_id`, and `standard_lift_type` values, plus default gear items (20 kg Olympic Bar, 29 kg SSB, 25 kg Trap Bar, 15 kg Technique Bar, 1:1 and 2:1 Cable stacks).
-3. Implement the concrete SQLite repositories with write-through persistence for `workout_sets`.
+1. Implement `schema.ts` using the modern Expo SDK `expo-sqlite` async API (`openDatabaseAsync`, `execAsync`, `runAsync`, `getAllAsync`, `getFirstAsync`) with `PRAGMA journal_mode = WAL;`, `PRAGMA foreign_keys = ON;`, and `PRAGMA user_version` migrations. *(Done)*
+2. Seed 40+ foundational exercises (Barbell SBD, OHP, Rows, Dumbbell, Cable, Machine, Bodyweight) with accurate `load_mode`, `is_compound`, `is_bodyweight`, `parent_exercise_id`, and `standard_lift_type` values, plus default gear items (20 kg Olympic Bar, 29 kg SSB, 25 kg Trap Bar, 15 kg Technique Bar, 1:1 and 2:1 Cable stacks). *(Done — 46 exercises and 6 gear items seeded)*
+3. Implement the concrete SQLite repositories with write-through persistence for `workout_sets`. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx tsc --noEmit` and unit-test SQL query generation/mapping against a mocked `SQLiteDatabase` driver in Jest.
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit` and unit-test SQL query generation/mapping against a mocked `SQLiteDatabase` driver in Jest. *(Verified: 52/52 driver unit tests passed, 192/192 mobile tests total, tsc exited 0)*
+
 
 #### Step 1.4: Core Logger Application Services (Session, Rest Timer, Substitution, Crash Recovery)
 

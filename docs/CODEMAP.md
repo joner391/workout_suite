@@ -46,17 +46,34 @@ c:/Programmering/Eget/Workout_suite/
 │       │       ├── IGearRepository.ts
 │       │       └── IUserSettingsRepository.ts
 │       └── database/
-│           └── mocks/
-│               ├── index.ts
-│               ├── MockExerciseRepository.ts
-│               ├── MockWorkoutRepository.ts
-│               ├── MockGearRepository.ts
-│               ├── MockUserSettingsRepository.ts
-│               └── __tests__/
-│                   ├── MockExerciseRepository.test.ts
-│                   ├── MockWorkoutRepository.test.ts
-│                   ├── MockGearRepository.test.ts
-│                   └── MockUserSettingsRepository.test.ts
+│           ├── schema.ts
+│           ├── seeds/
+│           │   └── defaultExercises.ts
+│           ├── repositories/
+│           │   ├── index.ts
+│           │   ├── SQLiteExerciseRepository.ts
+│           │   ├── SQLiteWorkoutRepository.ts
+│           │   ├── SQLiteGearRepository.ts
+│           │   ├── SQLiteUserSettingsRepository.ts
+│           │   └── __tests__/
+│           │       ├── SQLiteExerciseRepository.test.ts
+│           │       ├── SQLiteWorkoutRepository.test.ts
+│           │       ├── SQLiteGearRepository.test.ts
+│           │       └── SQLiteUserSettingsRepository.test.ts
+│           ├── mocks/
+│           │   ├── index.ts
+│           │   ├── MockExerciseRepository.ts
+│           │   ├── MockWorkoutRepository.ts
+│           │   ├── MockGearRepository.ts
+│           │   ├── MockUserSettingsRepository.ts
+│           │   └── __tests__/
+│           │       ├── MockExerciseRepository.test.ts
+│           │       ├── MockWorkoutRepository.test.ts
+│           │       ├── MockGearRepository.test.ts
+│           │       └── MockUserSettingsRepository.test.ts
+│           └── __tests__/
+│               ├── MockSQLiteDatabase.ts
+│               └── schema.test.ts
 ├── companion/                  # Isolated Python 3.11+ analytics workspace
 │   ├── pyproject.toml
 │   ├── requirements.txt
@@ -89,8 +106,10 @@ c:/Programmering/Eget/Workout_suite/
 - **Phase 1: Foundation & Minimum Viable Logger (Core In-Gym Tracking)**
   - **Step 1.1**: `[x]` Completed — Domain Core Math (`unitConversion.ts`, `heuristic1rm.ts`, `loadNormalizer.ts`, `plateCalculator.ts`), 75 unit tests passing with strict TypeScript verification.
   - **Step 1.2**: `[x]` Completed — Repository Interfaces & In-Memory Mocks (`IExerciseRepository.ts`, `IWorkoutRepository.ts`, `IGearRepository.ts`, `IUserSettingsRepository.ts`, and mock implementations with 62 unit tests passing).
-- **Next Up**: **Step 1.3: SQLite Schema Migrations, Seed Catalog & Concrete Repositories** (`schema.ts`, `defaultExercises.ts`, `SQLiteExerciseRepository.ts`, `SQLiteWorkoutRepository.ts`, etc.).
+  - **Step 1.3**: `[x]` Completed — SQLite Schema Migrations, Seed Catalog & Concrete Repositories (`schema.ts`, `defaultExercises.ts`, `SQLiteExerciseRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserSettingsRepository.ts`, 52 SQL driver unit tests passing).
+- **Next Up**: **Step 1.4: Core Logger Application Services (Session, Rest Timer, Substitution, Crash Recovery)** (`activeSessionService.ts`, `restTimerService.ts`, `exerciseSubstitutionService.ts`, `crashRecoveryService.ts`).
 - For complete phase-by-phase status, refer to the [Implementation Progress & Milestone Tracker](file:///c:/Programmering/Eget/Workout_suite/IMPLEMENTATION_PLAN.md#3-step-by-step-atomic-execution-plan).
+
 
 
 ---
