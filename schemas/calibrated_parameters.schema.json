@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://workoutsuite.app/schemas/calibrated_parameters.schema.json",
+  "title": "CalibratedParametersContract",
+  "description": "Contract-first JSON Schema for companion-exported individualized 1RM and endurance (k) parameters derived from the Tier 2 Kalman Filter.",
+  "oneOf": [
+    {
+      "description": "Direct array of calibrated exercise parameters.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CalibratedParameter"
+      }
+    },
+    {
+      "description": "Envelope object containing version metadata and an array of calibrated parameters.",
+      "type": "object",
+      "required": ["version", "exported_at", "parameters"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "description": "Semantic version of the calibrated parameters schema format.",
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+        },
+        "exported_at": {
+          "description": "ISO 8601 UTC timestamp recording when calibration was exported.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "parameters": {
+          "description": "Array of calibrated exercise parameters.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CalibratedParameter"
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "CalibratedParameter": {
+      "type": "object",
+      "required": [
+        "exercise_id",
+        "calibrated_1rm",
+        "calibrated_k",
+        "cov_p00",
+        "cov_p11",
+        "calibrated_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "exercise_id": {
+          "type": "string",
+          "description": "Foreign key referencing exercises.id in the mobile SQLite database."
+        },
+        "calibrated_1rm": {
+          "type": "number",
+          "exclusiveMinimum": 0.0,
+          "description": "Estimated true 1-Repetition Maximum strength in kilograms (exp(x_0)). Must be strictly positive."
+        },
+        "calibrated_k": {
+          "type": "number",
+          "minimum": 0.03,
+          "maximum": 0.20,
+          "description": "Individualized movement-specific endurance fatigue exponent (k in w = 1RM * r_eff^-k). Bounded between 0.03 and 0.20."
+        },
+        "cov_p00": {
+          "type": "number",
+          "description": "Posterior error covariance element P[0,0] associated with ln(1RM) estimate uncertainty."
+        },
+        "cov_p11": {
+          "type": "number",
+          "description": "Posterior error covariance element P[1,1] associated with the endurance exponent k uncertainty."
+        },
+        "calibrated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp recording when this exercise parameter calibration was computed."
+        }
+      }
+    }
+  }
+}

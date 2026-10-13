@@ -1,0 +1,741 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://workoutsuite.app/schemas/workout_export.schema.json",
+  "title": "WorkoutSuiteDataExport",
+  "description": "Canonical contract-first JSON schema for complete Workout Suite relational data export.",
+  "type": "object",
+  "required": [
+    "version",
+    "exported_at",
+    "programs",
+    "program_blocks",
+    "workout_templates",
+    "template_exercises",
+    "progression_rules",
+    "workouts",
+    "workout_sets",
+    "exercises",
+    "gear_inventory",
+    "body_metrics",
+    "user_settings",
+    "user_profiles"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Semantic version of the export schema format (e.g., 1.0.0).",
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "exported_at": {
+      "description": "ISO 8601 UTC timestamp recording when the export was generated.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "programs": {
+      "description": "Collection of multi-day training programs/splits.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Program"
+      }
+    },
+    "program_blocks": {
+      "description": "Historical and active meso-cycle training eras linked to programs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ProgramBlock"
+      }
+    },
+    "workout_templates": {
+      "description": "Daily workout templates belonging to programs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/WorkoutTemplate"
+      }
+    },
+    "template_exercises": {
+      "description": "Prescribed exercises and target rep/intensity brackets within workout templates.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/TemplateExercise"
+      }
+    },
+    "progression_rules": {
+      "description": "Declarative condition-action rules assigned to template exercises.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ProgressionRule"
+      }
+    },
+    "workouts": {
+      "description": "Logged workout sessions (completed, in-progress, or discarded).",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Workout"
+      }
+    },
+    "workout_sets": {
+      "description": "Individual exercise sets executed within workout sessions.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/WorkoutSet"
+      }
+    },
+    "exercises": {
+      "description": "Exercise catalog including standard movements and user-defined custom exercises.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Exercise"
+      }
+    },
+    "gear_inventory": {
+      "description": "User equipment inventory including specialty barbells and custom cable machines.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/GearInventory"
+      }
+    },
+    "body_metrics": {
+      "description": "Longitudinal anthropometric and body composition entries.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/BodyMetric"
+      }
+    },
+    "user_settings": {
+      "description": "User preferences and system-level configuration flags.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "user_profiles": {
+      "description": "User physiological demographics, training psychology, and goal matrix.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/UserProfile"
+      }
+    }
+  },
+  "definitions": {
+    "Program": {
+      "type": "object",
+      "required": ["id", "name", "color_hex", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the program (UUID or alphanumeric ID)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name of the training program split (e.g. Upper/Lower Meso 1)."
+        },
+        "color_hex": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "description": "Hexadecimal color code used for calendar badges and longitudinal chart shading."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Optional program description or overarching objectives."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when the program was created."
+        }
+      }
+    },
+    "ProgramBlock": {
+      "type": "object",
+      "required": ["id", "program_id", "start_date"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the program block."
+        },
+        "program_id": {
+          "type": "string",
+          "description": "Foreign key referencing programs.id."
+        },
+        "start_date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "ISO 8601 calendar start date (YYYY-MM-DD)."
+        },
+        "end_date": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "ISO 8601 calendar end date (YYYY-MM-DD), or null if currently active."
+        }
+      }
+    },
+    "WorkoutTemplate": {
+      "type": "object",
+      "required": ["id", "name", "order_index", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the workout template."
+        },
+        "program_id": {
+          "type": ["string", "null"],
+          "description": "Foreign key referencing programs.id, or null if standalone."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the daily workout session (e.g., Upper A, Push, Legs)."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Optional template instructions or focus cues."
+        },
+        "order_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sequential sorting order within the parent program split."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 creation timestamp."
+        }
+      }
+    },
+    "TemplateExercise": {
+      "type": "object",
+      "required": ["id", "template_id", "exercise_id", "order_index"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the template exercise prescription."
+        },
+        "template_id": {
+          "type": "string",
+          "description": "Foreign key referencing workout_templates.id."
+        },
+        "exercise_id": {
+          "type": "string",
+          "description": "Foreign key referencing exercises.id."
+        },
+        "gear_id": {
+          "type": ["string", "null"],
+          "description": "Optional foreign key referencing gear_inventory.id."
+        },
+        "target_sets": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Target working set count."
+        },
+        "target_reps_min": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Bottom of rep bracket (e.g., 8 in 8–12)."
+        },
+        "target_reps_max": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Top of rep bracket (e.g., 12 in 8–12)."
+        },
+        "target_rpe": {
+          "type": ["number", "null"],
+          "minimum": 5.0,
+          "maximum": 10.0,
+          "description": "Target Rate of Perceived Exertion (5.0–10.0)."
+        },
+        "target_rir": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 5.0,
+          "description": "Target Reps in Reserve (0.0–5.0)."
+        },
+        "order_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Execution order index within the workout session."
+        },
+        "exercise_group_id": {
+          "type": ["string", "null"],
+          "description": "Group ID linking exercises performed as a superset, giant set, or circuit."
+        }
+      }
+    },
+    "ProgressionRule": {
+      "type": "object",
+      "required": ["id", "template_exercise_id", "priority", "rule_json"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the progression rule."
+        },
+        "template_exercise_id": {
+          "type": "string",
+          "description": "Foreign key referencing template_exercises.id."
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Evaluation priority order (lower = evaluated first)."
+        },
+        "rule_json": {
+          "description": "Structured declarative condition-action rule payload (object or serialized JSON string).",
+          "type": ["object", "string"]
+        }
+      }
+    },
+    "Workout": {
+      "type": "object",
+      "required": ["id", "date", "name", "started_at", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the workout session."
+        },
+        "template_id": {
+          "type": ["string", "null"],
+          "description": "Foreign key referencing workout_templates.id, or null if ad-hoc session."
+        },
+        "date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Calendar date of the workout in ISO 8601 format (YYYY-MM-DD)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Session title (e.g. Upper Body Hypertrophy)."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Session-level athlete notes or comments."
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when the workout commenced."
+        },
+        "duration_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Total elapsed workout duration in seconds."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["in_progress", "completed", "discarded"],
+          "description": "Lifecycle state of the workout session."
+        },
+        "completed_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when the session was completed."
+        },
+        "imported_from": {
+          "type": ["string", "null"],
+          "description": "Provenance identifier if imported from an external app (e.g., strong, hevy, fitnotes)."
+        }
+      }
+    },
+    "WorkoutSet": {
+      "type": "object",
+      "required": [
+        "id",
+        "workout_id",
+        "exercise_id",
+        "set_number",
+        "weight",
+        "raw_input_weight",
+        "reps",
+        "set_type",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the set."
+        },
+        "workout_id": {
+          "type": "string",
+          "description": "Foreign key referencing workouts.id."
+        },
+        "exercise_id": {
+          "type": "string",
+          "description": "Foreign key referencing exercises.id."
+        },
+        "gear_id": {
+          "type": ["string", "null"],
+          "description": "Optional foreign key referencing gear_inventory.id."
+        },
+        "set_number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Sequential set index for this exercise in the current workout."
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Normalized effective mechanical load in kilograms (ADR-026: per-hand dumbbell doubled, cable ratio applied, total system mass for bodyweight movements)."
+        },
+        "raw_input_weight": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Exact load typed by lifter in the UI (e.g., single dumbbell weight or pin stack weight) before mechanical transformations (ADR-026)."
+        },
+        "added_weight": {
+          "type": ["number", "null"],
+          "description": "External added load (+10 kg) or assistance load (-15 kg) for presentation UI."
+        },
+        "reps": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Repetitions completed (or Left limb reps for unilateral movements)."
+        },
+        "reps_right": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Right limb repetitions completed for unilateral movements."
+        },
+        "rpe": {
+          "type": ["number", "null"],
+          "minimum": 5.0,
+          "maximum": 10.0,
+          "description": "Rate of Perceived Exertion (5.0–10.0 in half-step increments)."
+        },
+        "rir": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 5.0,
+          "description": "Reps in Reserve (0.0–5.0 in half-step increments)."
+        },
+        "set_type": {
+          "type": "string",
+          "enum": ["warmup", "working", "drop", "myorep", "failure"],
+          "description": "Classification tag for the set."
+        },
+        "set_notes": {
+          "type": ["string", "null"],
+          "description": "Optional per-set annotations."
+        },
+        "exercise_group_id": {
+          "type": ["string", "null"],
+          "description": "Group ID linking sets in a superset, giant set, or circuit."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when the set was checked off."
+        }
+      }
+    },
+    "Exercise": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "muscle_group",
+        "category",
+        "is_compound",
+        "is_bodyweight",
+        "is_unilateral",
+        "load_mode",
+        "default_cable_ratio",
+        "default_bar_weight_kg",
+        "is_custom",
+        "default_rest_seconds"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the exercise."
+        },
+        "name": {
+          "type": "string",
+          "description": "Canonical exercise name."
+        },
+        "muscle_group": {
+          "type": "string",
+          "description": "Primary muscle group (Chest, Back, Quads, Hamstrings, Shoulders, Arms, Calves, Core)."
+        },
+        "category": {
+          "type": "string",
+          "description": "Equipment category (Barbell, Dumbbell, Cable, Bodyweight, Machine, etc.)."
+        },
+        "is_compound": {
+          "type": "boolean",
+          "description": "True if multi-joint compound movement; false if isolation."
+        },
+        "is_bodyweight": {
+          "type": "boolean",
+          "description": "True if movement utilizes body mass (pull-up, dip, push-up)."
+        },
+        "is_unilateral": {
+          "type": "boolean",
+          "description": "True if movement trains limbs independently (split squat, single-arm curl)."
+        },
+        "load_mode": {
+          "type": "string",
+          "enum": ["total", "per_hand"],
+          "description": "Load logging convention. 'per_hand' auto-doubles load in analytics for dumbbells."
+        },
+        "default_cable_ratio": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 5.0,
+          "description": "Mechanical advantage ratio (1.0 for 1:1 rows/pulldowns, 0.5 for 2:1 functional trainers)."
+        },
+        "default_bar_weight_kg": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Standard barbell tare weight in kg (default 20.0 kg)."
+        },
+        "is_custom": {
+          "type": "boolean",
+          "description": "True if user-created custom exercise; false if library seed."
+        },
+        "parent_exercise_id": {
+          "type": ["string", "null"],
+          "description": "Foreign key referencing parent exercise in variant hierarchy."
+        },
+        "standard_lift_type": {
+          "type": ["string", "null"],
+          "enum": ["squat", "bench", "deadlift", "ohp", "row", null],
+          "description": "Powerlifting standard category for SBD benchmarking."
+        },
+        "default_rest_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Default rest timer duration in seconds."
+        }
+      }
+    },
+    "GearInventory": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "type",
+        "tare_weight_kg",
+        "cable_ratio",
+        "is_default"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the gear item."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the gear item (e.g. Safety Squat Bar, Trap Bar, Gym B Cable Tower)."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["barbell", "cable_machine", "plate_loaded_machine", "specialty_bar", "accessory"],
+          "description": "Category of equipment."
+        },
+        "tare_weight_kg": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Unloaded tare weight in kg."
+        },
+        "cable_ratio": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 10.0,
+          "description": "Effective pulley ratio (1.0 for 1:1, 0.5 for 2:1)."
+        },
+        "is_default": {
+          "type": "boolean",
+          "description": "True if default selection for its category."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Optional equipment notes."
+        }
+      }
+    },
+    "BodyMetric": {
+      "type": "object",
+      "required": ["id", "date", "bodyweight"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the measurement log."
+        },
+        "date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Measurement date in ISO 8601 format (YYYY-MM-DD)."
+        },
+        "bodyweight": {
+          "type": "number",
+          "minimum": 20.0,
+          "maximum": 500.0,
+          "description": "Bodyweight in kilograms."
+        },
+        "body_fat_manual": {
+          "type": ["number", "null"],
+          "minimum": 2.0,
+          "maximum": 70.0,
+          "description": "Manually entered body fat percentage from DEXA or calipers."
+        },
+        "waist_cm": {
+          "type": ["number", "null"],
+          "minimum": 30.0,
+          "maximum": 250.0,
+          "description": "Waist circumference in cm."
+        },
+        "neck_cm": {
+          "type": ["number", "null"],
+          "minimum": 15.0,
+          "maximum": 100.0,
+          "description": "Neck circumference in cm."
+        },
+        "hip_cm": {
+          "type": ["number", "null"],
+          "minimum": 30.0,
+          "maximum": 250.0,
+          "description": "Hip circumference in cm (required for female Navy body fat)."
+        },
+        "bicep_cm": {
+          "type": ["number", "null"],
+          "minimum": 10.0,
+          "maximum": 100.0,
+          "description": "Bicep circumference in cm."
+        },
+        "chest_cm": {
+          "type": ["number", "null"],
+          "minimum": 40.0,
+          "maximum": 250.0,
+          "description": "Chest circumference in cm."
+        },
+        "thigh_cm": {
+          "type": ["number", "null"],
+          "minimum": 20.0,
+          "maximum": 150.0,
+          "description": "Thigh circumference in cm."
+        },
+        "calf_cm": {
+          "type": ["number", "null"],
+          "minimum": 15.0,
+          "maximum": 100.0,
+          "description": "Calf circumference in cm."
+        },
+        "navy_body_fat": {
+          "type": ["number", "null"],
+          "minimum": 2.0,
+          "maximum": 70.0,
+          "description": "Calculated U.S. Navy formula body fat percentage."
+        }
+      }
+    },
+    "UserProfile": {
+      "type": "object",
+      "required": [
+        "id",
+        "gender",
+        "training_enjoyment",
+        "intensity_style",
+        "primary_goal",
+        "preferred_days_per_week",
+        "preferred_session_duration_mins",
+        "equipment_access",
+        "created_at",
+        "updated_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user profile."
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["male", "female"],
+          "description": "Biological sex for Navy formula and DOTS / strength standards."
+        },
+        "birthdate": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Date of birth (YYYY-MM-DD)."
+        },
+        "height_cm": {
+          "type": ["number", "null"],
+          "minimum": 80.0,
+          "maximum": 260.0,
+          "description": "Height in centimeters."
+        },
+        "training_enjoyment": {
+          "type": "string",
+          "enum": ["enthusiast", "neutral", "minimalist"],
+          "description": "Psychological motivation and volume affinity index."
+        },
+        "intensity_style": {
+          "type": "string",
+          "enum": [
+            "high_intensity_low_volume",
+            "volume_accumulation",
+            "balanced"
+          ],
+          "description": "Preferred exertion and volume distribution strategy."
+        },
+        "primary_goal": {
+          "type": "string",
+          "enum": [
+            "strength",
+            "hypertrophy",
+            "powerbuilding",
+            "endurance",
+            "longevity"
+          ],
+          "description": "Primary training objective."
+        },
+        "secondary_goals": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional secondary training goals."
+        },
+        "preferred_days_per_week": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7,
+          "description": "Target weekly training frequency."
+        },
+        "preferred_session_duration_mins": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 240,
+          "description": "Target workout session length in minutes."
+        },
+        "equipment_access": {
+          "type": "string",
+          "enum": [
+            "commercial_gym",
+            "home_barbell",
+            "dumbbells",
+            "bodyweight"
+          ],
+          "description": "Available training facilities and equipment."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when the profile was initialized."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of last profile modification."
+        }
+      }
+    }
+  }
+}
