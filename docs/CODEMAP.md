@@ -24,6 +24,17 @@ c:/Programmering/Eget/Workout_suite/
 │   ├── README.md
 │   └── src/
 │       └── core/
+│           ├── math/
+│           │   ├── index.ts
+│           │   ├── unitConversion.ts
+│           │   ├── heuristic1rm.ts
+│           │   ├── loadNormalizer.ts
+│           │   ├── plateCalculator.ts
+│           │   └── __tests__/
+│           │       ├── unitConversion.test.ts
+│           │       ├── heuristic1rm.test.ts
+│           │       ├── loadNormalizer.test.ts
+│           │       └── plateCalculator.test.ts
 │           └── types/
 │               ├── index.ts
 │               └── __tests__/types.test.ts
@@ -52,11 +63,13 @@ c:/Programmering/Eget/Workout_suite/
 - **Cross-Stack Synchrony**: Any SQLite or export payload alteration impacting JSON must simultaneously update `schemas/*.schema.json` and `companion/src/ingestion/schemas.py`.
 
 ### 1.2 Current Implementation Status
-- **Current Phase**: **Phase 0: Repository Governance, Contracts & Workspace Scaffolding** — **COMPLETED ✅**
+- **Phase 0: Repository Governance, Contracts & Workspace Scaffolding** — **COMPLETED ✅**
   - **Step 0.1**: `[x]` Completed — Workspace governance in `AGENTS.md`, ADR-026/ADR-027 in `docs/DECISIONS.md`, JSON schemas in `schemas/`.
   - **Step 0.2**: `[x]` Completed — Mobile Expo SDK init, strict `tsconfig.json`, `jest.config.js`, `mobile/src/core/types/index.ts`, and Jest smoke tests verified.
   - **Step 0.3**: `[x]` Completed — Companion virtual environment, `pyproject.toml`, `requirements.txt`, Pydantic v2 `schemas.py`, and 8/8 pytest suite verified with strict mypy.
-- **Next Up**: **Phase 1: Foundation & Minimum Viable Logger (Core In-Gym Tracking)** $\rightarrow$ **Step 1.1: Domain Core Math** (1RM Heuristic, Load Normalizer, Plate Solver, Units).
+- **Phase 1: Foundation & Minimum Viable Logger (Core In-Gym Tracking)**
+  - **Step 1.1**: `[x]` Completed — Domain Core Math (`unitConversion.ts`, `heuristic1rm.ts`, `loadNormalizer.ts`, `plateCalculator.ts`), 75 unit tests passing with strict TypeScript verification.
+- **Next Up**: **Step 1.2: Repository Interfaces & In-Memory Mock Repositories** (`IExerciseRepository.ts`, `IWorkoutRepository.ts`, `IGearRepository.ts`, `IUserSettingsRepository.ts`, and mocks).
 - For complete phase-by-phase status, refer to the [Implementation Progress & Milestone Tracker](file:///c:/Programmering/Eget/Workout_suite/IMPLEMENTATION_PLAN.md#3-step-by-step-atomic-execution-plan).
 
 ---

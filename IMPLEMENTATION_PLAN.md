@@ -269,7 +269,8 @@ CREATE TABLE strength_standards (
 | **Phase 0** | **0.1** | **Monorepo Governance & Canonical JSON Schemas** | **`[x] COMPLETED`** | Section 8 in `AGENTS.md`, ADR-026/027 in `docs/DECISIONS.md`, `workout_export.schema.json`, `calibrated_parameters.schema.json` validated |
 | | **0.2** | **Mobile Expo TypeScript & Jest Harness** | **`[x] COMPLETED`** | Expo SDK init, strict tsconfig, ts-jest, `src/core/types/index.ts`, smoke tests verified |
 | | **0.3** | **Companion Python 3.11+ & Pytest Harness** | **`[x] COMPLETED`** | `pyproject.toml`, `requirements.txt`, Pydantic v2 `schemas.py`, 8/8 pytest suite, strict mypy verified |
-| **Phase 1** | 1.1–1.6 | Foundation & Minimum Viable Logger | `[ ] PENDING` | Core in-gym logger, domain math, SQLite repositories |
+| **Phase 1** | **1.1** | **Domain Core Math** | **`[x] COMPLETED`** | `unitConversion.ts`, `heuristic1rm.ts`, `loadNormalizer.ts`, `plateCalculator.ts`, 75 unit tests verified |
+| | 1.2–1.6 | Repositories, Logger Services & UI | `[ ] PENDING` | In-memory mocks, SQLite persistence, active logger UI |
 | **Phase 2** | 2.1–2.4 | Advanced Workout Mechanics & Onboarding | `[ ] PENDING` | Supersets, unilateral logging, CSV import, JSON export |
 | **Phase 3** | 3.1–3.4 | Meso-Cycles, Records & Strength Standards | `[ ] PENDING` | Program blocks, PR tables, SBD standards, DOTS scores |
 | **Phase 4** | 4.1–4.3 | Autonomous Progression Engine | `[ ] PENDING` | Condition-action rules, proposal banners, generator wizard |
@@ -334,17 +335,18 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 
 *Goal: Build a zero-latency workout logger that lifters can immediately use in the gym with crash recovery and cognitive offloading tools.*
 
-#### Step 1.1: Domain Core Math (1RM Heuristic, Load Normalizer, Plate Solver, Units)
+#### Step 1.1: Domain Core Math (1RM Heuristic, Load Normalizer, Plate Solver, Units) [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx jest src/core/math` and `npx tsc --noEmit`.
 * **Scope**: `mobile/src/core/math/unitConversion.ts`, `mobile/src/core/math/heuristic1rm.ts`, `mobile/src/core/math/loadNormalizer.ts`, `mobile/src/core/math/plateCalculator.ts`, `mobile/src/core/math/__tests__/`.
 * **Deliverables**:
-1. `unitConversion.ts`: Pure `kgToLbs`, `lbsToKg`, and display formatting helpers.
-2. `heuristic1rm.ts`: Computes $r_{\text{eff}} = \text{reps} + \text{RIR}$ (or $10 - \text{RPE}$, clamped $\ge 1.0$) and Lombardi $\text{e1RM} = w \cdot r_{\text{eff}}^{k}$ (default $k = 0.10$, or custom calibrated $k$).
-3. `loadNormalizer.ts`: Pure function computing `{ effectiveWeightKg, rawInputWeightKg, addedWeightKg }` across `per_hand` dumbbells (2x multiplier), `cable_ratio` (e.g., 0.5x for 2:1 pulley), and `is_bodyweight` (`bodyweightKg + addedWeightKg`).
-4. `plateCalculator.ts`: Pure greedy solver returning `{ platesPerSide: number[], remainderKg: number }` given target weight, bar tare weight (default 20 kg), and available plate denominations (`[25, 20, 15, 10, 5, 2.5, 1.25]`).
+1. `unitConversion.ts`: Pure `kgToLbs`, `lbsToKg`, and display formatting helpers. *(Done)*
+2. `heuristic1rm.ts`: Computes $r_{\text{eff}} = \text{reps} + \text{RIR}$ (or $10 - \text{RPE}$, clamped $\ge 1.0$) and Lombardi $\text{e1RM} = w \cdot r_{\text{eff}}^{k}$ (default $k = 0.10$, or custom calibrated $k$). *(Done)*
+3. `loadNormalizer.ts`: Pure function computing `{ effectiveWeightKg, rawInputWeightKg, addedWeightKg }` across `per_hand` dumbbells (2x multiplier), `cable_ratio` (e.g., 0.5x for 2:1 pulley), and `is_bodyweight` (`bodyweightKg + addedWeightKg`). *(Done)*
+4. `plateCalculator.ts`: Pure greedy solver returning `{ platesPerSide: number[], remainderKg: number }` given target weight, bar tare weight (default 20 kg), and available plate denominations (`[25, 20, 15, 10, 5, 2.5, 1.25]`). *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/core/math && npx tsc --noEmit`. All edge cases (0 reps, RIR > 3, odd plate remainders, assisted pull-ups with negative added weight) must pass.
+* **Verification Gate**: Run `cd mobile && npx jest src/core/math && npx tsc --noEmit`. All edge cases (0 reps, RIR > 3, odd plate remainders, assisted pull-ups with negative added weight) must pass. *(Verified: 75/75 tests passed in 1.45s, tsc exited 0)*
 
 #### Step 1.2: Repository Interfaces & In-Memory Mock Repositories
 
