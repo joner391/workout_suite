@@ -196,6 +196,27 @@ export interface Workout {
 }
 
 /**
+ * Filter criteria for querying workout sessions.
+ */
+export interface WorkoutFilter {
+  status?: WorkoutStatus;
+  startDate?: string; // ISO8601 YYYY-MM-DD
+  endDate?: string; // ISO8601 YYYY-MM-DD
+  templateId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Composite entity linking a workout session with all its associated sets.
+ */
+export interface WorkoutWithSets {
+  workout: Workout;
+  sets: WorkoutSet[];
+}
+
+
+/**
  * Logged exercise set (implements ADR-026 dual-weight persistence).
  */
 export interface WorkoutSet {

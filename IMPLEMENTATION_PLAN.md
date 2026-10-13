@@ -270,7 +270,8 @@ CREATE TABLE strength_standards (
 | | **0.2** | **Mobile Expo TypeScript & Jest Harness** | **`[x] COMPLETED`** | Expo SDK init, strict tsconfig, ts-jest, `src/core/types/index.ts`, smoke tests verified |
 | | **0.3** | **Companion Python 3.11+ & Pytest Harness** | **`[x] COMPLETED`** | `pyproject.toml`, `requirements.txt`, Pydantic v2 `schemas.py`, 8/8 pytest suite, strict mypy verified |
 | **Phase 1** | **1.1** | **Domain Core Math** | **`[x] COMPLETED`** | `unitConversion.ts`, `heuristic1rm.ts`, `loadNormalizer.ts`, `plateCalculator.ts`, 75 unit tests verified |
-| | 1.2–1.6 | Repositories, Logger Services & UI | `[ ] PENDING` | In-memory mocks, SQLite persistence, active logger UI |
+| | **1.2** | **Repository Interfaces & In-Memory Mocks** | **`[x] COMPLETED`** | `IExerciseRepository`, `IWorkoutRepository`, `IGearRepository`, `IUserSettingsRepository`, 4 in-memory mocks, 62 unit tests verified |
+| | 1.3–1.6 | Repositories, Logger Services & UI | `[ ] PENDING` | SQLite persistence, active logger UI, crash recovery |
 | **Phase 2** | 2.1–2.4 | Advanced Workout Mechanics & Onboarding | `[ ] PENDING` | Supersets, unilateral logging, CSV import, JSON export |
 | **Phase 3** | 3.1–3.4 | Meso-Cycles, Records & Strength Standards | `[ ] PENDING` | Program blocks, PR tables, SBD standards, DOTS scores |
 | **Phase 4** | 4.1–4.3 | Autonomous Progression Engine | `[ ] PENDING` | Condition-action rules, proposal banners, generator wizard |
@@ -348,15 +349,17 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 
 * **Verification Gate**: Run `cd mobile && npx jest src/core/math && npx tsc --noEmit`. All edge cases (0 reps, RIR > 3, odd plate remainders, assisted pull-ups with negative added weight) must pass. *(Verified: 75/75 tests passed in 1.45s, tsc exited 0)*
 
-#### Step 1.2: Repository Interfaces & In-Memory Mock Repositories
+#### Step 1.2: Repository Interfaces & In-Memory Mock Repositories [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx jest src/database/mocks` and `npx tsc --noEmit`.
 * **Scope**: `mobile/src/domain/repositories/IExerciseRepository.ts`, `IWorkoutRepository.ts`, `IGearRepository.ts`, `IUserSettingsRepository.ts`, and `mobile/src/database/mocks/`.
 * **Deliverables**:
-1. Define clean async TypeScript interfaces for CRUD, global ghost-set lookup (`getMostRecentCompletedSetsForExercise(exerciseId)`), and crash recovery (`getInProgressWorkout()`).
-2. Implement in-memory mock repositories in `mobile/src/database/mocks/` with unit tests verifying repository contract behavior (allowing services and UI to be tested without native SQLite binaries).
+1. Define clean async TypeScript interfaces for CRUD, global ghost-set lookup (`getMostRecentCompletedSetsForExercise(exerciseId)`), and crash recovery (`getInProgressWorkout()`). *(Done)*
+2. Implement in-memory mock repositories in `mobile/src/database/mocks/` with unit tests verifying repository contract behavior (allowing services and UI to be tested without native SQLite binaries). *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/database/mocks && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest src/database/mocks && npx tsc --noEmit`. *(Verified: 62/62 tests passed in 1.62s, tsc exited 0)*
+
 
 #### Step 1.3: SQLite Schema Migrations, Seed Catalog & Concrete Repositories
 
