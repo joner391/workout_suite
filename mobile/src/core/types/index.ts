@@ -388,6 +388,23 @@ export interface ProgressionEvaluationResult {
   recentSessionsEvaluated: number;
 }
 
+export interface SynthesizedProgramSummary {
+  splitType: 'full_body' | 'upper_lower' | 'pplul' | 'ppl';
+  daysPerWeek: number;
+  estimatedSessionDurationMins: number;
+  totalWeeklySets: number;
+  hasSupersets: boolean;
+  progressionSchemeSummary: string;
+}
+
+export interface SynthesizedProgram {
+  program: Program;
+  templates: WorkoutTemplate[];
+  templateExercises: TemplateExercise[];
+  progressionRules: ProgressionRule[];
+  summary: SynthesizedProgramSummary;
+}
+
 // ============================================================================
 // Pure Domain Math & Calculation Helper Contracts
 // ============================================================================

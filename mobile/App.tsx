@@ -23,6 +23,8 @@ import {
   IExerciseRepository,
   IGearRepository,
   IUserSettingsRepository,
+  IProgramRepository,
+  IUserProfileRepository,
 } from './src/domain/repositories';
 import {
   getDatabase,
@@ -31,7 +33,10 @@ import {
   SQLiteExerciseRepository,
   SQLiteGearRepository,
   SQLiteUserSettingsRepository,
+  SQLiteProgramRepository,
+  SQLiteUserProfileRepository,
 } from './src/database';
+import { ProgramBlockService } from './src/services/programBlockService';
 import { ActiveLoggerScreen } from './src/features/logger';
 import { CalendarScreen } from './src/features/calendar';
 import { SettingsScreen } from './src/features/settings';
@@ -46,6 +51,9 @@ export interface AppProps {
   exerciseRepo?: IExerciseRepository;
   gearRepo?: IGearRepository;
   userSettingsRepo?: IUserSettingsRepository;
+  programRepo?: IProgramRepository;
+  userProfileRepo?: IUserProfileRepository;
+  programBlockService?: ProgramBlockService;
   db?: ISQLiteDatabase;
   [key: string]: unknown;
 }
@@ -57,6 +65,9 @@ export default function App({
   exerciseRepo: propExerciseRepo,
   gearRepo: propGearRepo,
   userSettingsRepo: propUserSettingsRepo,
+  programRepo: propProgramRepo,
+  userProfileRepo: propUserProfileRepo,
+  programBlockService: propProgramBlockService,
   db: propDb,
 }: AppProps = {}) {
   const [activeTab, setActiveTab] = useState<RootTab>(initialTab);
@@ -74,13 +85,24 @@ export default function App({
     exerciseRepo: IExerciseRepository;
     gearRepo: IGearRepository;
     userSettingsRepo: IUserSettingsRepository;
+    programRepo: IProgramRepository;
+    userProfileRepo: IUserProfileRepository;
+    programBlockService: ProgramBlockService;
   } | null>(() => {
     if (propWorkoutRepo && propExerciseRepo && propUserSettingsRepo) {
+      const pRepo = propProgramRepo || ({} as IProgramRepository);
+      const upRepo = propUserProfileRepo || ({} as IUserProfileRepository);
+      const pbService =
+        propProgramBlockService ||
+        (propProgramRepo ? new ProgramBlockService(propProgramRepo) : ({} as ProgramBlockService));
       return {
         workoutRepo: propWorkoutRepo,
         exerciseRepo: propExerciseRepo,
         gearRepo: propGearRepo || ({} as IGearRepository),
         userSettingsRepo: propUserSettingsRepo,
+        programRepo: pRepo,
+        userProfileRepo: upRepo,
+        programBlockService: pbService,
       };
     }
     return null;
@@ -105,12 +127,18 @@ export default function App({
         const eRepo = new SQLiteExerciseRepository(db);
         const gRepo = new SQLiteGearRepository(db);
         const uRepo = new SQLiteUserSettingsRepository(db);
+        const pRepo = new SQLiteProgramRepository(db);
+        const upRepo = new SQLiteUserProfileRepository(db);
+        const pbService = new ProgramBlockService(pRepo);
 
         setRepos({
           workoutRepo: wRepo,
           exerciseRepo: eRepo,
           gearRepo: gRepo,
           userSettingsRepo: uRepo,
+          programRepo: pRepo,
+          userProfileRepo: upRepo,
+          programBlockService: pbService,
         });
 
         // Check if an active session is in progress
@@ -210,6 +238,7 @@ export default function App({
             exerciseRepo={repos.exerciseRepo}
             gearRepo={repos.gearRepo}
             userSettingsRepo={repos.userSettingsRepo}
+            programRepo={repos.programRepo}
             onFinishSession={handleFinishSession}
             onDiscardSession={handleDiscardSession}
           />
@@ -222,6 +251,7 @@ export default function App({
               exerciseRepo={repos.exerciseRepo}
               gearRepo={repos.gearRepo}
               userSettingsRepo={repos.userSettingsRepo}
+              programBlockService={repos.programBlockService}
               onStartWorkout={handleStartWorkoutFromCalendar}
             />
           </View>
@@ -234,6 +264,9 @@ export default function App({
               exerciseRepo={repos.exerciseRepo}
               gearRepo={repos.gearRepo}
               workoutRepo={repos.workoutRepo}
+              programRepo={repos.programRepo}
+              userProfileRepo={repos.userProfileRepo}
+              programBlockService={repos.programBlockService}
               db={database}
               onSettingsChange={checkActiveWorkout}
             />

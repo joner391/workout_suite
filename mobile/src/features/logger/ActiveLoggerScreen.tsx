@@ -32,11 +32,13 @@ import {
   GearInventory,
   WeightUnit,
   IntensityMetric,
+  ProgressionProposal,
 } from '../../core/types';
 import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
 import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
 import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
+import { IProgramRepository } from '../../domain/repositories/IProgramRepository';
 import { ActiveSessionService } from '../../services/activeSessionService';
 import { RestTimerService } from '../../services/restTimerService';
 import { ExerciseSubstitutionService } from '../../services/exerciseSubstitutionService';
@@ -44,6 +46,7 @@ import {
   CrashRecoveryService,
   CrashRecoveryPromptData,
 } from '../../services/crashRecoveryService';
+import { evaluateProgressionRules } from '../../core/rules/progressionRuleEngine';
 
 import { SetRowComponent } from './SetRowComponent';
 import { RestTimerBanner, formatTimeRemaining } from './RestTimerBanner';
@@ -51,6 +54,7 @@ import { PlateCalculatorModal } from './PlateCalculatorModal';
 import { ExerciseSubstitutionModal } from './ExerciseSubstitutionModal';
 import { CrashRecoveryDialog } from './CrashRecoveryDialog';
 import { SupersetBracketGroup } from './SupersetBracketGroup';
+import { ProgressionProposalBanner } from './ProgressionProposalBanner';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
 import { SessionDetailModal } from '../calendar/SessionDetailModal';
 
@@ -61,6 +65,7 @@ export interface ActiveLoggerScreenProps {
   exerciseRepo: IExerciseRepository;
   gearRepo?: IGearRepository;
   userSettingsRepo?: IUserSettingsRepository;
+  programRepo?: IProgramRepository;
   activeSessionService?: ActiveSessionService;
   restTimerService?: RestTimerService;
   exerciseSubstitutionService?: ExerciseSubstitutionService;
@@ -75,6 +80,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   exerciseRepo,
   gearRepo,
   userSettingsRepo,
+  programRepo,
   activeSessionService: propSessionService,
   restTimerService: propTimerService,
   exerciseSubstitutionService: propSubService,
@@ -154,6 +160,14 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const [supersetSourceExercise, setSupersetSourceExercise] = useState<Exercise | null>(null);
   const [summaryWorkoutId, setSummaryWorkoutId] = useState<string | null>(null);
   const [finishedWorkoutObj, setFinishedWorkoutObj] = useState<Workout | null>(null);
+
+  // Active Progression Proposal State (Step 4.4)
+  const [activeProposal, setActiveProposal] = useState<{
+    proposal: ProgressionProposal;
+    exerciseName?: string;
+    templateExerciseId?: string;
+    exerciseId?: string;
+  } | null>(null);
 
   // Timer interval ref for elapsed duration ticker
   const durationTickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -282,6 +296,48 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     }
 
     setExpandedExerciseId((prev) => (prev && uniqueExerciseIds.includes(prev) ? prev : initialExpandedId));
+
+    // Evaluate Progression Rules if programRepo and template_id are present (Step 4.4)
+    if (programRepo && session.workout.template_id) {
+      try {
+        const templateDetail = await programRepo.getTemplateWithDetails(session.workout.template_id);
+        if (templateDetail && templateDetail.exercises) {
+          for (const tex of templateDetail.exercises) {
+            if (tex.rules && tex.rules.length > 0) {
+              const historicalSets = await workoutRepo.getHistoricalSetsForExercise(tex.exercise_id, {
+                onlyCompletedWorkouts: true,
+              });
+              const sessionSetsMap = new Map<string, WorkoutSet[]>();
+              for (const hs of historicalSets) {
+                if (!sessionSetsMap.has(hs.workout_id)) {
+                  sessionSetsMap.set(hs.workout_id, []);
+                }
+                sessionSetsMap.get(hs.workout_id)!.push(hs);
+              }
+              const recentSessions = Array.from(sessionSetsMap.entries()).map(([wId, wSets]) => ({
+                id: wId,
+                date: wSets[0]?.created_at?.split('T')[0] || '',
+                sets: wSets,
+              }));
+
+              const result = evaluateProgressionRules(tex.rules, recentSessions, tex);
+              if (result.primaryProposal) {
+                const exName = currentExerciseMap.get(tex.exercise_id)?.name ?? 'Prescribed Movement';
+                setActiveProposal({
+                  proposal: result.primaryProposal,
+                  exerciseName: exName,
+                  templateExerciseId: tex.id,
+                  exerciseId: tex.exercise_id,
+                });
+                break;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to evaluate progression rules in active logger:', err);
+      }
+    }
   };
 
   // Live session duration ticker
@@ -329,6 +385,44 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       const fresh = await sessionService.startWorkout();
       await loadWorkout(fresh.id);
     }
+  };
+
+  // Progression Proposal Actions (Step 4.4)
+  const handleAcceptProgressionProposal = async (proposal: ProgressionProposal) => {
+    if (!activeProposal) return;
+    try {
+      const targetExId = activeProposal.exerciseId;
+      if (targetExId) {
+        const targetSets = sets.filter((s) => s.exercise_id === targetExId && !completedSetIds.has(s.id));
+        if (proposal.setProposals && proposal.setProposals.length > 0) {
+          for (const sp of proposal.setProposals) {
+            const setObj =
+              targetSets[sp.setIndex - 1] ||
+              sets.find((s) => s.exercise_id === targetExId && s.set_number === sp.setIndex);
+            if (setObj) {
+              await handleUpdateSet(setObj.id, {
+                raw_input_weight: sp.suggestedWeightKg ?? setObj.raw_input_weight,
+              });
+            }
+          }
+        } else if (proposal.suggestedWeightKg !== undefined) {
+          for (const s of targetSets) {
+            await handleUpdateSet(s.id, {
+              raw_input_weight: proposal.suggestedWeightKg,
+              reps: proposal.suggestedTargetReps !== undefined ? proposal.suggestedTargetReps : s.reps,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Error applying progression proposal:', err);
+    } finally {
+      setActiveProposal(null);
+    }
+  };
+
+  const handleDismissProgressionProposal = () => {
+    setActiveProposal(null);
   };
 
   // Add Set to Exercise
@@ -955,6 +1049,14 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
       {/* Embedded Rest Timer Banner */}
       <RestTimerBanner timerService={timerService} />
+
+      {/* Embedded Progression Proposal Banner (Step 4.4) */}
+      <ProgressionProposalBanner
+        proposal={activeProposal?.proposal ?? null}
+        exerciseName={activeProposal?.exerciseName}
+        onAccept={handleAcceptProgressionProposal}
+        onDismiss={handleDismissProgressionProposal}
+      />
 
       {/* Main Exercise & Sets Scrollable List */}
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>

@@ -28,18 +28,26 @@ import { IUserSettingsRepository } from '../../domain/repositories/IUserSettings
 import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
 import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
+import { IProgramRepository } from '../../domain/repositories/IProgramRepository';
+import { IUserProfileRepository } from '../../domain/repositories/IUserProfileRepository';
 import { ISQLiteDatabase } from '../../database/schema';
 import { ExportService } from '../../services/exportService';
 import { ImportService } from '../../services/importService';
+import { ProgramBlockService } from '../../services/programBlockService';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
 import { GearInventoryScreen } from '../gear/GearInventoryScreen';
 import { ImportScreen } from '../import/ImportScreen';
+import { UserProfileScreen } from '../profile';
+import { ProgramOverviewScreen } from '../progression';
 
 export interface SettingsScreenProps {
   userSettingsRepo: IUserSettingsRepository;
   exerciseRepo?: IExerciseRepository;
   gearRepo?: IGearRepository;
   workoutRepo?: IWorkoutRepository;
+  programRepo?: IProgramRepository;
+  userProfileRepo?: IUserProfileRepository;
+  programBlockService?: ProgramBlockService;
   db?: ISQLiteDatabase;
   exportService?: ExportService;
   importService?: ImportService;
@@ -51,6 +59,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   exerciseRepo,
   gearRepo,
   workoutRepo,
+  programRepo,
+  userProfileRepo,
+  programBlockService,
   db,
   exportService,
   importService,
@@ -64,6 +75,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [showExerciseLibrary, setShowExerciseLibrary] = useState<boolean>(false);
   const [showGearInventory, setShowGearInventory] = useState<boolean>(false);
   const [showImportScreen, setShowImportScreen] = useState<boolean>(false);
+  const [showUserProfile, setShowUserProfile] = useState<boolean>(false);
+  const [showProgramOverview, setShowProgramOverview] = useState<boolean>(false);
 
   const [exporting, setExporting] = useState<boolean>(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
@@ -347,6 +360,53 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             )}
           </View>
 
+          {/* Section: Training Psychology & Programs (Step 4.4) */}
+          <Text style={styles.sectionTitle}>TRAINING PSYCHOLOGY & PROGRAMS</Text>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Athlete Questionnaire & Profile</Text>
+              <Text style={styles.settingValueBadge}>ADR-038</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              Configure biological stats, training enjoyment factors, intensity tolerance, schedule availability, and primary goals. Generate custom multi-day programs synthesized from your profile.
+            </Text>
+            {userProfileRepo ? (
+              <TouchableOpacity
+                testID="open-user-profile-btn"
+                style={styles.actionNavigateBtn}
+                onPress={() => setShowUserProfile(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.actionNavigateBtnText}>Athlete Profile & Questionnaire ➔</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.disabledText}>Profile repository not connected</Text>
+            )}
+          </View>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Program Builder & Progression Rules</Text>
+              <Text style={styles.settingValueBadge}>ADR-039</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              Manage active programs, multi-day training splits, prescribed exercises and set schemes, or launch the visual IF/THEN progression rule builder.
+            </Text>
+            {programRepo ? (
+              <TouchableOpacity
+                testID="open-program-overview-btn"
+                style={styles.actionNavigateBtn}
+                onPress={() => setShowProgramOverview(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.actionNavigateBtnText}>Manage Programs & Rules ➔</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.disabledText}>Program repository not connected</Text>
+            )}
+          </View>
+
           {/* Section: Data & Backup (Step 2.3) */}
           <Text style={styles.sectionTitle}>DATA & BACKUP</Text>
 
@@ -447,6 +507,51 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           </View>
         </ScrollView>
+      )}
+
+      {/* Full-Screen Athlete Profile & Questionnaire Modal (Step 4.4) */}
+      {userProfileRepo && (
+        <Modal
+          visible={showUserProfile}
+          animationType="slide"
+          onRequestClose={() => setShowUserProfile(false)}
+        >
+          <UserProfileScreen
+            userProfileRepo={userProfileRepo}
+            programRepo={programRepo}
+            programBlockService={programBlockService}
+            exerciseRepo={exerciseRepo}
+            onClose={() => setShowUserProfile(false)}
+            onProgramGenerated={() => {
+              if (onSettingsChange) {
+                onSettingsChange();
+              }
+            }}
+          />
+        </Modal>
+      )}
+
+      {/* Full-Screen Program Builder & Progression Rules Modal (Step 4.4) */}
+      {programRepo && (
+        <Modal
+          visible={showProgramOverview}
+          animationType="slide"
+          onRequestClose={() => setShowProgramOverview(false)}
+        >
+          <ProgramOverviewScreen
+            programRepo={programRepo}
+            programBlockService={
+              programBlockService ?? new ProgramBlockService(programRepo)
+            }
+            exerciseRepo={exerciseRepo}
+            onClose={() => setShowProgramOverview(false)}
+            onSelectProgram={() => {
+              if (onSettingsChange) {
+                onSettingsChange();
+              }
+            }}
+          />
+        </Modal>
       )}
 
       {/* Full-Screen Exercise Library Modal */}

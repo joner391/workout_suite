@@ -8,4 +8,5 @@ export * from './PlateCalculatorModal';
 export * from './ExerciseSubstitutionModal';
 export * from './CrashRecoveryDialog';
 export * from './SupersetBracketGroup';
+export * from './ProgressionProposalBanner';
 export * from './ActiveLoggerScreen';

@@ -34,6 +34,10 @@ import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
 import { SessionDetailModal, formatDuration } from './SessionDetailModal';
 import { formatWeight } from '../../core/math/unitConversion';
+import {
+  ProgramBlockService,
+  ProgramBlockWithProgram,
+} from '../../services/programBlockService';
 
 export type CalendarViewMode = 'month' | 'week';
 
@@ -42,6 +46,7 @@ export interface CalendarScreenProps {
   exerciseRepo: IExerciseRepository;
   gearRepo?: IGearRepository;
   userSettingsRepo?: IUserSettingsRepository;
+  programBlockService?: ProgramBlockService;
   onStartWorkout?: (dateIso?: string) => void;
   onSelectWorkout?: (workoutId: string) => void;
 }
@@ -54,6 +59,7 @@ export interface CalendarDayItem {
   workoutCount: number;
   hasCompletedWorkout: boolean;
   hasInProgressWorkout: boolean;
+  programSwap?: ProgramBlockWithProgram;
 }
 
 // ============================================================================
@@ -105,7 +111,8 @@ export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export function buildMonthGrid(
   year: number,
   monthZeroIndexed: number,
-  workoutsByDate: Record<string, Workout[]>
+  workoutsByDate: Record<string, Workout[]>,
+  programSwapsByDate?: Record<string, ProgramBlockWithProgram>
 ): CalendarDayItem[] {
   const todayIso = getTodayIso();
   const daysInMonth = new Date(year, monthZeroIndexed + 1, 0).getDate();
@@ -133,6 +140,7 @@ export function buildMonthGrid(
       workoutCount: wList.length,
       hasCompletedWorkout: wList.some((w) => w.status === 'completed'),
       hasInProgressWorkout: wList.some((w) => w.status === 'in_progress'),
+      programSwap: programSwapsByDate ? programSwapsByDate[dateIso] : undefined,
     });
   }
 
@@ -148,6 +156,7 @@ export function buildMonthGrid(
       workoutCount: wList.length,
       hasCompletedWorkout: wList.some((w) => w.status === 'completed'),
       hasInProgressWorkout: wList.some((w) => w.status === 'in_progress'),
+      programSwap: programSwapsByDate ? programSwapsByDate[dateIso] : undefined,
     });
   }
 
@@ -167,6 +176,7 @@ export function buildMonthGrid(
       workoutCount: wList.length,
       hasCompletedWorkout: wList.some((w) => w.status === 'completed'),
       hasInProgressWorkout: wList.some((w) => w.status === 'in_progress'),
+      programSwap: programSwapsByDate ? programSwapsByDate[dateIso] : undefined,
     });
   }
 
@@ -178,7 +188,8 @@ export function buildMonthGrid(
  */
 export function buildWeekDays(
   dateIso: string,
-  workoutsByDate: Record<string, Workout[]>
+  workoutsByDate: Record<string, Workout[]>,
+  programSwapsByDate?: Record<string, ProgramBlockWithProgram>
 ): CalendarDayItem[] {
   const todayIso = getTodayIso();
   const { year, month, day } = parseIsoDate(dateIso);
@@ -202,6 +213,7 @@ export function buildWeekDays(
       workoutCount: wList.length,
       hasCompletedWorkout: wList.some((w) => w.status === 'completed'),
       hasInProgressWorkout: wList.some((w) => w.status === 'in_progress'),
+      programSwap: programSwapsByDate ? programSwapsByDate[currentIso] : undefined,
     });
   }
 
@@ -232,6 +244,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   exerciseRepo,
   gearRepo,
   userSettingsRepo,
+  programBlockService,
   onStartWorkout,
   onSelectWorkout,
 }) => {
@@ -244,6 +257,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
 
   const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [programBlocks, setProgramBlocks] = useState<ProgramBlockWithProgram[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [inspectWorkoutId, setInspectWorkoutId] = useState<string | null>(null);
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
@@ -281,6 +295,42 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
     loadWorkouts();
   }, [loadWorkouts]);
 
+  // Load program blocks for meso-cycle badges and chart shading
+  const loadProgramBlocks = useCallback(async () => {
+    if (programBlockService) {
+      try {
+        const blocks = await programBlockService.getAllProgramBlocks();
+        setProgramBlocks(blocks);
+      } catch {
+        // Fallback
+      }
+    }
+  }, [programBlockService]);
+
+  useEffect(() => {
+    loadProgramBlocks();
+  }, [loadProgramBlocks]);
+
+  // Index program swaps by start_date
+  const programSwapsByDate = useMemo(() => {
+    const map: Record<string, ProgramBlockWithProgram> = {};
+    programBlocks.forEach((b) => {
+      map[b.start_date] = b;
+    });
+    return map;
+  }, [programBlocks]);
+
+  // Resolve active program block for selected date
+  const selectedDateProgramBlock = useMemo(() => {
+    if (!programBlocks.length) return null;
+    const match = programBlocks.filter(
+      (b) => b.start_date <= selectedDate && (b.end_date === null || b.end_date >= selectedDate)
+    );
+    if (match.length === 0) return null;
+    match.sort((a, b) => b.start_date.localeCompare(a.start_date));
+    return match[0];
+  }, [programBlocks, selectedDate]);
+
   // Index workouts by ISO date string
   const workoutsByDate = useMemo(() => {
     const map: Record<string, Workout[]> = {};
@@ -295,12 +345,12 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
 
   // Grid days
   const monthDays = useMemo(() => {
-    return buildMonthGrid(currentYear, currentMonth, workoutsByDate);
-  }, [currentYear, currentMonth, workoutsByDate]);
+    return buildMonthGrid(currentYear, currentMonth, workoutsByDate, programSwapsByDate);
+  }, [currentYear, currentMonth, workoutsByDate, programSwapsByDate]);
 
   const weekDays = useMemo(() => {
-    return buildWeekDays(selectedDate, workoutsByDate);
-  }, [selectedDate, workoutsByDate]);
+    return buildWeekDays(selectedDate, workoutsByDate, programSwapsByDate);
+  }, [selectedDate, workoutsByDate, programSwapsByDate]);
 
   // Workouts on currently selected date
   const selectedDateWorkouts = useMemo(() => {
@@ -477,13 +527,24 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
                 </Text>
 
                 {/* Workout Badge Indicator */}
-                {item.hasCompletedWorkout ? (
-                  <View style={styles.badgeDotCompleted} />
-                ) : item.hasInProgressWorkout ? (
-                  <View style={styles.badgeDotInProgress} />
-                ) : (
-                  <View style={styles.badgeDotPlaceholder} />
-                )}
+                <View style={styles.badgeIndicatorContainer}>
+                  {item.hasCompletedWorkout ? (
+                    <View style={styles.badgeDotCompleted} />
+                  ) : item.hasInProgressWorkout ? (
+                    <View style={styles.badgeDotInProgress} />
+                  ) : (
+                    <View style={styles.badgeDotPlaceholder} />
+                  )}
+                  {item.programSwap && (
+                    <View
+                      testID={`program-swap-badge-${item.dateIso}`}
+                      style={[
+                        styles.programSwapDot,
+                        { backgroundColor: item.programSwap.color_hex },
+                      ]}
+                    />
+                  )}
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -525,16 +586,56 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
                   {item.dayNumber}
                 </Text>
 
-                {item.hasCompletedWorkout ? (
-                  <View style={styles.badgeDotCompleted} />
-                ) : item.hasInProgressWorkout ? (
-                  <View style={styles.badgeDotInProgress} />
-                ) : (
-                  <View style={styles.badgeDotPlaceholder} />
-                )}
+                <View style={styles.badgeIndicatorContainer}>
+                  {item.hasCompletedWorkout ? (
+                    <View style={styles.badgeDotCompleted} />
+                  ) : item.hasInProgressWorkout ? (
+                    <View style={styles.badgeDotInProgress} />
+                  ) : (
+                    <View style={styles.badgeDotPlaceholder} />
+                  )}
+                  {item.programSwap && (
+                    <View
+                      testID={`program-swap-badge-${item.dateIso}`}
+                      style={[
+                        styles.programSwapDot,
+                        { backgroundColor: item.programSwap.color_hex },
+                      ]}
+                    />
+                  )}
+                </View>
               </TouchableOpacity>
             );
           })}
+        </View>
+      )}
+
+      {/* Meso-Cycle / Program Swap Banner for Selected Date */}
+      {selectedDateProgramBlock && (
+        <View
+          testID="calendar-program-swap-banner"
+          style={[
+            styles.agendaProgramCard,
+            { borderLeftColor: selectedDateProgramBlock.color_hex },
+          ]}
+        >
+          <View style={styles.agendaProgramHeader}>
+            <View
+              style={[
+                styles.agendaProgramPill,
+                { backgroundColor: selectedDateProgramBlock.color_hex },
+              ]}
+            >
+              <Text style={styles.agendaProgramPillText}>
+                {selectedDateProgramBlock.start_date === selectedDate
+                  ? '🔄 MESO-CYCLE SWAP'
+                  : 'ACTIVE PROGRAM'}
+              </Text>
+            </View>
+            <Text style={styles.agendaProgramName} numberOfLines={1}>
+              {selectedDateProgramBlock.program_name}
+            </Text>
+          </View>
         </View>
       )}
 
@@ -1015,5 +1116,50 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#00E676',
     fontWeight: '700',
+  },
+  badgeIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  programSwapDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  agendaProgramCard: {
+    backgroundColor: '#121215',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderLeftWidth: 4,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  agendaProgramHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  agendaProgramPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  agendaProgramPillText: {
+    color: '#0A0A0A',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  agendaProgramName: {
+    color: '#FAFAFA',
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
   },
 });

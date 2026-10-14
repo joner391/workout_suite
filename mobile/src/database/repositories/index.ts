@@ -2,3 +2,5 @@ export * from './SQLiteExerciseRepository';
 export * from './SQLiteWorkoutRepository';
 export * from './SQLiteGearRepository';
 export * from './SQLiteUserSettingsRepository';
+export * from './SQLiteProgramRepository';
+export * from './SQLiteUserProfileRepository';
