@@ -384,3 +384,30 @@ export interface StrengthStandardResult {
   continuousScore: number; // 0.0 - 100.0+
   deltaKgToNextTier: number | null;
 }
+
+// ============================================================================
+// Standardized JSON Export Contract Models
+// ============================================================================
+
+/**
+ * Complete Workout Suite relational data export payload.
+ * Canonical contract synchronized with schemas/workout_export.schema.json
+ * and companion/src/ingestion/schemas.py.
+ */
+export interface WorkoutExportPayload {
+  version: string;
+  exported_at: string;
+  programs: Program[];
+  program_blocks: ProgramBlock[];
+  workout_templates: WorkoutTemplate[];
+  template_exercises: TemplateExercise[];
+  progression_rules: ProgressionRule[];
+  workouts: Workout[];
+  workout_sets: WorkoutSet[];
+  exercises: Exercise[];
+  gear_inventory: GearInventory[];
+  body_metrics: BodyMetric[];
+  user_settings: Record<string, string>;
+  user_profiles: UserProfile[];
+}
+

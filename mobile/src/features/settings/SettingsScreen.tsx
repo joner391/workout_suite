@@ -21,23 +21,76 @@ import {
   StyleSheet,
   ActivityIndicator,
   Switch,
+  Modal,
 } from 'react-native';
 import { WeightUnit, IntensityMetric } from '../../core/types';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
+import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
+import { IGearRepository } from '../../domain/repositories/IGearRepository';
+import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
+import { ISQLiteDatabase } from '../../database/schema';
+import { ExportService } from '../../services/exportService';
+import { ImportService } from '../../services/importService';
+import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
+import { GearInventoryScreen } from '../gear/GearInventoryScreen';
+import { ImportScreen } from '../import/ImportScreen';
 
 export interface SettingsScreenProps {
   userSettingsRepo: IUserSettingsRepository;
+  exerciseRepo?: IExerciseRepository;
+  gearRepo?: IGearRepository;
+  workoutRepo?: IWorkoutRepository;
+  db?: ISQLiteDatabase;
+  exportService?: ExportService;
+  importService?: ImportService;
   onSettingsChange?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   userSettingsRepo,
+  exerciseRepo,
+  gearRepo,
+  workoutRepo,
+  db,
+  exportService,
+  importService,
   onSettingsChange,
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
   const [intensityMetric, setIntensityMetric] = useState<IntensityMetric>('RPE');
   const [pureUtilityMode, setPureUtilityMode] = useState<boolean>(false);
+
+  const [showExerciseLibrary, setShowExerciseLibrary] = useState<boolean>(false);
+  const [showGearInventory, setShowGearInventory] = useState<boolean>(false);
+  const [showImportScreen, setShowImportScreen] = useState<boolean>(false);
+
+  const [exporting, setExporting] = useState<boolean>(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+
+  const handleExportData = async () => {
+    try {
+      setExporting(true);
+      setExportStatus(null);
+      const service = exportService ?? (db ? new ExportService(db) : null);
+      if (!service) {
+        setExportStatus('Export failed: SQLite database not connected.');
+        return;
+      }
+      const result = await service.exportAndShare(db);
+      if (result.shared) {
+        setExportStatus('Export complete! File shared successfully.');
+      } else {
+        setExportStatus(`Export saved to: ${result.filePath}`);
+      }
+    } catch (err: any) {
+      setExportStatus(`Export error: ${err?.message ?? 'Unknown error'}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
 
   // Load current settings
   const loadSettings = useCallback(async () => {
@@ -247,8 +300,129 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           </View>
 
+          {/* Section: Gym Equipment & Library */}
+          <Text style={styles.sectionTitle}>EXERCISE CATALOG & EQUIPMENT</Text>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Exercise Library & Variant Tree</Text>
+              <Text style={styles.settingValueBadge}>ADR-012</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              Browse the catalog of movements, create custom exercises, and link variants to root movements for cross-variant strength tracking and PR benchmarking.
+            </Text>
+            {exerciseRepo ? (
+              <TouchableOpacity
+                testID="open-exercise-library-btn"
+                style={styles.actionNavigateBtn}
+                onPress={() => setShowExerciseLibrary(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.actionNavigateBtnText}>Manage Exercise Library ➔</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.disabledText}>Repository not connected</Text>
+            )}
+          </View>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Gear & Equipment Inventory</Text>
+              <Text style={styles.settingValueBadge}>ADR-025</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              Configure custom barbells with tare weights (15kg technique, 20kg Olympic, 25kg trap, 29kg SSB) and cable machines with mechanical advantage ratios (1:1, 2:1).
+            </Text>
+            {gearRepo ? (
+              <TouchableOpacity
+                testID="open-gear-inventory-btn"
+                style={styles.actionNavigateBtn}
+                onPress={() => setShowGearInventory(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.actionNavigateBtnText}>Manage Equipment Inventory ➔</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.disabledText}>Repository not connected</Text>
+            )}
+          </View>
+
+          {/* Section: Data & Backup (Step 2.3) */}
+          <Text style={styles.sectionTitle}>DATA & BACKUP</Text>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Export Database (JSON)</Text>
+              <Text style={styles.settingValueBadge}>SCHEMA v1.0.0</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              Export full SQLite database state into the contract-verified JSON format
+              (schemas/workout_export.schema.json) for cross-device transfer, offline backup,
+              and Companion analytics ingestion.
+            </Text>
+
+            {exportStatus ? (
+              <View style={styles.exportStatusBanner}>
+                <Text style={styles.exportStatusText}>{exportStatus}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              testID="export-json-btn"
+              style={[
+                styles.actionNavigateBtn,
+                exporting && styles.actionNavigateBtnDisabled,
+              ]}
+              onPress={handleExportData}
+              disabled={exporting}
+              activeOpacity={0.8}
+            >
+              {exporting ? (
+                <View style={styles.buttonInlineRow}>
+                  <ActivityIndicator size="small" color="#00E676" />
+                  <Text style={[styles.actionNavigateBtnText, { marginLeft: 8 }]}>
+                    Exporting Database...
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.actionNavigateBtnText}>
+                  Export Data (JSON) ➔
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Import Training History (CSV)</Text>
+              <Text style={styles.settingValueBadge}>STRONG / HEVY / CSV</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              Import workout logs from Strong App, Hevy App, or custom CSV spreadsheets.
+              Includes automatic movement matching against library and duplicate session detection.
+            </Text>
+
+            {importStatus ? (
+              <View style={styles.exportStatusBanner}>
+                <Text style={styles.exportStatusText}>{importStatus}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              testID="open-import-history-btn"
+              style={styles.actionNavigateBtn}
+              onPress={() => setShowImportScreen(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.actionNavigateBtnText}>
+                Import Workouts (CSV Wizard) ➔
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Section: Storage & Diagnostics */}
           <Text style={styles.sectionTitle}>LOCAL STORAGE & ENGINE</Text>
+
 
           <View style={styles.diagnosticsCard}>
             <View style={styles.diagRow}>
@@ -274,9 +448,68 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
         </ScrollView>
       )}
+
+      {/* Full-Screen Exercise Library Modal */}
+      {exerciseRepo && (
+        <Modal
+          visible={showExerciseLibrary}
+          animationType="slide"
+          onRequestClose={() => setShowExerciseLibrary(false)}
+        >
+          <ExerciseLibraryScreen
+            exerciseRepo={exerciseRepo}
+            userSettingsRepo={userSettingsRepo}
+            onClose={() => setShowExerciseLibrary(false)}
+          />
+        </Modal>
+      )}
+
+      {/* Full-Screen Gear Inventory Modal */}
+      {gearRepo && (
+        <Modal
+          visible={showGearInventory}
+          animationType="slide"
+          onRequestClose={() => setShowGearInventory(false)}
+        >
+          <GearInventoryScreen
+            gearRepo={gearRepo}
+            userSettingsRepo={userSettingsRepo}
+            onClose={() => setShowGearInventory(false)}
+          />
+        </Modal>
+      )}
+
+      {/* Full-Screen Import Wizard Modal */}
+      {showImportScreen && (workoutRepo || importService) && (
+        <Modal
+          visible={showImportScreen}
+          animationType="slide"
+          onRequestClose={() => setShowImportScreen(false)}
+        >
+          <ImportScreen
+            importService={
+              importService ??
+              new ImportService(
+                workoutRepo!,
+                exerciseRepo!
+              )
+            }
+            onClose={() => setShowImportScreen(false)}
+            onImportComplete={(result) => {
+              setImportStatus(
+                `Successfully imported ${result.importedWorkoutsCount} workouts (${result.importedSetsCount} sets)`
+              );
+              if (onSettingsChange) {
+                onSettingsChange();
+              }
+            }}
+          />
+        </Modal>
+      )}
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -438,4 +671,49 @@ const styles = StyleSheet.create({
     color: '#00E676',
     fontWeight: '700',
   },
+  actionNavigateBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  actionNavigateBtnText: {
+    color: '#00E676',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  disabledText: {
+    color: '#71717A',
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  actionNavigateBtnDisabled: {
+    opacity: 0.6,
+  },
+  buttonInlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportStatusBanner: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  exportStatusText: {
+    color: '#00E676',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
 });
+
+

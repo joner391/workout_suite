@@ -69,4 +69,53 @@ describe('Settings Toggles & User Preferences (Step 1.6)', () => {
     expect(all[SETTINGS_KEYS.INTENSITY_METRIC]).toBe('RIR');
     expect(all[SETTINGS_KEYS.PURE_UTILITY_MODE]).toBe('1');
   });
+
+  test('ExportService integrates seamlessly for 1-tap JSON export from Settings (Step 2.3)', async () => {
+    const { ExportService } = await import('../../../services/exportService');
+    const { MockSQLiteDatabase } = await import('../../../database/__tests__/MockSQLiteDatabase');
+
+    const mockDb = new MockSQLiteDatabase();
+    mockDb.mockData.set('FROM user_settings', [
+      { key: 'unit_system', value: 'lbs' },
+      { key: 'intensity_metric', value: 'RIR' },
+    ]);
+
+    let sharedInvoked = false;
+    const service = new ExportService(mockDb, {
+      fileWriter: async () => {},
+      fileSharer: async () => {
+        sharedInvoked = true;
+        return true;
+      },
+      getCacheDirectory: () => 'file:///data/mock-cache',
+    });
+
+    const exportResult = await service.exportAndShare();
+    expect(exportResult.shared).toBe(true);
+    expect(sharedInvoked).toBe(true);
+    expect(exportResult.payload.user_settings.unit_system).toBe('lbs');
+    expect(exportResult.payload.user_settings.intensity_metric).toBe('RIR');
+  });
+
+  test('ImportService integrates for CSV training history import from Settings (Step 2.4)', async () => {
+    const { ImportService } = await import('../../../services/importService');
+    const { MockWorkoutRepository, MockExerciseRepository } = await import('../../../database/mocks');
+    const { DEFAULT_EXERCISES } = await import('../../../database/seeds/defaultExercises');
+
+    const mockWRepo = new MockWorkoutRepository();
+    const mockERepo = new MockExerciseRepository(DEFAULT_EXERCISES);
+    const importService = new ImportService(mockWRepo, mockERepo);
+
+    const strongCsv = `Date;Workout Name;Exercise Name;Set Order;Weight;Weight Unit;Reps;RPE
+2026-08-01 10:00:00;Morning Upper;Barbell Bench Press;1;100;kg;8;8`;
+
+    const parsed = importService.parseCsv(strongCsv);
+    expect(parsed.workouts).toHaveLength(1);
+    const preview = await importService.generatePreview(parsed);
+    expect(preview.totalWorkouts).toBe(1);
+    const result = await importService.executeImport(preview);
+    expect(result.success).toBe(true);
+    expect(result.importedWorkoutsCount).toBe(1);
+  });
 });
+

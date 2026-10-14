@@ -26,6 +26,7 @@ import {
 } from './src/domain/repositories';
 import {
   getDatabase,
+  ISQLiteDatabase,
   SQLiteWorkoutRepository,
   SQLiteExerciseRepository,
   SQLiteGearRepository,
@@ -45,6 +46,7 @@ export interface AppProps {
   exerciseRepo?: IExerciseRepository;
   gearRepo?: IGearRepository;
   userSettingsRepo?: IUserSettingsRepository;
+  db?: ISQLiteDatabase;
   [key: string]: unknown;
 }
 
@@ -55,10 +57,13 @@ export default function App({
   exerciseRepo: propExerciseRepo,
   gearRepo: propGearRepo,
   userSettingsRepo: propUserSettingsRepo,
+  db: propDb,
 }: AppProps = {}) {
   const [activeTab, setActiveTab] = useState<RootTab>(initialTab);
   const [dbReady, setDbReady] = useState<boolean>(!!propWorkoutRepo);
   const [hasActiveWorkout, setHasActiveWorkout] = useState<boolean>(false);
+  const [database, setDatabase] = useState<ISQLiteDatabase | undefined>(propDb);
+
   const [currentWorkoutId, setCurrentWorkoutId] = useState<string | undefined>(
     initialWorkoutId
   );
@@ -94,6 +99,7 @@ export default function App({
       try {
         const db = await getDatabase();
         if (!isMounted) return;
+        setDatabase(db);
 
         const wRepo = new SQLiteWorkoutRepository(db);
         const eRepo = new SQLiteExerciseRepository(db);
@@ -225,6 +231,10 @@ export default function App({
           <View style={[styles.tabContentContainer, styles.visibleContent]}>
             <SettingsScreen
               userSettingsRepo={repos.userSettingsRepo}
+              exerciseRepo={repos.exerciseRepo}
+              gearRepo={repos.gearRepo}
+              workoutRepo={repos.workoutRepo}
+              db={database}
               onSettingsChange={checkActiveWorkout}
             />
           </View>

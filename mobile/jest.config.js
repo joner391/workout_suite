@@ -13,7 +13,7 @@ module.exports = {
           strict: true,
           esModuleInterop: true,
           skipLibCheck: true,
-          types: ['jest'],
+          types: ['jest', 'node'],
         },
       },
     ],
@@ -21,5 +21,8 @@ module.exports = {
   moduleNameMapper: {
     '^react-native$': '<rootDir>/__mocks__/react-native.ts',
     '^expo-sqlite$': '<rootDir>/__mocks__/expo-sqlite.ts',
+    '^expo-file-system(/.*)?$': '<rootDir>/__mocks__/expo-file-system.ts',
+    '^expo-sharing$': '<rootDir>/__mocks__/expo-sharing.ts',
+    '^expo-document-picker$': '<rootDir>/__mocks__/expo-document-picker.ts',
   },
 };

@@ -51,6 +51,8 @@ import { PlateCalculatorModal } from './PlateCalculatorModal';
 import { ExerciseSubstitutionModal } from './ExerciseSubstitutionModal';
 import { CrashRecoveryDialog } from './CrashRecoveryDialog';
 import { SupersetBracketGroup } from './SupersetBracketGroup';
+import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
+
 
 export interface ActiveLoggerScreenProps {
   initialWorkoutId?: string;
@@ -141,7 +143,9 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   });
 
   const [showAddExerciseModal, setShowAddExerciseModal] = useState<boolean>(false);
+  const [showFullLibraryModal, setShowFullLibraryModal] = useState<boolean>(false);
   const [allCatalogExercises, setAllCatalogExercises] = useState<Exercise[]>([]);
+
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState<string>('');
   const [showFinishConfirmModal, setShowFinishConfirmModal] = useState<boolean>(false);
   const [finishNotes, setFinishNotes] = useState<string>('');
@@ -1021,6 +1025,16 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               </TouchableOpacity>
             </View>
 
+            <TouchableOpacity
+              testID="browse-full-library-btn"
+              style={styles.browseFullLibraryBtn}
+              onPress={() => setShowFullLibraryModal(true)}
+            >
+              <Text style={styles.browseFullLibraryBtnText}>
+                ⚡ Browse Library & Variant Tree ➔
+              </Text>
+            </TouchableOpacity>
+
             <TextInput
               testID="search-exercise-input"
               style={styles.searchExerciseInput}
@@ -1053,6 +1067,37 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Full Exercise Library & Variant Tree Modal */}
+      {showFullLibraryModal && (
+        <Modal
+          visible={showFullLibraryModal}
+          animationType="slide"
+          onRequestClose={async () => {
+            setShowFullLibraryModal(false);
+            const updated = await exerciseRepo.findAll();
+            setAllCatalogExercises(updated);
+          }}
+        >
+          <ExerciseLibraryScreen
+            exerciseRepo={exerciseRepo}
+            userSettingsRepo={userSettingsRepo}
+            onSelectExercise={async (exercise) => {
+              setShowFullLibraryModal(false);
+              setShowAddExerciseModal(false);
+              const updated = await exerciseRepo.findAll();
+              setAllCatalogExercises(updated);
+              await handleAddExerciseToWorkout(exercise);
+            }}
+            onClose={async () => {
+              setShowFullLibraryModal(false);
+              const updated = await exerciseRepo.findAll();
+              setAllCatalogExercises(updated);
+            }}
+          />
+        </Modal>
+      )}
+
 
       {/* Finish Confirmation Modal */}
       <Modal
@@ -1462,6 +1507,22 @@ const styles = StyleSheet.create({
     color: '#FAFAFA',
     marginBottom: 12,
   },
+  browseFullLibraryBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  browseFullLibraryBtnText: {
+    color: '#00E676',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
   catalogItem: {
     backgroundColor: '#121215',
     borderWidth: 1,
