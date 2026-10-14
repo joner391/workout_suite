@@ -18,4 +18,8 @@ module.exports = {
       },
     ],
   },
+  moduleNameMapper: {
+    '^react-native$': '<rootDir>/__mocks__/react-native.ts',
+    '^expo-sqlite$': '<rootDir>/__mocks__/expo-sqlite.ts',
+  },
 };

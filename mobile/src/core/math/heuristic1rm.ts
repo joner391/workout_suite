@@ -250,6 +250,14 @@ export function calculateHeuristic1RM(
     }
   }
 
+  // Exclude low-intensity warmup/recovery sets (< 6.0 RPE or > 4.0 RIR) from e1RM estimation
+  if (rpeVal != null && !isNaN(rpeVal) && rpeVal < 6.0) {
+    return 0;
+  }
+  if (rirVal != null && !isNaN(rirVal) && rirVal > 4.0) {
+    return 0;
+  }
+
   if (strictReliability && !isReliable1RMInput(reps, { rir: rirVal, rpe: rpeVal })) {
     return 0;
   }

@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Workout Suite",
-    "slug": "workout-suite",
+    "name": "MomentRM",
+    "slug": "momentrm",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

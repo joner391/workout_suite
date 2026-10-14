@@ -156,13 +156,24 @@ describe('Heuristic 1RM & Repetition Endurance Math', () => {
     });
 
     it('should respect strictReliability flag and discard sets with RIR > 3', () => {
-      // Non-strict computes estimate anyway:
-      const nonStrict = calculateHeuristic1RM(100, 5, { rir: 4, strictReliability: false });
+      // Non-strict computes estimate anyway for RIR 3.5:
+      const nonStrict = calculateHeuristic1RM(100, 5, { rir: 3.5, strictReliability: false });
       expect(nonStrict).toBeGreaterThan(0);
 
       // Strict returns 0 for RIR > 3:
-      const strict = calculateHeuristic1RM(100, 5, { rir: 4, strictReliability: true });
+      const strict = calculateHeuristic1RM(100, 5, { rir: 3.5, strictReliability: true });
       expect(strict).toBe(0);
+    });
+
+    it('should discard sets with RPE < 6.0 or RIR > 4.0 from e1RM calculations even in non-strict mode', () => {
+      expect(calculateHeuristic1RM(100, 5, { rpe: 5.5 })).toBe(0);
+      expect(calculateHeuristic1RM(100, 5, { rpe: 4.0 })).toBe(0);
+      expect(calculateHeuristic1RM(100, 5, { rir: 4.5 })).toBe(0);
+      expect(calculateHeuristic1RM(100, 5, { rir: 5.0 })).toBe(0);
+
+      // Valid RPE >= 6.0 or RIR <= 4.0 should compute e1RM:
+      expect(calculateHeuristic1RM(100, 5, { rpe: 6.0 })).toBeGreaterThan(0);
+      expect(calculateHeuristic1RM(100, 5, { rir: 4.0 })).toBeGreaterThan(0);
     });
   });
 });
