@@ -515,4 +515,64 @@ describe('MockWorkoutRepository', () => {
       expect(ghost).toHaveLength(0);
     });
   });
+
+  describe('Rep-Max Records (PR Board) Queries', () => {
+    it('returns the heaviest set for each unique repetition count', async () => {
+      // workout 1 (2026-10-01): 100kg x 8 (RPE 8), 100kg x 7 (RPE 9)
+      // workout 2 (2026-10-08): 102.5kg x 8 (RPE 8.5), 102.5kg x 8 (RPE 9.5)
+      const prs = await repo.getRepMaxSets({
+        exerciseIds: ['bench_press'],
+      });
+
+      // Unique rep counts: 7, 8
+      expect(prs).toHaveLength(2);
+      expect(prs.map((p) => p.reps)).toEqual([7, 8]);
+
+      // 7 reps: 100kg
+      expect(prs[0].reps).toBe(7);
+      expect(prs[0].weight).toBe(100);
+      expect(prs[0].workoutDate).toBe('2026-10-01');
+
+      // 8 reps: 102.5kg (from workout 2, tie-breaker picking s2_2 with RPE 9.5 over s2_1 with RPE 8.5)
+      expect(prs[1].reps).toBe(8);
+      expect(prs[1].weight).toBe(102.5);
+      expect(prs[1].rpe).toBe(9.5);
+      expect(prs[1].workoutDate).toBe('2026-10-08');
+    });
+
+    it('filters rep-max records by date range', async () => {
+      // Querying only up to 2026-10-05 (only workout 1 is included)
+      const prs = await repo.getRepMaxSets({
+        exerciseIds: ['bench_press'],
+        endDate: '2026-10-05',
+      });
+
+      // Only sets from workout 1 (reps: 7, 8)
+      expect(prs).toHaveLength(2);
+      expect(prs.map((p) => p.reps)).toEqual([7, 8]);
+      expect(prs[0].weight).toBe(100);
+      expect(prs[1].weight).toBe(100);
+    });
+
+    it('supports multiple exercise IDs for cross-variant aggregation', async () => {
+      // bench_press (7, 8 reps) + overhead_press (6 reps)
+      const prs = await repo.getRepMaxSets({
+        exerciseIds: ['bench_press', 'overhead_press'],
+      });
+
+      expect(prs).toHaveLength(3);
+      expect(prs.map((p) => p.reps)).toEqual([6, 7, 8]);
+      expect(prs[0].exerciseId).toBe('overhead_press');
+      expect(prs[0].weight).toBe(60.0);
+    });
+
+    it('excludes sets from incomplete or discarded workouts', async () => {
+      const prs = await repo.getRepMaxSets({
+        exerciseIds: ['bench_press'],
+      });
+
+      expect(prs.every((p) => p.workoutId !== 'workout_in_progress')).toBe(true);
+      expect(prs.every((p) => p.workoutId !== 'workout_discarded')).toBe(true);
+    });
+  });
 });

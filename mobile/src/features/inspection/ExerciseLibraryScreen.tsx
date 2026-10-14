@@ -24,6 +24,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import {
   Exercise,
@@ -32,11 +33,16 @@ import {
   WeightUnit,
 } from '../../core/types';
 import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
+import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
+import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
 import { ExerciseFormModal } from './ExerciseFormModal';
+import { ExerciseDetailScreen } from './ExerciseDetailScreen';
 
 export interface ExerciseLibraryScreenProps {
   exerciseRepo: IExerciseRepository;
+  workoutRepo?: IWorkoutRepository;
+  gearRepo?: IGearRepository;
   userSettingsRepo?: IUserSettingsRepository;
   onSelectExercise?: (exercise: Exercise) => void;
   onClose?: () => void;
@@ -70,6 +76,8 @@ const CATEGORY_FILTER_CHIPS: (ExerciseCategory | 'All')[] = [
 
 export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
   exerciseRepo,
+  workoutRepo,
+  gearRepo,
   userSettingsRepo,
   onSelectExercise,
   onClose,
@@ -91,6 +99,7 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
   // Modal states
   const [formModalVisible, setFormModalVisible] = useState<boolean>(false);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+  const [inspectingExerciseId, setInspectingExerciseId] = useState<string | null>(null);
 
   // Load all exercises & unit system
   const refreshCatalog = useCallback(async () => {
@@ -263,6 +272,8 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
               onSelectExercise(item);
             } else if (viewMode === 'tree' && hasVariants) {
               toggleExpandRoot(item.id);
+            } else if (workoutRepo) {
+              setInspectingExerciseId(item.id);
             } else if (item.is_custom) {
               handleOpenEditModal(item);
             }
@@ -338,24 +349,38 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
           </View>
         </TouchableOpacity>
 
-        {/* Custom exercise action buttons */}
-        {item.is_custom && (
+        {/* Exercise action buttons */}
+        {(workoutRepo || item.is_custom) && (
           <View style={styles.cardActionsRow}>
-            <TouchableOpacity
-              testID={`edit-exercise-${item.id}`}
-              style={styles.cardActionBtn}
-              onPress={() => handleOpenEditModal(item)}
-            >
-              <Text style={styles.cardActionBtnText}>Edit</Text>
-            </TouchableOpacity>
+            {workoutRepo && (
+              <TouchableOpacity
+                testID={`inspect-exercise-${item.id}`}
+                style={styles.cardInspectBtn}
+                onPress={() => setInspectingExerciseId(item.id)}
+              >
+                <Text style={styles.cardInspectBtnText}>Inspect PRs ➔</Text>
+              </TouchableOpacity>
+            )}
 
-            <TouchableOpacity
-              testID={`delete-exercise-${item.id}`}
-              style={styles.cardDeleteBtn}
-              onPress={() => handleDeleteExercise(item)}
-            >
-              <Text style={styles.cardDeleteBtnText}>Delete</Text>
-            </TouchableOpacity>
+            {item.is_custom && (
+              <>
+                <TouchableOpacity
+                  testID={`edit-exercise-${item.id}`}
+                  style={styles.cardActionBtn}
+                  onPress={() => handleOpenEditModal(item)}
+                >
+                  <Text style={styles.cardActionBtnText}>Edit</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  testID={`delete-exercise-${item.id}`}
+                  style={styles.cardDeleteBtn}
+                  onPress={() => handleDeleteExercise(item)}
+                >
+                  <Text style={styles.cardDeleteBtnText}>Delete</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
 
@@ -551,6 +576,24 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
         }}
         onSave={handleSaveExercise}
       />
+
+      {/* Full-Screen Exercise Detail Modal */}
+      {inspectingExerciseId && workoutRepo && (
+        <Modal
+          visible={!!inspectingExerciseId}
+          animationType="slide"
+          onRequestClose={() => setInspectingExerciseId(null)}
+        >
+          <ExerciseDetailScreen
+            exerciseId={inspectingExerciseId}
+            exerciseRepo={exerciseRepo}
+            workoutRepo={workoutRepo}
+            gearRepo={gearRepo}
+            userSettingsRepo={userSettingsRepo}
+            onClose={() => setInspectingExerciseId(null)}
+          />
+        </Modal>
+      )}
     </View>
   );
 };
@@ -884,6 +927,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#F87171',
     fontWeight: '700',
+  },
+  cardInspectBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0, 230, 118, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.3)',
+    marginRight: 6,
+  },
+  cardInspectBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00E676',
   },
   treeChildrenContainer: {
     marginTop: 4,

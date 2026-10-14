@@ -184,8 +184,8 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
   });
 
   describe('3. SetRowComponent Logic & Interactions', () => {
-    test('cycling set types transitions through working -> warmup -> drop -> myorep -> failure -> working', () => {
-      const SET_TYPE_ORDER: SetType[] = ['working', 'warmup', 'drop', 'myorep', 'failure'];
+    test('cycling set types transitions through working -> warmup -> drop -> myorep -> dc -> working', () => {
+      const SET_TYPE_ORDER: SetType[] = ['working', 'warmup', 'drop', 'myorep', 'dc'];
 
       let currentType: SetType = 'working';
       const getNextType = (curr: SetType): SetType => {
@@ -200,9 +200,58 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
       currentType = getNextType(currentType);
       expect(currentType).toBe('myorep');
       currentType = getNextType(currentType);
-      expect(currentType).toBe('failure');
+      expect(currentType).toBe('dc');
       currentType = getNextType(currentType);
       expect(currentType).toBe('working');
+    });
+
+    test('badge labels correctly display Reg, Warm, Drop, Myo, DC', () => {
+      const SET_TYPE_LABELS: Record<SetType, string> = {
+        working: 'Reg',
+        warmup: 'Warm',
+        drop: 'Drop',
+        myorep: 'Myo',
+        dc: 'DC',
+      };
+
+      expect(SET_TYPE_LABELS['working']).toBe('Reg');
+      expect(SET_TYPE_LABELS['warmup']).toBe('Warm');
+      expect(SET_TYPE_LABELS['drop']).toBe('Drop');
+      expect(SET_TYPE_LABELS['myorep']).toBe('Myo');
+      expect(SET_TYPE_LABELS['dc']).toBe('DC');
+    });
+
+    test('rest timer durations by set type: drop=0s, myorep=10s, dc=30s', () => {
+      const getRestDurationForSet = (setType: SetType, defaultRestSeconds: number): number | null => {
+        if (setType === 'drop') return 0; // 0s rest (suppress/reset)
+        if (setType === 'myorep') return 10;
+        if (setType === 'dc') return 30;
+        return defaultRestSeconds;
+      };
+
+      expect(getRestDurationForSet('drop', 90)).toBe(0);
+      expect(getRestDurationForSet('myorep', 90)).toBe(10);
+      expect(getRestDurationForSet('dc', 90)).toBe(30);
+      expect(getRestDurationForSet('working', 90)).toBe(90);
+      expect(getRestDurationForSet('warmup', 90)).toBe(90);
+    });
+
+    test('decimal parsing handles both period and comma separators', () => {
+      const parseWeightInput = (text: string): { sanitized: string; num: number } => {
+        const normalized = text.replace(',', '.');
+        const cleaned = normalized.replace(/[^0-9.]/g, '');
+        const parts = cleaned.split('.');
+        const sanitized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+        const num = sanitized === '' || sanitized === '.' ? 0 : parseFloat(sanitized);
+        return { sanitized, num: isNaN(num) ? 0 : num };
+      };
+
+      expect(parseWeightInput('62.5')).toEqual({ sanitized: '62.5', num: 62.5 });
+      expect(parseWeightInput('62,5')).toEqual({ sanitized: '62.5', num: 62.5 });
+      expect(parseWeightInput('100')).toEqual({ sanitized: '100', num: 100 });
+      expect(parseWeightInput('62.')).toEqual({ sanitized: '62.', num: 62 });
+      expect(parseWeightInput('62,')).toEqual({ sanitized: '62.', num: 62 });
+      expect(parseWeightInput('')).toEqual({ sanitized: '', num: 0 });
     });
 
     test('copying ghost values fills all mechanical and intensity fields', () => {
@@ -822,6 +871,30 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
         groupExercises
       );
       expect(shouldTriggerForLunge).toBe(true);
+    });
+
+    test('Finishing workout preserves superset groupings on sets for immediate summary', async () => {
+      const activeWorkout = await sessionService.startWorkout({ name: 'Superset Finish Test' });
+      await sessionService.addSet(activeWorkout.id, { exerciseId: 'ex-squat', rawInputWeight: 120, reps: 5 });
+      await sessionService.addSet(activeWorkout.id, { exerciseId: 'ex-lunge', rawInputWeight: 30, reps: 10 });
+
+      // Group exercises into a superset
+      const groupId = await sessionService.groupExercises(activeWorkout.id, ['ex-squat', 'ex-lunge']);
+      expect(groupId).toBeDefined();
+
+      // Finish workout
+      const finished = await sessionService.finishWorkout(activeWorkout.id, {
+        notes: 'Supersets felt strong',
+      });
+
+      expect(finished.status).toBe('completed');
+      expect(finished.notes).toBe('Supersets felt strong');
+
+      // Verify sets in the finished workout still retain the exercise_group_id for summary modal display
+      const finishedSets = await workoutRepo.getSetsByWorkoutId(finished.id);
+      expect(finishedSets.length).toBe(2);
+      expect(finishedSets[0].exercise_group_id).toBe(groupId);
+      expect(finishedSets[1].exercise_group_id).toBe(groupId);
     });
   });
 });

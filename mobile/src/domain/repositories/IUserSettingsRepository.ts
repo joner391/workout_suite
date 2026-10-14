@@ -1,4 +1,4 @@
-import { IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
+import { Gender, IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
 
 /**
  * Well-known settings keys used throughout the mobile application.
@@ -7,6 +7,8 @@ export const SETTINGS_KEYS = {
   UNIT_SYSTEM: 'unit_system',
   INTENSITY_METRIC: 'intensity_metric',
   PURE_UTILITY_MODE: 'pure_utility_mode',
+  USER_GENDER: 'user_gender',
+  USER_BODYWEIGHT_KG: 'user_bodyweight_kg',
 } as const;
 
 /**
@@ -66,4 +68,24 @@ export interface IUserSettingsRepository {
    * Enables or disables pure utility mode.
    */
   setPureUtilityMode(enabled: boolean): Promise<void>;
+
+  /**
+   * Retrieves the user's biological gender for strength standard scaling. Defaults to 'male'.
+   */
+  getUserGender(): Promise<Gender>;
+
+  /**
+   * Sets the user's biological gender.
+   */
+  setUserGender(gender: Gender): Promise<void>;
+
+  /**
+   * Retrieves the user's latest logged bodyweight in kg, or null if unset.
+   */
+  getUserBodyweight(): Promise<number | null>;
+
+  /**
+   * Sets the user's bodyweight in kg, or removes it if null.
+   */
+  setUserBodyweight(weightKg: number | null): Promise<void>;
 }

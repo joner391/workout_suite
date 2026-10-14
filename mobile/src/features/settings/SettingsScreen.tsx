@@ -458,6 +458,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         >
           <ExerciseLibraryScreen
             exerciseRepo={exerciseRepo}
+            workoutRepo={workoutRepo}
+            gearRepo={gearRepo}
             userSettingsRepo={userSettingsRepo}
             onClose={() => setShowExerciseLibrary(false)}
           />

@@ -273,5 +273,50 @@ describe('SQLiteWorkoutRepository', () => {
       expect(executedSql).toContain("AND w.status = 'completed'");
       expect(executedSql).toContain('ORDER BY s.created_at ASC');
     });
+
+    it('queries heaviest rep-max sets with window function and optional date filters', async () => {
+      const mockRepMaxRow = {
+        setId: 'set_pr_1',
+        workoutId: 'workout_123',
+        exerciseId: 'barbell_bench_press',
+        reps: 5,
+        weight: 120.0,
+        rawInputWeight: 120.0,
+        rpe: 9.0,
+        rir: 1.0,
+        workoutDate: '2026-10-13',
+      };
+
+      mockDb.mockData.set('PARTITION BY s.reps', [mockRepMaxRow]);
+
+      const results = await repo.getRepMaxSets({
+        exerciseIds: ['barbell_bench_press', 'incline_dumbbell_press'],
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].reps).toBe(5);
+      expect(results[0].weight).toBe(120.0);
+      expect(results[0].workoutDate).toBe('2026-10-13');
+
+      const executedSql = mockDb.executedQueries[0].sql;
+      expect(executedSql).toContain('ROW_NUMBER() OVER');
+      expect(executedSql).toContain('PARTITION BY s.reps');
+      expect(executedSql).toContain('w.date >= ?');
+      expect(executedSql).toContain('w.date <= ?');
+      expect(mockDb.executedQueries[0].params).toEqual([
+        'barbell_bench_press',
+        'incline_dumbbell_press',
+        '2026-01-01',
+        '2026-12-31',
+      ]);
+    });
+
+    it('returns empty array when exerciseIds is empty', async () => {
+      const results = await repo.getRepMaxSets({ exerciseIds: [] });
+      expect(results).toEqual([]);
+      expect(mockDb.executedQueries).toHaveLength(0);
+    });
   });
 });

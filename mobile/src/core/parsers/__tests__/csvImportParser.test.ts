@@ -125,9 +125,12 @@ describe('CSV Import Parser', () => {
       expect(mapSetType('warmup')).toBe('warmup');
       expect(mapSetType('D')).toBe('drop');
       expect(mapSetType('dropset')).toBe('drop');
-      expect(mapSetType('F')).toBe('failure');
-      expect(mapSetType('failure')).toBe('failure');
+      expect(mapSetType('F')).toBe('working');
+      expect(mapSetType('failure')).toBe('working');
       expect(mapSetType('myorep')).toBe('myorep');
+      expect(mapSetType('myo')).toBe('myorep');
+      expect(mapSetType('DC')).toBe('dc');
+      expect(mapSetType('doggcrapp')).toBe('dc');
       expect(mapSetType('1')).toBe('working');
       expect(mapSetType('normal')).toBe('working');
     });

@@ -8,4 +8,6 @@ export * from './exerciseSubstitutionService';
 export * from './crashRecoveryService';
 export * from './gearInventoryService';
 export * from './exportService';
+export * from './importService';
+export * from './exerciseInspectionService';
 

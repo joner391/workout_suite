@@ -22,6 +22,8 @@ import {
   formatDuration,
   formatDateTime,
   formatIntensityValue,
+  computeSupersetInfo,
+  SupersetInfo,
 } from '../SessionDetailModal';
 import {
   Workout,
@@ -381,6 +383,154 @@ describe('Calendar Features & Grid Generation Logic (Step 1.6)', () => {
     it('should return dash when neither RPE nor RIR is provided', () => {
       expect(formatIntensityValue(baseSet, 'RPE')).toBe('—');
       expect(formatIntensityValue(baseSet, 'RIR')).toBe('—');
+    });
+  });
+
+  describe('computeSupersetInfo & Completed Session Superset Identification', () => {
+    const baseSet: WorkoutSet = {
+      id: 's-1',
+      workout_id: 'w-1',
+      exercise_id: 'ex-bench',
+      gear_id: null,
+      set_number: 1,
+      weight: 100,
+      raw_input_weight: 100,
+      added_weight: null,
+      reps: 8,
+      reps_right: null,
+      rpe: 8,
+      rir: null,
+      set_type: 'working',
+      set_notes: null,
+      exercise_group_id: null,
+      created_at: '2026-10-14T10:00:00Z',
+    };
+
+    it('returns empty maps when no sets have exercise_group_id', () => {
+      const sets: WorkoutSet[] = [
+        { ...baseSet, id: 's-1', exercise_id: 'ex-squat' },
+        { ...baseSet, id: 's-2', exercise_id: 'ex-bench' },
+      ];
+      const result = computeSupersetInfo(sets);
+      expect(result.exerciseMap.size).toBe(0);
+      expect(result.setMap.size).toBe(0);
+    });
+
+    it('maps paired exercises to Superset A with SS A1 and SS A2 badges', () => {
+      const sets: WorkoutSet[] = [
+        { ...baseSet, id: 's-1', exercise_id: 'ex-bench', exercise_group_id: 'grp-pair-1' },
+        { ...baseSet, id: 's-2', exercise_id: 'ex-row', exercise_group_id: 'grp-pair-1' },
+        { ...baseSet, id: 's-3', exercise_id: 'ex-bench', exercise_group_id: 'grp-pair-1' },
+        { ...baseSet, id: 's-4', exercise_id: 'ex-row', exercise_group_id: 'grp-pair-1' },
+      ];
+      const result = computeSupersetInfo(sets);
+
+      expect(result.exerciseMap.size).toBe(2);
+      expect(result.exerciseMap.get('ex-bench')).toEqual({
+        groupLetter: 'A',
+        exerciseIndex: 1,
+        badgeLabel: 'SS A1',
+        groupLabel: 'Superset A',
+      });
+      expect(result.exerciseMap.get('ex-row')).toEqual({
+        groupLetter: 'A',
+        exerciseIndex: 2,
+        badgeLabel: 'SS A2',
+        groupLabel: 'Superset A',
+      });
+
+      expect(result.setMap.size).toBe(4);
+      expect(result.setMap.get('s-1')?.badgeLabel).toBe('SS A1');
+      expect(result.setMap.get('s-2')?.badgeLabel).toBe('SS A2');
+      expect(result.setMap.get('s-3')?.badgeLabel).toBe('SS A1');
+      expect(result.setMap.get('s-4')?.badgeLabel).toBe('SS A2');
+    });
+
+    it('handles giant sets with 3+ exercises mapped to SS A1, SS A2, SS A3', () => {
+      const sets: WorkoutSet[] = [
+        { ...baseSet, id: 's-1', exercise_id: 'ex-1', exercise_group_id: 'grp-giant' },
+        { ...baseSet, id: 's-2', exercise_id: 'ex-2', exercise_group_id: 'grp-giant' },
+        { ...baseSet, id: 's-3', exercise_id: 'ex-3', exercise_group_id: 'grp-giant' },
+      ];
+      const result = computeSupersetInfo(sets);
+
+      expect(result.exerciseMap.get('ex-1')?.badgeLabel).toBe('SS A1');
+      expect(result.exerciseMap.get('ex-2')?.badgeLabel).toBe('SS A2');
+      expect(result.exerciseMap.get('ex-3')?.badgeLabel).toBe('SS A3');
+    });
+
+    it('assigns ascending letters for multiple distinct superset groups in order', () => {
+      const sets: WorkoutSet[] = [
+        // Superset A
+        { ...baseSet, id: 's-1', exercise_id: 'ex-squat', exercise_group_id: 'grp-1' },
+        { ...baseSet, id: 's-2', exercise_id: 'ex-calf', exercise_group_id: 'grp-1' },
+        // Straight set (no group)
+        { ...baseSet, id: 's-3', exercise_id: 'ex-ohp', exercise_group_id: null },
+        // Superset B
+        { ...baseSet, id: 's-4', exercise_id: 'ex-bicep', exercise_group_id: 'grp-2' },
+        { ...baseSet, id: 's-5', exercise_id: 'ex-tricep', exercise_group_id: 'grp-2' },
+      ];
+      const result = computeSupersetInfo(sets);
+
+      expect(result.exerciseMap.get('ex-squat')?.badgeLabel).toBe('SS A1');
+      expect(result.exerciseMap.get('ex-calf')?.badgeLabel).toBe('SS A2');
+      expect(result.exerciseMap.get('ex-ohp')).toBeUndefined();
+      expect(result.exerciseMap.get('ex-bicep')?.badgeLabel).toBe('SS B1');
+      expect(result.exerciseMap.get('ex-tricep')?.badgeLabel).toBe('SS B2');
+
+      expect(result.setMap.get('s-3')).toBeUndefined();
+      expect(result.setMap.get('s-4')?.badgeLabel).toBe('SS B1');
+      expect(result.setMap.get('s-5')?.badgeLabel).toBe('SS B2');
+    });
+
+    it('preserves exercise execution order and set grouping for historical session summaries', async () => {
+      const workoutWithSupersets: Workout = {
+        id: 'wk-superset-summary',
+        template_id: null,
+        date: '2026-10-14',
+        name: 'Antagonist Superset Upper',
+        notes: 'Great pump',
+        started_at: '2026-10-14T12:00:00Z',
+        duration_seconds: 2400,
+        status: 'completed',
+        completed_at: '2026-10-14T12:40:00Z',
+        imported_from: null,
+      };
+
+      await workoutRepo.create(workoutWithSupersets);
+
+      const sets: WorkoutSet[] = [
+        {
+          ...baseSet,
+          id: 'set-bench-1',
+          workout_id: workoutWithSupersets.id,
+          exercise_id: 'ex-bench',
+          exercise_group_id: 'grp-antagonist',
+          weight: 100,
+          reps: 8,
+        },
+        {
+          ...baseSet,
+          id: 'set-squat-1',
+          workout_id: workoutWithSupersets.id,
+          exercise_id: 'ex-squat',
+          exercise_group_id: 'grp-antagonist',
+          weight: 140,
+          reps: 5,
+        },
+      ];
+
+      await workoutRepo.saveSets(sets);
+
+      const retrieved = await workoutRepo.getWorkoutWithSets(workoutWithSupersets.id);
+      expect(retrieved).not.toBeNull();
+      expect(retrieved!.sets.length).toBe(2);
+
+      const supersetMapping = computeSupersetInfo(retrieved!.sets);
+      expect(supersetMapping.exerciseMap.get('ex-bench')?.badgeLabel).toBe('SS A1');
+      expect(supersetMapping.exerciseMap.get('ex-squat')?.badgeLabel).toBe('SS A2');
+      expect(supersetMapping.setMap.get('set-bench-1')?.badgeLabel).toBe('SS A1');
+      expect(supersetMapping.setMap.get('set-squat-1')?.badgeLabel).toBe('SS A2');
     });
   });
 });

@@ -43,14 +43,14 @@ export interface SetRowProps {
   onOpenPlateCalculator?: (targetWeightKg: number) => void;
 }
 
-const SET_TYPE_ORDER: SetType[] = ['working', 'warmup', 'drop', 'myorep', 'failure'];
+const SET_TYPE_ORDER: SetType[] = ['working', 'warmup', 'drop', 'myorep', 'dc'];
 
 const SET_TYPE_LABELS: Record<SetType, string> = {
-  working: '',
-  warmup: 'W',
-  drop: 'D',
-  myorep: 'M',
-  failure: 'F',
+  working: 'Reg',
+  warmup: 'Warm',
+  drop: 'Drop',
+  myorep: 'Myo',
+  dc: 'DC',
 };
 
 const SET_TYPE_COLORS: Record<SetType, { bg: string; text: string }> = {
@@ -58,7 +58,7 @@ const SET_TYPE_COLORS: Record<SetType, { bg: string; text: string }> = {
   warmup: { bg: '#854D0E', text: '#FEF08A' }, // Amber
   drop: { bg: '#581C87', text: '#E9D5FF' }, // Purple
   myorep: { bg: '#164E63', text: '#A5F3FC' }, // Cyan
-  failure: { bg: '#7F1D1D', text: '#FECACA' }, // Red
+  dc: { bg: '#1E3A8A', text: '#BFDBFE' }, // Blue/Indigo
 };
 
 export const SetRowComponent: React.FC<SetRowProps> = ({
@@ -78,6 +78,8 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
   const [internalExpanded, setInternalExpanded] = useState<boolean>(false);
   const [showNotes, setShowNotes] = useState<boolean>(!!set.set_notes);
   const [notesText, setNotesText] = useState<string>(set.set_notes ?? '');
+  const [weightInput, setWeightInput] = useState<string | null>(null);
+  const [intensityInput, setIntensityInput] = useState<string | null>(null);
 
   const isExpanded = propIsExpanded !== undefined ? propIsExpanded : internalExpanded;
 
@@ -99,6 +101,8 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
   // Copy ghost values into current set
   const handleCopyGhostValues = () => {
     if (!ghostSet) return;
+    setWeightInput(null);
+    setIntensityInput(null);
     onUpdateSet({
       raw_input_weight: ghostSet.raw_input_weight,
       weight: ghostSet.weight,
@@ -109,17 +113,36 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
     });
   };
 
-  // Handle weight change
+  // Handle weight change (supports '.' and ',' as decimal separator)
   const handleWeightChange = (text: string) => {
-    const cleaned = text.replace(/[^0-9.]/g, '');
-    const num = parseFloat(cleaned);
-    onUpdateSet({
-      raw_input_weight: isNaN(num) ? 0 : num,
-    });
+    const normalized = text.replace(',', '.');
+    const cleaned = normalized.replace(/[^0-9.]/g, '');
+    const parts = cleaned.split('.');
+    const sanitized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+
+    setWeightInput(sanitized);
+
+    if (sanitized === '' || sanitized === '.') {
+      onUpdateSet({
+        raw_input_weight: 0,
+      });
+    } else {
+      const num = parseFloat(sanitized);
+      if (!isNaN(num)) {
+        onUpdateSet({
+          raw_input_weight: num,
+        });
+      }
+    }
+  };
+
+  const handleWeightBlur = () => {
+    setWeightInput(null);
   };
 
   // Step weight by delta
   const handleStepWeight = (delta: number) => {
+    setWeightInput(null);
     const current = set.raw_input_weight || 0;
     const next = Math.max(0, Math.round((current + delta) * 10) / 10);
     onUpdateSet({ raw_input_weight: next });
@@ -157,10 +180,16 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
     onUpdateSet({ reps_right: next });
   };
 
-  // Handle intensity metric (RPE or RIR) change
+  // Handle intensity metric (RPE or RIR) change (supports '.' and ',' as decimal separator)
   const handleIntensityChange = (text: string) => {
-    const cleaned = text.replace(/[^0-9.]/g, '');
-    if (cleaned === '') {
+    const normalized = text.replace(',', '.');
+    const cleaned = normalized.replace(/[^0-9.]/g, '');
+    const parts = cleaned.split('.');
+    const sanitized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+
+    setIntensityInput(sanitized);
+
+    if (sanitized === '' || sanitized === '.') {
       if (intensityMetric === 'RPE') {
         onUpdateSet({ rpe: null });
       } else {
@@ -168,7 +197,7 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
       }
       return;
     }
-    const num = parseFloat(cleaned);
+    const num = parseFloat(sanitized);
     if (intensityMetric === 'RPE') {
       onUpdateSet({ rpe: isNaN(num) ? null : num });
     } else {
@@ -176,8 +205,13 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
     }
   };
 
+  const handleIntensityBlur = () => {
+    setIntensityInput(null);
+  };
+
   // Step intensity by +/- 0.5 (allowing values under 6.0 RPE)
   const handleStepIntensity = (delta: number) => {
+    setIntensityInput(null);
     if (intensityMetric === 'RPE') {
       const current = set.rpe ?? 8.0;
       const next = Math.min(10.0, Math.max(1.0, Math.round((current + delta) * 2) / 2));
@@ -191,6 +225,7 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
 
   // Clear intensity metric
   const handleClearIntensity = () => {
+    setIntensityInput(null);
     onUpdateSet({ rpe: null, rir: null });
   };
 
@@ -201,10 +236,8 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
   };
 
   // Determine tag display text
-  const typeBadgeLabel = set.set_type === 'working'
-    ? `${set.set_number}`
-    : SET_TYPE_LABELS[set.set_type];
-  const typeBadgeColor = SET_TYPE_COLORS[set.set_type];
+  const typeBadgeLabel = SET_TYPE_LABELS[set.set_type] || 'Reg';
+  const typeBadgeColor = SET_TYPE_COLORS[set.set_type] || SET_TYPE_COLORS.working;
 
   // Ghost display string (formats unilateral L/R reps as weight × L/R)
   const ghostDisplay = ghostSet
@@ -254,8 +287,9 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
               keyboardType="decimal-pad"
               placeholder={ghostSet ? `${ghostSet.raw_input_weight}` : '0'}
               placeholderTextColor="#71717A"
-              value={set.raw_input_weight > 0 ? `${set.raw_input_weight}` : ''}
+              value={weightInput !== null ? weightInput : (set.raw_input_weight > 0 ? `${set.raw_input_weight}` : '')}
               onChangeText={handleWeightChange}
+              onBlur={handleWeightBlur}
               editable={!isCompleted}
               onFocus={() => { if (!isExpanded) toggleExpand(); }}
             />
@@ -325,11 +359,14 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
             placeholder="—"
             placeholderTextColor="#71717A"
             value={
-              intensityMetric === 'RPE'
-                ? (set.rpe !== null ? `${set.rpe}` : '')
-                : (set.rir !== null ? `${set.rir}` : '')
+              intensityInput !== null
+                ? intensityInput
+                : intensityMetric === 'RPE'
+                  ? (set.rpe !== null ? `${set.rpe}` : '')
+                  : (set.rir !== null ? `${set.rir}` : '')
             }
             onChangeText={handleIntensityChange}
+            onBlur={handleIntensityBlur}
             editable={!isCompleted}
             onFocus={() => { if (!isExpanded) toggleExpand(); }}
           />
@@ -560,15 +597,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   typeBadge: {
-    width: 32,
+    minWidth: 46,
     height: 34,
+    paddingHorizontal: 6,
     borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 6,
   },
   typeBadgeText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
   ghostColumn: {

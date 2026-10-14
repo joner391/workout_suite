@@ -3,6 +3,8 @@ import {
   WorkoutFilter,
   WorkoutSet,
   WorkoutWithSets,
+  RepMaxQueryOptions,
+  RawRepMaxRow,
 } from '../../core/types';
 
 /**
@@ -111,4 +113,10 @@ export interface IWorkoutRepository {
     exerciseId: string,
     options?: { onlyCompletedWorkouts?: boolean }
   ): Promise<WorkoutSet[]>;
+
+  /**
+   * Extracts the heaviest completed sets per unique completed repetition count
+   * (e.g. 1RM, 2RM, 3RM, 5RM, etc.), with optional date scoping and cross-variant exercise filtering.
+   */
+  getRepMaxSets(options: RepMaxQueryOptions): Promise<RawRepMaxRow[]>;
 }

@@ -389,11 +389,15 @@ export function mapSetType(raw: string): SetType {
   if (norm === 'd' || norm === 'drop' || norm === 'dropset') {
     return 'drop';
   }
-  if (norm === 'f' || norm === 'failure') {
-    return 'failure';
-  }
   if (norm === 'myo' || norm === 'myorep') {
     return 'myorep';
+  }
+  if (norm === 'dc' || norm === 'doggcrapp') {
+    return 'dc';
+  }
+  // Legacy 'failure' sets map to 'working' set (with RPE 10 / RIR 0)
+  if (norm === 'f' || norm === 'failure') {
+    return 'working';
   }
   return 'working';
 }
@@ -491,6 +495,11 @@ export function parseStrongCsv(text: string): CsvParseResult {
     const rpe = rawRpe ? parseFloat(rawRpe) : null;
     const rir = rpe != null ? Math.max(0, 10 - rpe) : null;
 
+    const normRawOrder = rawSetOrder.trim().toLowerCase();
+    const isFailureSet = normRawOrder === 'f' || normRawOrder === 'failure';
+    const effectiveRpe = rpe && !isNaN(rpe) ? rpe : (isFailureSet ? 10.0 : null);
+    const effectiveRir = rir && !isNaN(rir) ? rir : (isFailureSet ? 0.0 : null);
+
     const setType = mapSetType(rawSetOrder);
     const setNotes = getCol(row, 'notes');
 
@@ -504,8 +513,8 @@ export function parseStrongCsv(text: string): CsvParseResult {
       rawInputWeightKg,
       reps,
       repsRight: null,
-      rpe: rpe && !isNaN(rpe) ? rpe : null,
-      rir: rir && !isNaN(rir) ? rir : null,
+      rpe: effectiveRpe,
+      rir: effectiveRir,
       setType,
       notes: setNotes || null,
       exerciseGroupId: null,
@@ -630,6 +639,11 @@ export function parseHevyCsv(text: string): CsvParseResult {
     const rir = rpe != null ? Math.max(0, 10 - rpe) : null;
 
     const rawSetType = getCol(row, 'set_type');
+    const normSetType = rawSetType.trim().toLowerCase();
+    const isFailureSet = normSetType === 'f' || normSetType === 'failure';
+    const effectiveRpe = rpe && !isNaN(rpe) ? rpe : (isFailureSet ? 10.0 : null);
+    const effectiveRir = rir && !isNaN(rir) ? rir : (isFailureSet ? 0.0 : null);
+
     const setType = mapSetType(rawSetType);
     const setNotes = getCol(row, 'exercise_notes');
     const supersetId = getCol(row, 'superset_id') || null;
@@ -644,8 +658,8 @@ export function parseHevyCsv(text: string): CsvParseResult {
       rawInputWeightKg,
       reps,
       repsRight: null,
-      rpe: rpe && !isNaN(rpe) ? rpe : null,
-      rir: rir && !isNaN(rir) ? rir : null,
+      rpe: effectiveRpe,
+      rir: effectiveRir,
       setType,
       notes: setNotes || null,
       exerciseGroupId: supersetId,
@@ -796,6 +810,11 @@ export function parseGenericCsv(
     const rir = rawRir ? parseFloat(rawRir) : rpe != null ? Math.max(0, 10 - rpe) : null;
 
     const rawSetType = getCol(row, setTypeCol);
+    const normSetType = rawSetType.trim().toLowerCase();
+    const isFailureSet = normSetType === 'f' || normSetType === 'failure';
+    const effectiveRpe = rpe && !isNaN(rpe) ? rpe : (isFailureSet ? 10.0 : null);
+    const effectiveRir = rir && !isNaN(rir) ? rir : (isFailureSet ? 0.0 : null);
+
     const setType = mapSetType(rawSetType);
     const setNotes = getCol(row, notesCol);
     const supersetId = getCol(row, supersetCol) || null;
@@ -810,8 +829,8 @@ export function parseGenericCsv(
       rawInputWeightKg,
       reps,
       repsRight: null,
-      rpe: rpe && !isNaN(rpe) ? rpe : null,
-      rir: rir && !isNaN(rir) ? rir : null,
+      rpe: effectiveRpe,
+      rir: effectiveRir,
       setType,
       notes: setNotes || null,
       exerciseGroupId: supersetId,

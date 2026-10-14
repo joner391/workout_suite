@@ -7,6 +7,8 @@ import {
   WorkoutSet,
   WorkoutStatus,
   WorkoutWithSets,
+  RepMaxQueryOptions,
+  RawRepMaxRow,
 } from '../../core/types';
 import { ISQLiteDatabase } from '../schema';
 
@@ -361,5 +363,71 @@ export class SQLiteWorkoutRepository implements IWorkoutRepository {
 
     const rows = await this.db.getAllAsync<WorkoutSetRow>(sql, ...params);
     return rows.map(mapRowToWorkoutSet);
+  }
+
+  async getRepMaxSets(options: RepMaxQueryOptions): Promise<RawRepMaxRow[]> {
+    if (!options.exerciseIds || options.exerciseIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = options.exerciseIds.map(() => '?').join(', ');
+    const params: any[] = [...options.exerciseIds];
+
+    let dateClause = '';
+    if (options.startDate) {
+      dateClause += ' AND w.date >= ?';
+      params.push(options.startDate);
+    }
+    if (options.endDate) {
+      dateClause += ' AND w.date <= ?';
+      params.push(options.endDate);
+    }
+
+    const sql = `
+      WITH RankedSets AS (
+        SELECT 
+          s.id AS setId,
+          s.workout_id AS workoutId,
+          s.exercise_id AS exerciseId,
+          s.reps AS reps,
+          s.weight AS weight,
+          s.raw_input_weight AS rawInputWeight,
+          s.rpe AS rpe,
+          s.rir AS rir,
+          w.date AS workoutDate,
+          ROW_NUMBER() OVER (
+            PARTITION BY s.reps 
+            ORDER BY s.weight DESC, 
+                     COALESCE(s.rpe, 10.0 - COALESCE(s.rir, 0.0)) DESC, 
+                     w.date DESC, 
+                     s.created_at DESC
+          ) AS rn
+        FROM workout_sets s
+        INNER JOIN workouts w ON s.workout_id = w.id
+        WHERE w.status = 'completed'
+          AND s.reps > 0
+          AND s.weight > 0
+          AND s.exercise_id IN (${placeholders})
+          ${dateClause}
+      )
+      SELECT 
+        setId, workoutId, exerciseId, reps, weight, rawInputWeight, rpe, rir, workoutDate
+      FROM RankedSets
+      WHERE rn = 1
+      ORDER BY reps ASC;
+    `;
+
+    const rows = await this.db.getAllAsync<any>(sql, ...params);
+    return rows.map((r) => ({
+      setId: String(r.setId),
+      workoutId: String(r.workoutId),
+      exerciseId: String(r.exerciseId),
+      reps: Number(r.reps),
+      weight: Number(r.weight),
+      rawInputWeight: Number(r.rawInputWeight),
+      rpe: r.rpe !== null && r.rpe !== undefined ? Number(r.rpe) : null,
+      rir: r.rir !== null && r.rir !== undefined ? Number(r.rir) : null,
+      workoutDate: String(r.workoutDate),
+    }));
   }
 }

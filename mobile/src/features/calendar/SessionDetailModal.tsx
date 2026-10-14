@@ -43,8 +43,78 @@ export interface SessionDetailModalProps {
   userSettingsRepo?: IUserSettingsRepository;
   unitSystem?: WeightUnit;
   intensityMetric?: IntensityMetric;
+  isImmediateSummary?: boolean;
   onClose: () => void;
   onDeleteSession?: (workoutId: string) => void;
+}
+
+export interface SupersetInfo {
+  groupLetter: string;
+  exerciseIndex: number;
+  badgeLabel: string;
+  groupLabel: string;
+}
+
+/**
+ * Computes deterministic superset identification labels from workout sets.
+ * Maps each unique exercise_group_id to an alphabetical letter (A, B, C...)
+ * and each exercise within that group to an index (1, 2, 3...),
+ * generating badge labels like "SS A1", "SS A2".
+ */
+export function computeSupersetInfo(sets: WorkoutSet[]): {
+  exerciseMap: Map<string, SupersetInfo>;
+  setMap: Map<string, SupersetInfo>;
+} {
+  const groupOrder: string[] = [];
+  const groupExercises = new Map<string, string[]>();
+
+  for (const set of sets) {
+    if (set.exercise_group_id) {
+      if (!groupOrder.includes(set.exercise_group_id)) {
+        groupOrder.push(set.exercise_group_id);
+        groupExercises.set(set.exercise_group_id, []);
+      }
+      const exList = groupExercises.get(set.exercise_group_id)!;
+      if (!exList.includes(set.exercise_id)) {
+        exList.push(set.exercise_id);
+      }
+    }
+  }
+
+  const exerciseMap = new Map<string, SupersetInfo>();
+  const setMap = new Map<string, SupersetInfo>();
+
+  groupOrder.forEach((groupId, groupIdx) => {
+    const letter = String.fromCharCode(65 + (groupIdx % 26));
+    const groupLetter =
+      groupIdx < 26
+        ? letter
+        : `${String.fromCharCode(65 + Math.floor(groupIdx / 26) - 1)}${letter}`;
+    const groupLabel = `Superset ${groupLetter}`;
+    const exList = groupExercises.get(groupId) || [];
+
+    exList.forEach((exId, exIdx) => {
+      const exerciseIndex = exIdx + 1;
+      const info: SupersetInfo = {
+        groupLetter,
+        exerciseIndex,
+        badgeLabel: `SS ${groupLetter}${exerciseIndex}`,
+        groupLabel,
+      };
+      exerciseMap.set(exId, info);
+    });
+  });
+
+  for (const set of sets) {
+    if (set.exercise_group_id) {
+      const exInfo = exerciseMap.get(set.exercise_id);
+      if (exInfo) {
+        setMap.set(set.id, exInfo);
+      }
+    }
+  }
+
+  return { exerciseMap, setMap };
 }
 
 export function formatIntensityValue(
@@ -110,6 +180,7 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
   userSettingsRepo,
   unitSystem: propUnitSystem,
   intensityMetric: propIntensityMetric,
+  isImmediateSummary = false,
   onClose,
   onDeleteSession,
 }) => {
@@ -118,6 +189,17 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
   const [exerciseMap, setExerciseMap] = useState<Record<string, Exercise>>({});
   const [unitSystem, setUnitSystem] = useState<WeightUnit>(propUnitSystem ?? 'kg');
   const [intensityMetric, setIntensityMetric] = useState<IntensityMetric>(propIntensityMetric ?? 'RPE');
+
+  // Superset identification mapping
+  const supersetInfo = useMemo(() => {
+    if (!workoutData || !workoutData.sets.length) {
+      return {
+        exerciseMap: new Map<string, SupersetInfo>(),
+        setMap: new Map<string, SupersetInfo>(),
+      };
+    }
+    return computeSupersetInfo(workoutData.sets);
+  }, [workoutData]);
 
   // Load unit and intensity preferences if not supplied directly
   useEffect(() => {
@@ -304,6 +386,11 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
           {/* Header */}
           <View style={styles.headerRow}>
             <View style={styles.titleContainer}>
+              {isImmediateSummary && (
+                <View testID="immediate-summary-banner" style={styles.completionBanner}>
+                  <Text style={styles.completionBannerText}>WORKOUT COMPLETED! 🎉</Text>
+                </View>
+              )}
               <Text style={styles.modalTitle} numberOfLines={1}>
                 {workoutData ? workoutData.workout.name : 'Workout Details'}
               </Text>
@@ -408,115 +495,157 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
               {/* Exercise Breakdown */}
               <Text style={styles.sectionHeading}>EXERCISES PERFORMED</Text>
 
-              {groupedExercises.map((group, exIdx) => (
-                <View key={group.exerciseId} style={styles.exerciseCard}>
-                  <View style={styles.exerciseCardHeader}>
-                    <View style={styles.exerciseInfoLeft}>
-                      <Text style={styles.exerciseIndex}>{exIdx + 1}.</Text>
-                      <View>
-                        <Text style={styles.exerciseNameText}>
-                          {group.exerciseName}
-                        </Text>
-                        <Text style={styles.exerciseMetaText}>
-                          {group.muscleGroup} • {group.category}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.exerciseSummaryRight}>
-                      <Text style={styles.exerciseTonnageText}>
-                        {formatWeight(group.totalVolumeKg, unitSystem, {
-                          precision: 0,
-                        })}
-                      </Text>
-                      {group.bestSetE1rmKg > 0 && (
-                        <Text style={styles.exerciseBestE1rmText}>
-                          e1RM: {formatWeight(group.bestSetE1rmKg, unitSystem)}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
+              {groupedExercises.map((group, exIdx) => {
+                const groupSuperset = supersetInfo.exerciseMap.get(group.exerciseId);
 
-                  {/* Sets Table Header */}
-                  <View style={styles.tableHeaderRow}>
-                    <Text style={[styles.thCell, styles.cellSetNum]}>SET</Text>
-                    <Text style={[styles.thCell, styles.cellType]}>TYPE</Text>
-                    <Text style={[styles.thCell, styles.cellLoad]}>
-                      LOAD ({unitSystem.toUpperCase()})
-                    </Text>
-                    <Text style={[styles.thCell, styles.cellReps]}>REPS</Text>
-                    <Text style={[styles.thCell, styles.cellIntensity]}>
-                      {intensityMetric}
-                    </Text>
-                    <Text style={[styles.thCell, styles.cellE1rm]}>e1RM</Text>
-                  </View>
-
-                  {/* Sets Rows */}
-                  {group.sets.map((s) => {
-                    const setE1rm = s.set_type === 'warmup'
-                      ? 0
-                      : calculateHeuristic1RM(s.weight, s.reps, {
-                          rir: s.rir,
-                          rpe: s.rpe,
-                        });
-
-                    return (
-                      <View key={s.id} style={styles.tableDataRow}>
-                        <Text style={[styles.tdCell, styles.cellSetNum]}>
-                          {s.set_number}
-                        </Text>
-
-                        <View style={styles.cellType}>
-                          {s.set_type !== 'working' && (
-                            <View
-                              style={[
-                                styles.setTypeBadge,
-                                s.set_type === 'warmup' && styles.typeWarmup,
-                                s.set_type === 'drop' && styles.typeDrop,
-                                s.set_type === 'failure' && styles.typeFailure,
-                                s.set_type === 'myorep' && styles.typeMyorep,
-                              ]}
-                            >
-                              <Text style={styles.setTypeBadgeText}>
-                                {s.set_type.slice(0, 1).toUpperCase()}
-                              </Text>
-                            </View>
-                          )}
+                return (
+                  <View key={group.exerciseId} style={styles.exerciseCard}>
+                    <View style={styles.exerciseCardHeader}>
+                      <View style={styles.exerciseInfoLeft}>
+                        <Text style={styles.exerciseIndex}>{exIdx + 1}.</Text>
+                        <View style={styles.exerciseNameContainer}>
+                          <View style={styles.exerciseNameRow}>
+                            <Text style={styles.exerciseNameText}>
+                              {group.exerciseName}
+                            </Text>
+                            {groupSuperset && (
+                              <View
+                                testID={`superset-header-badge-${group.exerciseId}`}
+                                style={styles.supersetHeaderBadge}
+                              >
+                                <Text style={styles.supersetHeaderBadgeText}>
+                                  {groupSuperset.badgeLabel}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.exerciseMetaText}>
+                            {group.muscleGroup} • {group.category}
+                          </Text>
                         </View>
-
-                        <Text style={[styles.tdCell, styles.cellLoad, styles.boldCell]}>
-                          {formatWeight(s.weight, unitSystem, { showUnit: false })}
-                        </Text>
-
-                        <Text style={[styles.tdCell, styles.cellReps, styles.boldCell]}>
-                          {s.reps_right != null
-                            ? `${s.reps} / ${s.reps_right}`
-                            : `${s.reps}`}
-                        </Text>
-
-                        <Text style={[styles.tdCell, styles.cellIntensity]}>
-                          {formatIntensityValue(s, intensityMetric)}
-                        </Text>
-
-                        <Text style={[styles.tdCell, styles.cellE1rm, styles.accentCell]}>
-                          {setE1rm > 0
-                            ? formatWeight(setE1rm, unitSystem, { showUnit: false })
-                            : '—'}
-                        </Text>
                       </View>
-                    );
-                  })}
-                </View>
-              ))}
+                      <View style={styles.exerciseSummaryRight}>
+                        <Text style={styles.exerciseTonnageText}>
+                          {formatWeight(group.totalVolumeKg, unitSystem, {
+                            precision: 0,
+                          })}
+                        </Text>
+                        {group.bestSetE1rmKg > 0 && (
+                          <Text style={styles.exerciseBestE1rmText}>
+                            e1RM: {formatWeight(group.bestSetE1rmKg, unitSystem)}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+
+                    {/* Sets Table Header */}
+                    <View style={styles.tableHeaderRow}>
+                      <Text style={[styles.thCell, styles.cellSetNum]}>SET</Text>
+                      <Text style={[styles.thCell, styles.cellType]}>TYPE</Text>
+                      <Text style={[styles.thCell, styles.cellLoad]}>
+                        LOAD ({unitSystem.toUpperCase()})
+                      </Text>
+                      <Text style={[styles.thCell, styles.cellReps]}>REPS</Text>
+                      <Text style={[styles.thCell, styles.cellIntensity]}>
+                        {intensityMetric}
+                      </Text>
+                      <Text style={[styles.thCell, styles.cellE1rm]}>e1RM</Text>
+                    </View>
+
+                    {/* Sets Rows */}
+                    {group.sets.map((s) => {
+                      const setE1rm = s.set_type === 'warmup'
+                        ? 0
+                        : calculateHeuristic1RM(s.weight, s.reps, {
+                            rir: s.rir,
+                            rpe: s.rpe,
+                          });
+                      const setSuperset =
+                        supersetInfo.setMap.get(s.id) ??
+                        (s.exercise_group_id ? groupSuperset : undefined);
+
+                      return (
+                        <View key={s.id} style={styles.tableDataRow}>
+                          <Text style={[styles.tdCell, styles.cellSetNum]}>
+                            {s.set_number}
+                          </Text>
+
+                          <View style={styles.cellType}>
+                            {setSuperset && (
+                              <View
+                                testID={`superset-set-badge-${s.id}`}
+                                style={styles.supersetSetBadge}
+                              >
+                                <Text style={styles.supersetSetBadgeText}>
+                                  {setSuperset.badgeLabel}
+                                </Text>
+                              </View>
+                            )}
+                            {s.set_type !== 'working' && (
+                              <View
+                                style={[
+                                  styles.setTypeBadge,
+                                  s.set_type === 'warmup' && styles.typeWarmup,
+                                  s.set_type === 'drop' && styles.typeDrop,
+                                  s.set_type === 'dc' && styles.typeDc,
+                                  s.set_type === 'myorep' && styles.typeMyorep,
+                                ]}
+                              >
+                                <Text style={styles.setTypeBadgeText}>
+                                  {s.set_type === 'dc' ? 'DC' : s.set_type === 'myorep' ? 'Myo' : s.set_type === 'drop' ? 'Drop' : 'Warm'}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <Text style={[styles.tdCell, styles.cellLoad, styles.boldCell]}>
+                            {formatWeight(s.weight, unitSystem, { showUnit: false })}
+                          </Text>
+
+                          <Text style={[styles.tdCell, styles.cellReps, styles.boldCell]}>
+                            {s.reps_right != null
+                              ? `${s.reps} / ${s.reps_right}`
+                              : `${s.reps}`}
+                          </Text>
+
+                          <Text style={[styles.tdCell, styles.cellIntensity]}>
+                            {formatIntensityValue(s, intensityMetric)}
+                          </Text>
+
+                          <Text style={[styles.tdCell, styles.cellE1rm, styles.accentCell]}>
+                            {setE1rm > 0
+                              ? formatWeight(setE1rm, unitSystem, { showUnit: false })
+                              : '—'}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
 
               {/* Delete / Actions Footer */}
               <View style={styles.footerActions}>
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={handleDelete}
-                  accessibilityLabel="Delete Workout Button"
-                >
-                  <Text style={styles.deleteButtonText}>Delete Workout</Text>
-                </TouchableOpacity>
+                {isImmediateSummary ? (
+                  <TouchableOpacity
+                    testID="done-summary-button"
+                    style={styles.doneSummaryButton}
+                    onPress={onClose}
+                    accessibilityLabel="Done and View in Calendar"
+                  >
+                    <Text style={styles.doneSummaryButtonText}>
+                      Done — View in Calendar
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={handleDelete}
+                    accessibilityLabel="Delete Workout Button"
+                  >
+                    <Text style={styles.deleteButtonText}>Delete Workout</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </ScrollView>
           )}
@@ -553,6 +682,22 @@ const styles = StyleSheet.create({
   titleContainer: {
     flex: 1,
     marginRight: 12,
+  },
+  completionBanner: {
+    backgroundColor: 'rgba(0, 230, 118, 0.15)',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginBottom: 6,
+    alignSelf: 'flex-start',
+  },
+  completionBannerText: {
+    color: '#00E676',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   modalTitle: {
     fontSize: 20,
@@ -735,6 +880,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#00E676',
   },
+  exerciseNameContainer: {
+    flex: 1,
+  },
+  exerciseNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  supersetHeaderBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: 'rgba(6, 182, 212, 0.18)',
+    borderWidth: 1,
+    borderColor: '#06B6D4',
+  },
+  supersetHeaderBadgeText: {
+    color: '#22D3EE',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
   exerciseNameText: {
     fontSize: 15,
     fontWeight: '700',
@@ -797,9 +965,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   cellType: {
-    width: 40,
+    minWidth: 54,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 3,
+  },
+  supersetSetBadge: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: 'rgba(6, 182, 212, 0.15)',
+    borderWidth: 1,
+    borderColor: '#06B6D4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  supersetSetBadgeText: {
+    color: '#22D3EE',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   cellLoad: {
     flex: 1.2,
@@ -821,8 +1007,9 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   setTypeBadge: {
-    width: 20,
-    height: 20,
+    minWidth: 28,
+    height: 18,
+    paddingHorizontal: 3,
     borderRadius: 4,
     justifyContent: 'center',
     alignItems: 'center',
@@ -836,8 +1023,8 @@ const styles = StyleSheet.create({
   typeDrop: {
     backgroundColor: '#EC4899',
   },
-  typeFailure: {
-    backgroundColor: '#EF4444',
+  typeDc: {
+    backgroundColor: '#1E3A8A',
   },
   typeMyorep: {
     backgroundColor: '#8B5CF6',
@@ -850,6 +1037,20 @@ const styles = StyleSheet.create({
   footerActions: {
     marginTop: 16,
     alignItems: 'center',
+  },
+  doneSummaryButton: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#00E676',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneSummaryButtonText: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   deleteButton: {
     paddingVertical: 12,

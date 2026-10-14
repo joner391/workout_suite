@@ -4,6 +4,8 @@ import {
   WorkoutFilter,
   WorkoutSet,
   WorkoutWithSets,
+  RepMaxQueryOptions,
+  RawRepMaxRow,
 } from '../../core/types';
 
 /**
@@ -233,5 +235,82 @@ export class MockWorkoutRepository implements IWorkoutRepository {
       })
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
       .map((s) => ({ ...s }));
+  }
+
+  async getRepMaxSets(options: RepMaxQueryOptions): Promise<RawRepMaxRow[]> {
+    const exerciseSet = new Set(options.exerciseIds);
+    const matchingSets: { set: WorkoutSet; workoutDate: string }[] = [];
+
+    for (const s of this.sets.values()) {
+      if (!exerciseSet.has(s.exercise_id)) {
+        continue;
+      }
+      if (s.reps <= 0 || s.weight <= 0) {
+        continue;
+      }
+      const workout = this.workouts.get(s.workout_id);
+      if (!workout || workout.status !== 'completed') {
+        continue;
+      }
+      if (options.startDate && workout.date < options.startDate) {
+        continue;
+      }
+      if (options.endDate && workout.date > options.endDate) {
+        continue;
+      }
+      matchingSets.push({ set: s, workoutDate: workout.date });
+    }
+
+    const bestByRep = new Map<number, { set: WorkoutSet; workoutDate: string }>();
+
+    for (const item of matchingSets) {
+      const reps = item.set.reps;
+      const currentBest = bestByRep.get(reps);
+
+      if (!currentBest) {
+        bestByRep.set(reps, item);
+      } else {
+        if (item.set.weight > currentBest.set.weight) {
+          bestByRep.set(reps, item);
+        } else if (item.set.weight === currentBest.set.weight) {
+          const getIntensity = (set: WorkoutSet) => {
+            if (set.rpe != null) return set.rpe;
+            if (set.rir != null) return 10 - set.rir;
+            return 0;
+          };
+          const itemScore = getIntensity(item.set);
+          const currentScore = getIntensity(currentBest.set);
+
+          if (itemScore > currentScore) {
+            bestByRep.set(reps, item);
+          } else if (itemScore === currentScore) {
+            if (
+              item.workoutDate > currentBest.workoutDate ||
+              (item.workoutDate === currentBest.workoutDate &&
+                item.set.created_at > currentBest.set.created_at)
+            ) {
+              bestByRep.set(reps, item);
+            }
+          }
+        }
+      }
+    }
+
+    const sortedReps = Array.from(bestByRep.keys()).sort((a, b) => a - b);
+
+    return sortedReps.map((r) => {
+      const item = bestByRep.get(r)!;
+      return {
+        setId: item.set.id,
+        workoutId: item.set.workout_id,
+        exerciseId: item.set.exercise_id,
+        reps: item.set.reps,
+        weight: item.set.weight,
+        rawInputWeight: item.set.raw_input_weight,
+        rpe: item.set.rpe,
+        rir: item.set.rir,
+        workoutDate: item.workoutDate,
+      };
+    });
   }
 }

@@ -49,7 +49,7 @@ export type GearType =
 
 export type WorkoutStatus = 'in_progress' | 'completed' | 'discarded';
 
-export type SetType = 'warmup' | 'working' | 'drop' | 'myorep' | 'failure';
+export type SetType = 'warmup' | 'working' | 'drop' | 'myorep' | 'dc';
 
 export type ImportSource = 'strong' | 'hevy' | 'csv' | 'fitnotes';
 
@@ -314,15 +314,20 @@ export interface StrengthStandard {
 
 export type ProgressionConditionType =
   | 'ALL_SETS_HIT_TARGET_REPS'
+  | 'ANY_SET_HIT_TOP_REP_RANGE'
   | 'AVERAGE_RPE_LESS_THAN'
   | 'CONSECUTIVE_SUCCESSFUL_SESSIONS'
+  | 'CONSECUTIVE_FAILED_SESSIONS'
   | 'MISSED_REPS_COUNT'
   | 'TOP_SET_RIR_GREATER_THAN';
 
 export type ProgressionActionType =
   | 'INCREASE_LOAD_FIXED'
   | 'INCREASE_LOAD_PERCENT'
+  | 'DECREASE_LOAD_FIXED'
   | 'INCREASE_TARGET_REPS'
+  | 'ADD_WORKING_SET'
+  | 'RESET_TO_BASELINE'
   | 'TRIGGER_DELOAD'
   | 'RESET_WEIGHT_PERCENT';
 
@@ -334,13 +339,53 @@ export interface ProgressionCondition {
 
 export interface ProgressionAction {
   type: ProgressionActionType;
-  value: number; // e.g. 2.5 kg or 0.05 (5%)
+  value: number; // e.g. 2.5 kg, 0.05 (5%), or rep/set delta
 }
 
 export interface ProgressionRuleDefinition {
   conditions: ProgressionCondition[];
   actions: ProgressionAction[];
   notes?: string;
+}
+
+export interface WorkoutSession {
+  workoutId?: string;
+  date?: string;
+  workout?: Workout;
+  sets: WorkoutSet[];
+}
+
+export interface SetProgressionProposal {
+  setIndex: number; // 1-based index matching set_number
+  currentWeightKg: number;
+  suggestedWeightKg: number;
+  currentReps: number;
+  targetHit: boolean;
+  status: 'increase' | 'maintain' | 'decrease';
+  explanation: string;
+}
+
+export interface ProgressionProposal {
+  ruleId: string;
+  rulePriority: number;
+  ruleNotes?: string;
+  actionType: ProgressionActionType;
+  actionValue?: number;
+  explanation: string;
+  currentWeightKg?: number;
+  suggestedWeightKg?: number;
+  suggestedTargetReps?: number;
+  suggestedTargetSets?: number;
+  isDeload?: boolean;
+  setProposals?: SetProgressionProposal[];
+}
+
+export interface ProgressionEvaluationResult {
+  hasMatches: boolean;
+  primaryProposal: ProgressionProposal | null;
+  matchedProposals: ProgressionProposal[];
+  evaluatedRulesCount: number;
+  recentSessionsEvaluated: number;
 }
 
 // ============================================================================
@@ -366,7 +411,66 @@ export interface RepMaxRecord {
   weightKg: number;
   effectiveReps: number;
   e1rmKg: number;
-  setDate: string;
+  setDate: string; // ISO8601 YYYY-MM-DD
+  workoutId?: string;
+  setId?: string;
+  rpe?: number | null;
+  rir?: number | null;
+  rawInputWeight?: number;
+  exerciseId?: string;
+}
+
+export interface RepMaxQueryOptions {
+  exerciseIds: string[];
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface RawRepMaxRow {
+  setId: string;
+  workoutId: string;
+  exerciseId: string;
+  reps: number;
+  weight: number;
+  rawInputWeight: number;
+  rpe: number | null;
+  rir: number | null;
+  workoutDate: string;
+}
+
+export interface PRBoardOptions {
+  exerciseId: string;
+  scope?: 'all_time' | 'program_block';
+  startDate?: string;
+  endDate?: string;
+  includeVariants?: boolean;
+}
+
+export interface PRBoardResult {
+  exerciseId: string;
+  records: RepMaxRecord[]; // Ordered by reps ASC: 1RM, 2RM, 3RM, etc.
+  peakRecord: RepMaxRecord | null; // Set that yielded the highest overall e1RM
+  allTimeBest1RM: RepMaxRecord | null; // True 1RM set (reps === 1) if present
+  totalPRCount: number;
+}
+
+export interface StrengthStandardSummaryResult {
+  isStandardLift: boolean;
+  liftType?: StandardLiftType;
+  standardResult?: StrengthStandardResult;
+}
+
+export interface ExerciseInspectionOverview {
+  exercise: Exercise;
+  prBoard: PRBoardResult;
+  standardSummary: StrengthStandardSummaryResult;
+  historySummary: {
+    totalSessions: number;
+    totalSets: number;
+    totalVolumeKg: number;
+    firstLoggedDate: string | null;
+    lastLoggedDate: string | null;
+  };
 }
 
 export interface DotsResult {
@@ -376,13 +480,41 @@ export interface DotsResult {
   gender: Gender;
 }
 
+export interface InterpolatedStandards {
+  untrained: number;
+  novice: number;
+  intermediate: number;
+  advanced: number;
+  elite: number;
+}
+
 export interface StrengthStandardResult {
   liftType: StandardLiftType;
   e1rmKg: number;
   bodyweightKg: number;
   tier: StrengthStandardTier;
   continuousScore: number; // 0.0 - 100.0+
-  deltaKgToNextTier: number | null;
+  deltaKgToNextTier: number | null; // null if elite
+  nextTierName: StrengthStandardTier | null; // null if elite
+  kgNeededForNextTier: number; // 0 if elite
+  demographicPercentile: number; // 0.1 - 99.9%
+}
+
+export interface SBDBalanceProfile {
+  squatScore: number;
+  benchScore: number;
+  deadliftScore: number;
+  totalScore: number;
+  averageScore: number;
+  totalKg: number;
+  dotsScore: number;
+  dominantLift: 'squat' | 'bench' | 'deadlift' | 'balanced';
+  laggingLift: 'squat' | 'bench' | 'deadlift' | 'none';
+  radarCoordinates: {
+    squat: number; // 0 - 100 normalized
+    bench: number; // 0 - 100 normalized
+    deadlift: number; // 0 - 100 normalized
+  };
 }
 
 // ============================================================================

@@ -2,7 +2,7 @@ import {
   IUserSettingsRepository,
   SETTINGS_KEYS,
 } from '../../domain/repositories/IUserSettingsRepository';
-import { IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
+import { Gender, IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
 
 /**
  * In-memory mock implementation of IUserSettingsRepository.
@@ -86,5 +86,29 @@ export class MockUserSettingsRepository implements IUserSettingsRepository {
 
   async setPureUtilityMode(enabled: boolean): Promise<void> {
     await this.set(SETTINGS_KEYS.PURE_UTILITY_MODE, enabled ? '1' : '0');
+  }
+
+  async getUserGender(): Promise<Gender> {
+    const val = await this.get(SETTINGS_KEYS.USER_GENDER);
+    return val === 'female' ? 'female' : 'male';
+  }
+
+  async setUserGender(gender: Gender): Promise<void> {
+    await this.set(SETTINGS_KEYS.USER_GENDER, gender);
+  }
+
+  async getUserBodyweight(): Promise<number | null> {
+    const val = await this.get(SETTINGS_KEYS.USER_BODYWEIGHT_KG);
+    if (!val) return null;
+    const num = parseFloat(val);
+    return isNaN(num) || num <= 0 ? null : num;
+  }
+
+  async setUserBodyweight(weightKg: number | null): Promise<void> {
+    if (weightKg === null || weightKg <= 0) {
+      await this.delete(SETTINGS_KEYS.USER_BODYWEIGHT_KG);
+    } else {
+      await this.set(SETTINGS_KEYS.USER_BODYWEIGHT_KG, weightKg.toString());
+    }
   }
 }

@@ -52,6 +52,7 @@ import { ExerciseSubstitutionModal } from './ExerciseSubstitutionModal';
 import { CrashRecoveryDialog } from './CrashRecoveryDialog';
 import { SupersetBracketGroup } from './SupersetBracketGroup';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
+import { SessionDetailModal } from '../calendar/SessionDetailModal';
 
 
 export interface ActiveLoggerScreenProps {
@@ -151,6 +152,8 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const [finishNotes, setFinishNotes] = useState<string>('');
   const [showSupersetModal, setShowSupersetModal] = useState<boolean>(false);
   const [supersetSourceExercise, setSupersetSourceExercise] = useState<Exercise | null>(null);
+  const [summaryWorkoutId, setSummaryWorkoutId] = useState<string | null>(null);
+  const [finishedWorkoutObj, setFinishedWorkoutObj] = useState<Workout | null>(null);
 
   // Timer interval ref for elapsed duration ticker
   const durationTickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -473,7 +476,28 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         );
       }
 
-      if (shouldStartTimer && exercise) {
+      // Phase 2: Rest Timer Triggers by Set Type
+      // - Drop set: 0s rest (suppress timer and reset/dismiss any active timer)
+      // - Myo set: 10s rest
+      // - DC set: 30s rest
+      // - Working & Warmup sets: exercise default_rest_seconds or 90s fallback (respecting superset rules)
+      if (targetSet.set_type === 'drop') {
+        timerService.reset();
+      } else if (targetSet.set_type === 'myorep') {
+        if (exercise) {
+          timerService.start(10, {
+            exerciseId: exercise.id,
+            exerciseGroupId: targetSet.exercise_group_id,
+          });
+        }
+      } else if (targetSet.set_type === 'dc') {
+        if (exercise) {
+          timerService.start(30, {
+            exerciseId: exercise.id,
+            exerciseGroupId: targetSet.exercise_group_id,
+          });
+        }
+      } else if (shouldStartTimer && exercise) {
         const restDuration = exercise.default_rest_seconds || 90;
         timerService.start(restDuration, {
           exerciseId: exercise.id,
@@ -593,9 +617,8 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       notes: finishNotes.trim() === '' ? activeWorkout.notes : finishNotes.trim(),
     });
 
-    if (onFinishSession) {
-      onFinishSession(finished);
-    }
+    setFinishedWorkoutObj(finished);
+    setSummaryWorkoutId(finished.id);
   };
 
   // Discard Workout
@@ -1081,6 +1104,8 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         >
           <ExerciseLibraryScreen
             exerciseRepo={exerciseRepo}
+            workoutRepo={workoutRepo}
+            gearRepo={gearRepo}
             userSettingsRepo={userSettingsRepo}
             onSelectExercise={async (exercise) => {
               setShowFullLibraryModal(false);
@@ -1222,6 +1247,28 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Immediate Post-Workout Summary Inspection Modal */}
+      {summaryWorkoutId && (
+        <SessionDetailModal
+          visible={!!summaryWorkoutId}
+          workoutId={summaryWorkoutId}
+          workoutRepo={workoutRepo}
+          exerciseRepo={exerciseRepo}
+          userSettingsRepo={userSettingsRepo}
+          unitSystem={unitSystem}
+          intensityMetric={intensityMetric}
+          isImmediateSummary={true}
+          onClose={() => {
+            const finished = finishedWorkoutObj;
+            setSummaryWorkoutId(null);
+            setFinishedWorkoutObj(null);
+            if (finished && onFinishSession) {
+              onFinishSession(finished);
+            }
+          }}
+        />
+      )}
     </View>
   );
 };
