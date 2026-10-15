@@ -11,6 +11,7 @@ describe('SQLiteUserProfileRepository', () => {
     gender: 'female',
     birthdate: '1998-03-20',
     height_cm: 168,
+    training_mentality: 'get_out',
     training_enjoyment: 'minimalist',
     intensity_style: 'volume_accumulation',
     primary_goal: 'strength',
@@ -27,6 +28,7 @@ describe('SQLiteUserProfileRepository', () => {
     gender: 'female',
     birthdate: '1998-03-20',
     height_cm: 168,
+    training_mentality: 'get_out',
     training_enjoyment: 'minimalist',
     intensity_style: 'volume_accumulation',
     primary_goal: 'strength',
@@ -62,6 +64,7 @@ describe('SQLiteUserProfileRepository', () => {
     const result = await repo.findById('user_1');
     expect(result).not.toBeNull();
     expect(result?.id).toBe('user_1');
+    expect(result?.training_mentality).toBe('get_out');
     expect(result?.training_enjoyment).toBe('minimalist');
   });
 

@@ -2,7 +2,7 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { DEFAULT_EXERCISES, DEFAULT_GEAR } from './seeds/defaultExercises';
 
 export const DATABASE_NAME = 'workout_suite.db';
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 /**
  * Minimal abstraction matching the modern expo-sqlite async interface.
@@ -173,8 +173,8 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     gender TEXT NOT NULL,
     birthdate TEXT,
     height_cm REAL,
-    training_enjoyment TEXT NOT NULL DEFAULT 'neutral',
-    intensity_style TEXT NOT NULL DEFAULT 'balanced',
+    training_mentality TEXT NOT NULL DEFAULT 'precision',
+    intensity_style TEXT,
     primary_goal TEXT NOT NULL DEFAULT 'hypertrophy',
     secondary_goals TEXT,
     preferred_days_per_week INTEGER NOT NULL DEFAULT 4,
@@ -276,6 +276,22 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
     );
 
     // 5. Update schema version
+    await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
+  } else if (currentVersion < 2) {
+    // Migration v1 -> v2: Add training_mentality column to user_profiles and backfill
+    try {
+      await db.execAsync(
+        "ALTER TABLE user_profiles ADD COLUMN training_mentality TEXT NOT NULL DEFAULT 'precision';"
+      );
+      await db.execAsync(
+        "UPDATE user_profiles SET training_mentality = 'fury' WHERE intensity_style = 'high_intensity_low_volume';"
+      );
+      await db.execAsync(
+        "UPDATE user_profiles SET training_mentality = 'get_out' WHERE training_enjoyment = 'minimalist';"
+      );
+    } catch {
+      // Column may already exist
+    }
     await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
   }
 }

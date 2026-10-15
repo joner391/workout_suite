@@ -303,7 +303,7 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
           <Text style={styles.infoTitle}>About Lift Balance & Symmetry</Text>
           <Text style={styles.infoText}>
             A balanced triad indicates proportional force production across your anterior and posterior chains.
-            When an individual lift spreads by $\ge 8.0$ points from your other lifts, it is identified as
+            When an individual lift spreads by ≥ 8.0 points from your other lifts, it is identified as
             dominant or lagging to inform targeted programming.
           </Text>
         </View>

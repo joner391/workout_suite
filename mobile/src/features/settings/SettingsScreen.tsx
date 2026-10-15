@@ -35,9 +35,7 @@ import { ExportService } from '../../services/exportService';
 import { ImportService } from '../../services/importService';
 import { ProgramBlockService } from '../../services/programBlockService';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
-import { GearInventoryScreen } from '../gear/GearInventoryScreen';
 import { ImportScreen } from '../import/ImportScreen';
-import { UserProfileScreen } from '../profile';
 import { ProgramOverviewScreen } from '../progression';
 
 export interface SettingsScreenProps {
@@ -73,9 +71,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [pureUtilityMode, setPureUtilityMode] = useState<boolean>(false);
 
   const [showExerciseLibrary, setShowExerciseLibrary] = useState<boolean>(false);
-  const [showGearInventory, setShowGearInventory] = useState<boolean>(false);
   const [showImportScreen, setShowImportScreen] = useState<boolean>(false);
-  const [showUserProfile, setShowUserProfile] = useState<boolean>(false);
   const [showProgramOverview, setShowProgramOverview] = useState<boolean>(false);
 
   const [exporting, setExporting] = useState<boolean>(false);
@@ -338,52 +334,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             )}
           </View>
 
-          <View style={styles.settingCard}>
-            <View style={styles.settingHeader}>
-              <Text style={styles.settingLabel}>Gear & Equipment Inventory</Text>
-              <Text style={styles.settingValueBadge}>ADR-025</Text>
-            </View>
-            <Text style={styles.settingDescription}>
-              Configure custom barbells with tare weights (15kg technique, 20kg Olympic, 25kg trap, 29kg SSB) and cable machines with mechanical advantage ratios (1:1, 2:1).
-            </Text>
-            {gearRepo ? (
-              <TouchableOpacity
-                testID="open-gear-inventory-btn"
-                style={styles.actionNavigateBtn}
-                onPress={() => setShowGearInventory(true)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.actionNavigateBtnText}>Manage Equipment Inventory ➔</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.disabledText}>Repository not connected</Text>
-            )}
-          </View>
-
-          {/* Section: Training Psychology & Programs (Step 4.4) */}
-          <Text style={styles.sectionTitle}>TRAINING PSYCHOLOGY & PROGRAMS</Text>
-
-          <View style={styles.settingCard}>
-            <View style={styles.settingHeader}>
-              <Text style={styles.settingLabel}>Athlete Questionnaire & Profile</Text>
-              <Text style={styles.settingValueBadge}>ADR-038</Text>
-            </View>
-            <Text style={styles.settingDescription}>
-              Configure biological stats, training enjoyment factors, intensity tolerance, schedule availability, and primary goals. Generate custom multi-day programs synthesized from your profile.
-            </Text>
-            {userProfileRepo ? (
-              <TouchableOpacity
-                testID="open-user-profile-btn"
-                style={styles.actionNavigateBtn}
-                onPress={() => setShowUserProfile(true)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.actionNavigateBtnText}>Athlete Profile & Questionnaire ➔</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.disabledText}>Profile repository not connected</Text>
-            )}
-          </View>
+          {/* Section: Training Programs & Progression (Step 4.4) */}
+          <Text style={styles.sectionTitle}>TRAINING PROGRAMS & PROGRESSION</Text>
 
           <View style={styles.settingCard}>
             <View style={styles.settingHeader}>
@@ -509,27 +461,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </ScrollView>
       )}
 
-      {/* Full-Screen Athlete Profile & Questionnaire Modal (Step 4.4) */}
-      {userProfileRepo && (
-        <Modal
-          visible={showUserProfile}
-          animationType="slide"
-          onRequestClose={() => setShowUserProfile(false)}
-        >
-          <UserProfileScreen
-            userProfileRepo={userProfileRepo}
-            programRepo={programRepo}
-            programBlockService={programBlockService}
-            exerciseRepo={exerciseRepo}
-            onClose={() => setShowUserProfile(false)}
-            onProgramGenerated={() => {
-              if (onSettingsChange) {
-                onSettingsChange();
-              }
-            }}
-          />
-        </Modal>
-      )}
+
 
       {/* Full-Screen Program Builder & Progression Rules Modal (Step 4.4) */}
       {programRepo && (
@@ -567,21 +499,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             gearRepo={gearRepo}
             userSettingsRepo={userSettingsRepo}
             onClose={() => setShowExerciseLibrary(false)}
-          />
-        </Modal>
-      )}
-
-      {/* Full-Screen Gear Inventory Modal */}
-      {gearRepo && (
-        <Modal
-          visible={showGearInventory}
-          animationType="slide"
-          onRequestClose={() => setShowGearInventory(false)}
-        >
-          <GearInventoryScreen
-            gearRepo={gearRepo}
-            userSettingsRepo={userSettingsRepo}
-            onClose={() => setShowGearInventory(false)}
           />
         </Modal>
       )}

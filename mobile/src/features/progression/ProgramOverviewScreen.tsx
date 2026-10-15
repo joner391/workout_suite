@@ -1,9 +1,12 @@
 /**
  * Workout Suite — ProgramOverviewScreen
  *
- * Implements Step 4.4: Program Builder, Multi-Day Split Manager & Rule Editor
+ * Implements Section 1: Custom Program Builder & Template/Exercise Full CRUD
+ * Implements Section 1.1: Default Presets Protection & Cloning
+ * Implements Section 1.2: Daily Workout Template CRUD & Reordering
+ * Implements Section 1.3: Template Exercise Prescriptions, 1-Tap Swapping & Antagonist Supersets
  * Implements ADR-006: Meso-Cycle Program Era Tracking
- * Implements ADR-017: Multi-Day Program Hierarchy with Parent programs Table
+ * Implements ADR-017: Multi-Day Program Hierarchy
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -32,16 +35,27 @@ import {
   TemplateExerciseDetail,
 } from '../../domain/repositories/IProgramRepository';
 import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
+import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import {
   ProgramBlockService,
   ActiveProgramInfo,
 } from '../../services/programBlockService';
+import {
+  isCustomProgram,
+  cloneProgramAsCustom,
+  generateCustomProgramId,
+} from '../../services/programCloneService';
 import { ProgressionBuilderModal } from './ProgressionBuilderModal';
+import { CatalogPickerModal } from './CatalogPickerModal';
+import { PrescriptionEditorModal } from './PrescriptionEditorModal';
+import { EditTemplateModal } from './EditTemplateModal';
+import { GearInventory } from '../../core/types';
 
 export interface ProgramOverviewScreenProps {
   programRepo: IProgramRepository;
   programBlockService: ProgramBlockService;
   exerciseRepo?: IExerciseRepository;
+  gearRepo?: IGearRepository;
   onClose?: () => void;
   onSelectProgram?: (programId: string) => void;
 }
@@ -50,6 +64,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
   programRepo,
   programBlockService,
   exerciseRepo,
+  gearRepo,
   onClose,
   onSelectProgram,
 }) => {
@@ -59,6 +74,8 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const [programDetails, setProgramDetails] = useState<ProgramWithDetails | null>(null);
   const [exerciseCatalog, setExerciseCatalog] = useState<Map<string, Exercise>>(new Map());
+  const [catalogList, setCatalogList] = useState<Exercise[]>([]);
+  const [availableGear, setAvailableGear] = useState<GearInventory[]>([]);
 
   // Rule Builder Modal State
   const [editingTargetExercise, setEditingTargetExercise] = useState<{
@@ -72,22 +89,56 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
   const [newProgramColor, setNewProgramColor] = useState<string>('#3B82F6');
   const [newProgramNotes, setNewProgramNotes] = useState<string>('');
 
-  // Initial Load
+  // Catalog Picker Modal State (for + Add Exercise and 1-Tap Swap)
+  const [catalogPickerState, setCatalogPickerState] = useState<{
+    visible: boolean;
+    mode: 'add' | 'swap';
+    templateId: string;
+    targetTemplateExercise?: TemplateExercise;
+  } | null>(null);
+
+  // Prescription Editor Modal State
+  const [prescriptionModalState, setPrescriptionModalState] = useState<{
+    visible: boolean;
+    templateExercise: TemplateExercise;
+    exerciseName: string;
+  } | null>(null);
+
+  // Edit Template Modal State
+  const [editTemplateModalState, setEditTemplateModalState] = useState<{
+    visible: boolean;
+    template: WorkoutTemplate | null;
+  } | null>(null);
+
+  // Superset Link Picker State
+  const [supersetPickerState, setSupersetPickerState] = useState<{
+    visible: boolean;
+    templateId: string;
+    sourceExercise: TemplateExercise;
+  } | null>(null);
+
+  // Initial Data Load
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [allPrograms, active, exercises] = await Promise.all([
+      const [allPrograms, active, exercises, gears] = await Promise.all([
         programRepo.findAll(),
         programBlockService.getActiveProgram(),
         exerciseRepo ? exerciseRepo.findAll() : Promise.resolve([]),
+        gearRepo ? gearRepo.findAll() : Promise.resolve([]),
       ]);
 
       setPrograms(allPrograms);
       setActiveInfo(active);
+      setCatalogList(exercises);
       setExerciseCatalog(new Map(exercises.map((e) => [e.id, e])));
+      setAvailableGear(gears);
 
-      // Default selected program: active program or first program
-      const initialId = active?.program.id ?? (allPrograms.length > 0 ? allPrograms[0].id : null);
+      const initialId =
+        selectedProgramId ??
+        active?.program.id ??
+        (allPrograms.length > 0 ? allPrograms[0].id : null);
+
       setSelectedProgramId(initialId);
 
       if (initialId) {
@@ -99,7 +150,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [programRepo, programBlockService, exerciseRepo]);
+  }, [programRepo, programBlockService, exerciseRepo, gearRepo, selectedProgramId]);
 
   useEffect(() => {
     loadData();
@@ -117,6 +168,20 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
     }
   };
 
+  // Section 1.1: Guard that clones non-custom programs before mutating
+  const ensureCustomProgram = async (): Promise<string> => {
+    if (!selectedProgramId) throw new Error('No program selected');
+    if (isCustomProgram(selectedProgramId)) {
+      return selectedProgramId;
+    }
+
+    // Trigger auto-clone flow
+    const clonedProgId = await cloneProgramAsCustom(programRepo, selectedProgramId);
+    await loadData();
+    await handleSelectProgram(clonedProgId);
+    return clonedProgId;
+  };
+
   // 1-Tap Active Program Swap
   const handleSwapActiveProgram = async (programId: string) => {
     try {
@@ -131,12 +196,27 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
     }
   };
 
-  // Create Program Handler
+  // Clone Program Handler (Explicit 1-tap Duplicate)
+  const handleCloneProgram = async () => {
+    if (!selectedProgramId) return;
+    try {
+      setLoading(true);
+      const clonedProgId = await cloneProgramAsCustom(programRepo, selectedProgramId);
+      await loadData();
+      await handleSelectProgram(clonedProgId);
+    } catch (err: any) {
+      Alert.alert('Clone Error', err?.message ?? 'Failed to duplicate program.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create Blank Program Handler (always creates custom program)
   const handleCreateProgram = async () => {
     if (!newProgramName.trim()) return;
     try {
       const newProgram: Program = {
-        id: `prog_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: generateCustomProgramId(),
         name: newProgramName.trim(),
         color_hex: newProgramColor,
         notes: newProgramNotes.trim() || null,
@@ -168,6 +248,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
             try {
               setLoading(true);
               await programRepo.delete(programId);
+              setSelectedProgramId(null);
               await loadData();
             } catch (err: any) {
               Alert.alert('Error', err?.message ?? 'Failed to delete program.');
@@ -178,6 +259,258 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
         },
       ]
     );
+  };
+
+  // --------------------------------------------------------------------------
+  // Daily Workout Template CRUD Handlers (Section 1.2)
+  // --------------------------------------------------------------------------
+
+  // Add Day / Template
+  const handleAddDay = async () => {
+    try {
+      const targetProgId = await ensureCustomProgram();
+      const current = await programRepo.getProgramWithDetails(targetProgId);
+      const nextIndex = current?.templates.length ?? 0;
+
+      const newTmpl: WorkoutTemplate = {
+        id: `tpl_custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        program_id: targetProgId,
+        name: `Day ${nextIndex + 1}`,
+        notes: null,
+        order_index: nextIndex,
+        created_at: new Date().toISOString(),
+      };
+
+      await programRepo.createTemplate(newTmpl);
+      const updated = await programRepo.getProgramWithDetails(targetProgId);
+      setProgramDetails(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to add workout template.');
+    }
+  };
+
+  // Edit Template Metadata (Name, Notes)
+  const handleSaveTemplateMetadata = async (name: string, notes: string | null) => {
+    if (!editTemplateModalState?.template) return;
+    try {
+      const targetProgId = await ensureCustomProgram();
+      const updatedTmpl: WorkoutTemplate = {
+        ...editTemplateModalState.template,
+        name,
+        notes,
+      };
+      await programRepo.updateTemplate(updatedTmpl);
+      const updated = await programRepo.getProgramWithDetails(targetProgId);
+      setProgramDetails(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to update template.');
+    }
+  };
+
+  // Reorder Days (Move Up / Down)
+  const handleMoveTemplate = async (templateId: string, direction: 'up' | 'down') => {
+    try {
+      const targetProgId = await ensureCustomProgram();
+      const current = await programRepo.getProgramWithDetails(targetProgId);
+      if (!current) return;
+
+      const tmpls = [...current.templates].sort((a, b) => a.order_index - b.order_index);
+      const idx = tmpls.findIndex((t) => t.id === templateId);
+      if (idx === -1) return;
+
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= tmpls.length) return;
+
+      const currentTmpl = tmpls[idx];
+      const otherTmpl = tmpls[targetIdx];
+
+      const currentOrder = currentTmpl.order_index;
+      const otherOrder = otherTmpl.order_index;
+
+      await programRepo.updateTemplate({ ...currentTmpl, order_index: otherOrder });
+      await programRepo.updateTemplate({ ...otherTmpl, order_index: currentOrder });
+
+      const updated = await programRepo.getProgramWithDetails(targetProgId);
+      setProgramDetails(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to reorder templates.');
+    }
+  };
+
+  // Delete Day
+  const handleDeleteTemplate = async (templateId: string) => {
+    Alert.alert(
+      'Delete Workout Day',
+      'Are you sure you want to delete this workout template and its exercises?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const targetProgId = await ensureCustomProgram();
+              await programRepo.deleteTemplate(templateId);
+              const updated = await programRepo.getProgramWithDetails(targetProgId);
+              setProgramDetails(updated);
+            } catch (err: any) {
+              Alert.alert('Error', err?.message ?? 'Failed to delete template.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // --------------------------------------------------------------------------
+  // Template Exercise CRUD Handlers (Section 1.3)
+  // --------------------------------------------------------------------------
+
+  // Select exercise from catalog (for Add or Swap)
+  const handleCatalogExerciseSelected = async (exercise: Exercise) => {
+    if (!catalogPickerState) return;
+    try {
+      const targetProgId = await ensureCustomProgram();
+      const current = await programRepo.getProgramWithDetails(targetProgId);
+      const tmpl = current?.templates.find((t) => t.id === catalogPickerState.templateId);
+      if (!tmpl) return;
+
+      if (catalogPickerState.mode === 'add') {
+        const nextOrder = tmpl.exercises.length;
+        const newTe: TemplateExercise = {
+          id: `te_custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          template_id: tmpl.id,
+          exercise_id: exercise.id,
+          gear_id: null,
+          target_sets: 3,
+          target_reps_min: 8,
+          target_reps_max: 12,
+          target_rpe: 8.0,
+          target_rir: null,
+          order_index: nextOrder,
+          exercise_group_id: null,
+        };
+        await programRepo.createTemplateExercise(newTe);
+      } else if (
+        catalogPickerState.mode === 'swap' &&
+        catalogPickerState.targetTemplateExercise
+      ) {
+        const existingTe = catalogPickerState.targetTemplateExercise;
+        const swappedTe: TemplateExercise = {
+          ...existingTe,
+          exercise_id: exercise.id,
+        };
+        await programRepo.updateTemplateExercise(swappedTe);
+      }
+
+      const updated = await programRepo.getProgramWithDetails(targetProgId);
+      setProgramDetails(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to update exercise.');
+    }
+  };
+
+  // Delete Template Exercise
+  const handleDeleteTemplateExercise = async (exerciseId: string) => {
+    try {
+      const targetProgId = await ensureCustomProgram();
+      await programRepo.deleteTemplateExercise(exerciseId);
+      const updated = await programRepo.getProgramWithDetails(targetProgId);
+      setProgramDetails(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to delete exercise.');
+    }
+  };
+
+  // Reorder Exercises (Move Up / Down)
+  const handleMoveExercise = async (
+    templateId: string,
+    exerciseId: string,
+    direction: 'up' | 'down'
+  ) => {
+    try {
+      const targetProgId = await ensureCustomProgram();
+      const current = await programRepo.getProgramWithDetails(targetProgId);
+      const tmpl = current?.templates.find((t) => t.id === templateId);
+      if (!tmpl) return;
+
+      const exercises = [...tmpl.exercises].sort((a, b) => a.order_index - b.order_index);
+      const idx = exercises.findIndex((e) => e.id === exerciseId);
+      if (idx === -1) return;
+
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= exercises.length) return;
+
+      const curEx = exercises[idx];
+      const otherEx = exercises[targetIdx];
+
+      const curOrder = curEx.order_index;
+      const otherOrder = otherEx.order_index;
+
+      await programRepo.updateTemplateExercise({ ...curEx, order_index: otherOrder });
+      await programRepo.updateTemplateExercise({ ...otherEx, order_index: curOrder });
+
+      const updated = await programRepo.getProgramWithDetails(targetProgId);
+      setProgramDetails(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to reorder exercises.');
+    }
+  };
+
+  // Save Prescription
+  const handleSavePrescription = async (updatedTe: TemplateExercise) => {
+    try {
+      const targetProgId = await ensureCustomProgram();
+      await programRepo.updateTemplateExercise(updatedTe);
+      const updated = await programRepo.getProgramWithDetails(targetProgId);
+      setProgramDetails(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to save prescription.');
+    }
+  };
+
+  // Antagonist Superset Pairing Handlers
+  const handleUnlinkSuperset = async (te: TemplateExercise) => {
+    try {
+      const targetProgId = await ensureCustomProgram();
+      await programRepo.updateTemplateExercise({
+        ...te,
+        exercise_group_id: null,
+      });
+      const updated = await programRepo.getProgramWithDetails(targetProgId);
+      setProgramDetails(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to unlink superset.');
+    }
+  };
+
+  const handleLinkSupersetWith = async (targetTeId: string) => {
+    if (!supersetPickerState) return;
+    try {
+      const targetProgId = await ensureCustomProgram();
+      const sharedGroupId = `ss_${supersetPickerState.templateId}_${Date.now()}`;
+
+      // Update source
+      await programRepo.updateTemplateExercise({
+        ...supersetPickerState.sourceExercise,
+        exercise_group_id: sharedGroupId,
+      });
+
+      // Update target
+      const targetTe = await programRepo.findTemplateExerciseById(targetTeId);
+      if (targetTe) {
+        await programRepo.updateTemplateExercise({
+          ...targetTe,
+          exercise_group_id: sharedGroupId,
+        });
+      }
+
+      setSupersetPickerState(null);
+      const updated = await programRepo.getProgramWithDetails(targetProgId);
+      setProgramDetails(updated);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to pair superset.');
+    }
   };
 
   if (loading && programs.length === 0) {
@@ -191,6 +524,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
 
   const selectedProgram = programDetails?.program;
   const isActiveSelected = activeInfo?.program.id === selectedProgram?.id;
+  const isCustom = selectedProgram ? isCustomProgram(selectedProgram.id) : false;
 
   return (
     <View testID="program-overview-screen" style={styles.screen}>
@@ -224,7 +558,11 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
 
       {/* Program Selector Horizontal Tabs */}
       <View style={styles.programTabBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollContent}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabScrollContent}
+        >
           {programs.map((p) => {
             const isSelected = p.id === selectedProgramId;
             const isActive = activeInfo?.program.id === p.id;
@@ -273,17 +611,29 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
             >
               <View style={styles.programHeaderRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.programNameText}>{selectedProgram.name}</Text>
+                  <View style={styles.programTitleRow}>
+                    <Text style={styles.programNameText}>{selectedProgram.name}</Text>
+                    {isCustom ? (
+                      <View style={styles.customBadge}>
+                        <Text style={styles.customBadgeText}>CUSTOM</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.presetBadge}>
+                        <Text style={styles.presetBadgeText}>PRESET (PROTECTED)</Text>
+                      </View>
+                    )}
+                  </View>
                   {selectedProgram.notes && (
                     <Text style={styles.programNotesText}>{selectedProgram.notes}</Text>
                   )}
                 </View>
+
                 {isActiveSelected ? (
                   <View
                     testID="program-active-badge"
                     style={[styles.activeStatusBadge, { backgroundColor: selectedProgram.color_hex }]}
                   >
-                    <Text style={styles.activeStatusBadgeText}>✓ CURRENT ACTIVE</Text>
+                    <Text style={styles.activeStatusBadgeText}>✓ ACTIVE</Text>
                   </View>
                 ) : (
                   <TouchableOpacity
@@ -298,102 +648,277 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                 )}
               </View>
 
+              {/* Top-Level Program Actions (Clone, Delete) */}
               <View style={styles.programMetaRow}>
                 <Text style={styles.programMetaText}>
                   {programDetails?.templates.length ?? 0} Daily Templates
                 </Text>
-                <TouchableOpacity
-                  testID={`delete-program-btn-${selectedProgram.id}`}
-                  onPress={() => handleDeleteProgram(selectedProgram.id)}
-                >
-                  <Text style={styles.deleteProgramText}>Delete Program</Text>
-                </TouchableOpacity>
+                <View style={styles.headerBtnGroup}>
+                  <TouchableOpacity
+                    testID="clone-program-btn"
+                    style={styles.cloneBtn}
+                    onPress={handleCloneProgram}
+                  >
+                    <Text style={styles.cloneBtnText}>Duplicate 📋</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    testID={`delete-program-btn-${selectedProgram.id}`}
+                    onPress={() => handleDeleteProgram(selectedProgram.id)}
+                  >
+                    <Text style={styles.deleteProgramText}>Delete Program</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
-            {/* Daily Templates & Exercises */}
-            <Text style={styles.sectionTitle}>DAILY WORKOUT TEMPLATES</Text>
+            {/* Daily Templates & Exercises Header */}
+            <View style={styles.templatesSectionHeader}>
+              <Text style={styles.sectionTitle}>DAILY WORKOUT TEMPLATES</Text>
+              <TouchableOpacity
+                testID="add-workout-template-btn"
+                style={styles.addTemplateBtn}
+                onPress={handleAddDay}
+              >
+                <Text style={styles.addTemplateBtnText}>+ Add Day</Text>
+              </TouchableOpacity>
+            </View>
+
             {programDetails?.templates.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyText}>No workout templates defined for this program.</Text>
+                <TouchableOpacity style={styles.inlineAddBtn} onPress={handleAddDay}>
+                  <Text style={styles.inlineAddBtnText}>+ Add First Workout Day</Text>
+                </TouchableOpacity>
               </View>
             ) : (
-              programDetails?.templates.map((tmpl, tIdx) => (
-                <View
-                  key={tmpl.id}
-                  testID={`workout-template-card-${tmpl.id}`}
-                  style={styles.templateCard}
-                >
-                  <View style={styles.templateHeader}>
-                    <Text style={styles.templateOrderPill}>Day {tIdx + 1}</Text>
-                    <Text style={styles.templateName}>{tmpl.name}</Text>
-                    <Text style={styles.exerciseCountText}>
-                      {tmpl.exercises.length} Exercises
-                    </Text>
-                  </View>
+              programDetails?.templates.map((tmpl, tIdx) => {
+                const isFirst = tIdx === 0;
+                const isLast = tIdx === (programDetails?.templates.length ?? 0) - 1;
 
-                  {tmpl.notes && (
-                    <Text style={styles.templateNotes}>{tmpl.notes}</Text>
-                  )}
+                return (
+                  <View
+                    key={tmpl.id}
+                    testID={`workout-template-card-${tmpl.id}`}
+                    style={styles.templateCard}
+                  >
+                    {/* Template Card Header */}
+                    <View style={styles.templateHeader}>
+                      <View style={styles.templateHeaderLeft}>
+                        <Text style={styles.templateOrderPill}>Day {tIdx + 1}</Text>
+                        <Text style={styles.templateName}>{tmpl.name}</Text>
+                      </View>
 
-                  {/* Template Exercise List */}
-                  <View style={styles.exerciseList}>
-                    {tmpl.exercises.map((te, eIdx) => {
-                      const ex = exerciseCatalog.get(te.exercise_id);
-                      const exName = ex?.name ?? te.exercise_id;
-                      const hasRules = te.rules && te.rules.length > 0;
-
-                      return (
-                        <View
-                          key={te.id}
-                          testID={`template-exercise-row-${te.id}`}
-                          style={styles.exerciseRow}
+                      {/* Template Controls: Reorder, Edit, Delete */}
+                      <View style={styles.templateHeaderActions}>
+                        <TouchableOpacity
+                          testID={`template-move-up-${tmpl.id}`}
+                          style={[styles.miniControlBtn, isFirst && styles.btnDisabled]}
+                          onPress={() => handleMoveTemplate(tmpl.id, 'up')}
+                          disabled={isFirst}
                         >
-                          <View style={styles.exerciseInfoCol}>
-                            <View style={styles.exerciseNameRow}>
-                              <Text style={styles.exerciseIndexText}>{eIdx + 1}.</Text>
-                              <Text style={styles.exerciseNameText}>{exName}</Text>
-                              {te.exercise_group_id && (
-                                <View style={styles.supersetPill}>
-                                  <Text style={styles.supersetPillText}>SUPERSET</Text>
+                          <Text style={styles.miniControlBtnText}>▲</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          testID={`template-move-down-${tmpl.id}`}
+                          style={[styles.miniControlBtn, isLast && styles.btnDisabled]}
+                          onPress={() => handleMoveTemplate(tmpl.id, 'down')}
+                          disabled={isLast}
+                        >
+                          <Text style={styles.miniControlBtnText}>▼</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          testID={`edit-template-btn-${tmpl.id}`}
+                          style={styles.miniControlBtn}
+                          onPress={() =>
+                            setEditTemplateModalState({
+                              visible: true,
+                              template: tmpl,
+                            })
+                          }
+                        >
+                          <Text style={styles.miniControlBtnText}>✎</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          testID={`delete-template-btn-${tmpl.id}`}
+                          style={styles.miniControlBtnDestructive}
+                          onPress={() => handleDeleteTemplate(tmpl.id)}
+                        >
+                          <Text style={styles.miniControlBtnDestructiveText}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {tmpl.notes && (
+                      <Text style={styles.templateNotes}>{tmpl.notes}</Text>
+                    )}
+
+                    {/* Template Exercise List */}
+                    <View style={styles.exerciseList}>
+                      {tmpl.exercises.map((te, eIdx) => {
+                        const ex = exerciseCatalog.get(te.exercise_id);
+                        const exName = ex?.name ?? te.exercise_id;
+                        const hasRules = te.rules && te.rules.length > 0;
+                        const isExFirst = eIdx === 0;
+                        const isExLast = eIdx === tmpl.exercises.length - 1;
+
+                        return (
+                          <View
+                            key={te.id}
+                            testID={`template-exercise-row-${te.id}`}
+                            style={styles.exerciseRow}
+                          >
+                            <View style={styles.exerciseInfoCol}>
+                              <View style={styles.exerciseNameRow}>
+                                <Text style={styles.exerciseIndexText}>{eIdx + 1}.</Text>
+                                <Text style={styles.exerciseNameText}>{exName}</Text>
+                                {te.exercise_group_id && (
+                                  <View style={styles.supersetPill}>
+                                    <Text style={styles.supersetPillText}>SUPERSET</Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {/* Prescriptions */}
+                              <TouchableOpacity
+                                testID={`edit-prescription-btn-${te.id}`}
+                                style={styles.prescriptionTapTarget}
+                                onPress={() =>
+                                  setPrescriptionModalState({
+                                    visible: true,
+                                    templateExercise: te,
+                                    exerciseName: exName,
+                                  })
+                                }
+                              >
+                                <Text style={styles.exerciseTargetText}>
+                                  {te.target_sets ?? 3} sets × {te.target_reps_min ?? 8}–
+                                  {te.target_reps_max ?? 12} reps
+                                  {te.target_rpe != null
+                                    ? ` @ RPE ${te.target_rpe}`
+                                    : te.target_rir != null
+                                    ? ` @ ${te.target_rir} RIR`
+                                    : ''}
+                                  {'  '}<Text style={styles.editPencil}>✎ Edit</Text>
+                                </Text>
+                              </TouchableOpacity>
+
+                              {/* Attached Rules Summary */}
+                              {hasRules && (
+                                <View style={styles.rulesSummaryRow}>
+                                  <Text style={styles.rulesSummaryBadge}>
+                                    ⚙️ {te.rules.length} Rule{te.rules.length > 1 ? 's' : ''}
+                                  </Text>
                                 </View>
                               )}
                             </View>
 
-                            <Text style={styles.exerciseTargetText}>
-                              {te.target_sets ?? 3} sets × {te.target_reps_min ?? 8}–
-                              {te.target_reps_max ?? 12} reps
-                              {te.target_rpe != null ? ` @ RPE ${te.target_rpe}` : ''}
-                            </Text>
+                            {/* Exercise Actions: Reorder, Swap, Superset, Rules, Delete */}
+                            <View style={styles.exerciseActionCol}>
+                              <View style={styles.exerciseActionRow}>
+                                <TouchableOpacity
+                                  testID={`exercise-move-up-${te.id}`}
+                                  style={[styles.smallBtn, isExFirst && styles.btnDisabled]}
+                                  onPress={() => handleMoveExercise(tmpl.id, te.id, 'up')}
+                                  disabled={isExFirst}
+                                >
+                                  <Text style={styles.smallBtnText}>▲</Text>
+                                </TouchableOpacity>
 
-                            {/* Attached Rules Summary */}
-                            {hasRules && (
-                              <View style={styles.rulesSummaryRow}>
-                                <Text style={styles.rulesSummaryBadge}>
-                                  ⚙️ {te.rules.length} Rule{te.rules.length > 1 ? 's' : ''}
-                                </Text>
+                                <TouchableOpacity
+                                  testID={`exercise-move-down-${te.id}`}
+                                  style={[styles.smallBtn, isExLast && styles.btnDisabled]}
+                                  onPress={() => handleMoveExercise(tmpl.id, te.id, 'down')}
+                                  disabled={isExLast}
+                                >
+                                  <Text style={styles.smallBtnText}>▼</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  testID={`swap-template-exercise-${te.id}`}
+                                  style={styles.smallBtn}
+                                  onPress={() =>
+                                    setCatalogPickerState({
+                                      visible: true,
+                                      mode: 'swap',
+                                      templateId: tmpl.id,
+                                      targetTemplateExercise: te,
+                                    })
+                                  }
+                                >
+                                  <Text style={styles.smallBtnText}>⇄ Swap</Text>
+                                </TouchableOpacity>
+
+                                {te.exercise_group_id ? (
+                                  <TouchableOpacity
+                                    testID={`unlink-superset-btn-${te.id}`}
+                                    style={styles.supersetBtnActive}
+                                    onPress={() => handleUnlinkSuperset(te)}
+                                  >
+                                    <Text style={styles.supersetBtnActiveText}>Unlink ⛓️‍💥</Text>
+                                  </TouchableOpacity>
+                                ) : (
+                                  <TouchableOpacity
+                                    testID={`link-superset-btn-${te.id}`}
+                                    style={styles.smallBtn}
+                                    onPress={() =>
+                                      setSupersetPickerState({
+                                        visible: true,
+                                        templateId: tmpl.id,
+                                        sourceExercise: te,
+                                      })
+                                    }
+                                  >
+                                    <Text style={styles.smallBtnText}>Pair 🔗</Text>
+                                  </TouchableOpacity>
+                                )}
+
+                                <TouchableOpacity
+                                  testID={`configure-rules-btn-${te.id}`}
+                                  style={styles.configureRulesBtn}
+                                  onPress={() =>
+                                    setEditingTargetExercise({
+                                      templateExercise: te,
+                                      exerciseName: exName,
+                                    })
+                                  }
+                                >
+                                  <Text style={styles.configureRulesBtnText}>Rules ⚙️</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  testID={`delete-template-exercise-${te.id}`}
+                                  style={styles.smallBtnDestructive}
+                                  onPress={() => handleDeleteTemplateExercise(te.id)}
+                                >
+                                  <Text style={styles.smallBtnDestructiveText}>✕</Text>
+                                </TouchableOpacity>
                               </View>
-                            )}
+                            </View>
                           </View>
+                        );
+                      })}
 
-                          <TouchableOpacity
-                            testID={`configure-rules-btn-${te.id}`}
-                            style={styles.configureRulesBtn}
-                            onPress={() =>
-                              setEditingTargetExercise({
-                                templateExercise: te,
-                                exerciseName: exName,
-                              })
-                            }
-                          >
-                            <Text style={styles.configureRulesBtnText}>Rules ⚙️</Text>
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    })}
+                      {/* "+ Add Exercise" Button */}
+                      <TouchableOpacity
+                        testID={`add-exercise-to-template-${tmpl.id}`}
+                        style={styles.addExerciseBtn}
+                        onPress={() =>
+                          setCatalogPickerState({
+                            visible: true,
+                            mode: 'add',
+                            templateId: tmpl.id,
+                          })
+                        }
+                      >
+                        <Text style={styles.addExerciseBtnText}>+ Add Exercise</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              ))
+                );
+              })
             )}
           </>
         ) : (
@@ -423,7 +948,95 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
         />
       )}
 
-      {/* Create Program Modal */}
+      {/* Catalog Picker Modal (Add / Swap Exercise) */}
+      {catalogPickerState && (
+        <CatalogPickerModal
+          visible={catalogPickerState.visible}
+          title={
+            catalogPickerState.mode === 'swap'
+              ? 'Swap Exercise'
+              : 'Add Exercise to Template'
+          }
+          exercises={catalogList}
+          onSelect={handleCatalogExerciseSelected}
+          onClose={() => setCatalogPickerState(null)}
+        />
+      )}
+
+      {/* Prescription Editor Modal */}
+      {prescriptionModalState && (
+        <PrescriptionEditorModal
+          visible={prescriptionModalState.visible}
+          exerciseName={prescriptionModalState.exerciseName}
+          templateExercise={prescriptionModalState.templateExercise}
+          availableGear={availableGear}
+          onSave={handleSavePrescription}
+          onClose={() => setPrescriptionModalState(null)}
+        />
+      )}
+
+      {/* Edit Template Metadata Modal */}
+      {editTemplateModalState && (
+        <EditTemplateModal
+          visible={editTemplateModalState.visible}
+          template={editTemplateModalState.template}
+          onSave={handleSaveTemplateMetadata}
+          onClose={() => setEditTemplateModalState(null)}
+        />
+      )}
+
+      {/* Superset Pairing Picker Modal */}
+      {supersetPickerState && (
+        <Modal
+          visible={supersetPickerState.visible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setSupersetPickerState(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.createModalContent}>
+              <Text style={styles.createModalTitle}>Pair Antagonist Superset</Text>
+              <Text style={styles.cardDescription}>
+                Select an exercise to pair into a superset with{' '}
+                <Text style={{ color: '#00E676', fontWeight: 'bold' }}>
+                  {exerciseCatalog.get(supersetPickerState.sourceExercise.exercise_id)?.name ??
+                    supersetPickerState.sourceExercise.exercise_id}
+                </Text>:
+              </Text>
+
+              <ScrollView style={{ maxHeight: 250, marginVertical: 10 }}>
+                {programDetails?.templates
+                  .find((t) => t.id === supersetPickerState.templateId)
+                  ?.exercises.filter((te) => te.id !== supersetPickerState.sourceExercise.id)
+                  .map((otherTe) => {
+                    const otherName =
+                      exerciseCatalog.get(otherTe.exercise_id)?.name ?? otherTe.exercise_id;
+                    return (
+                      <TouchableOpacity
+                        key={otherTe.id}
+                        testID={`pair-with-exercise-${otherTe.id}`}
+                        style={styles.supersetChoiceItem}
+                        onPress={() => handleLinkSupersetWith(otherTe.id)}
+                      >
+                        <Text style={styles.supersetChoiceText}>{otherName}</Text>
+                        <Text style={styles.supersetChoiceAction}>Pair 🔗</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setSupersetPickerState(null)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Create Blank Program Modal */}
       <Modal
         visible={showCreateProgramModal}
         transparent
@@ -432,7 +1045,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
       >
         <View style={styles.modalOverlay}>
           <View style={styles.createModalContent}>
-            <Text style={styles.createModalTitle}>Create New Program</Text>
+            <Text style={styles.createModalTitle}>Create New Custom Program</Text>
 
             <Text style={styles.inputLabel}>Program Name</Text>
             <TextInput
@@ -624,9 +1237,37 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  programTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
   programNameText: {
     color: '#FAFAFA',
     fontSize: 16,
+    fontWeight: '800',
+  },
+  customBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  customBadgeText: {
+    color: '#0A0A0A',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  presetBadge: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  presetBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8,
     fontWeight: '800',
   },
   programNotesText: {
@@ -668,17 +1309,53 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
+  headerBtnGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cloneBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  cloneBtnText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   deleteProgramText: {
     color: '#EF4444',
     fontSize: 11,
     fontWeight: '600',
+  },
+  templatesSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   sectionTitle: {
     color: '#00E676',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1,
-    marginBottom: 8,
+  },
+  addTemplateBtn: {
+    backgroundColor: '#1E1E22',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  addTemplateBtnText: {
+    color: '#00E676',
+    fontSize: 11,
+    fontWeight: '700',
   },
   templateCard: {
     backgroundColor: '#121214',
@@ -690,8 +1367,14 @@ const styles = StyleSheet.create({
   },
   templateHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
+  },
+  templateHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   templateOrderPill: {
     backgroundColor: '#27272A',
@@ -709,9 +1392,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
   },
-  exerciseCountText: {
-    color: '#71717A',
+  templateHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  miniControlBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    width: 26,
+    height: 26,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniControlBtnText: {
+    color: '#D4D4D8',
     fontSize: 11,
+    fontWeight: '700',
+  },
+  miniControlBtnDestructive: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#7F1D1D',
+    width: 26,
+    height: 26,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniControlBtnDestructiveText: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: '700',
   },
   templateNotes: {
     color: '#71717A',
@@ -724,15 +1438,12 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   exerciseRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
   },
   exerciseInfoCol: {
-    flex: 1,
+    marginBottom: 6,
   },
   exerciseNameRow: {
     flexDirection: 'row',
@@ -751,7 +1462,7 @@ const styles = StyleSheet.create({
   },
   supersetPill: {
     backgroundColor: '#3B82F6',
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 3,
     marginLeft: 4,
@@ -761,10 +1472,17 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: '800',
   },
+  prescriptionTapTarget: {
+    marginTop: 2,
+  },
   exerciseTargetText: {
     color: '#A1A1AA',
     fontSize: 11,
-    marginTop: 2,
+  },
+  editPencil: {
+    color: '#00E676',
+    fontSize: 10,
+    fontWeight: '600',
   },
   rulesSummaryRow: {
     marginTop: 3,
@@ -773,18 +1491,81 @@ const styles = StyleSheet.create({
     color: '#38BDF8',
     fontSize: 10,
   },
+  exerciseActionCol: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  exerciseActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  smallBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderRadius: 5,
+  },
+  smallBtnText: {
+    color: '#D4D4D8',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  smallBtnDestructive: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#7F1D1D',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderRadius: 5,
+  },
+  smallBtnDestructiveText: {
+    color: '#EF4444',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  supersetBtnActive: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderRadius: 5,
+  },
+  supersetBtnActiveText: {
+    color: '#38BDF8',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   configureRulesBtn: {
     backgroundColor: '#1E1E22',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#27272A',
   },
   configureRulesBtnText: {
     color: '#D4D4D8',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
+  },
+  addExerciseBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 6,
+    paddingVertical: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  addExerciseBtnText: {
+    color: '#00E676',
+    fontSize: 12,
+    fontWeight: '700',
   },
   emptyCard: {
     backgroundColor: '#121214',
@@ -802,6 +1583,44 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
     textAlign: 'center',
+  },
+  inlineAddBtn: {
+    marginTop: 10,
+    backgroundColor: '#00E676',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  inlineAddBtnText: {
+    color: '#0A0A0A',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  cardDescription: {
+    color: '#A1A1AA',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  supersetChoiceItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#18181B',
+    padding: 10,
+    borderRadius: 6,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  supersetChoiceText: {
+    color: '#FAFAFA',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  supersetChoiceAction: {
+    color: '#38BDF8',
+    fontSize: 12,
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,
@@ -861,6 +1680,7 @@ const styles = StyleSheet.create({
   cancelBtn: {
     paddingVertical: 8,
     paddingHorizontal: 12,
+    alignItems: 'center',
   },
   cancelBtnText: {
     color: '#71717A',
@@ -877,5 +1697,8 @@ const styles = StyleSheet.create({
     color: '#0A0A0A',
     fontSize: 13,
     fontWeight: '800',
+  },
+  btnDisabled: {
+    opacity: 0.3,
   },
 });

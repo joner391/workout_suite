@@ -173,4 +173,50 @@ describe('Gear & Equipment Inventory Management (Step 2.2)', () => {
       expect(item).toBeNull();
     });
   });
+
+  describe('Bar Tare Isolation & Exercise Applicability Confirmation', () => {
+    it('confirms having or setting SSB as default specialty bar does NOT swap bar for non-applicable lifts (Bench Press, Deadlift)', async () => {
+      // In sampleGear, bar_ssb_29 has is_default: true for type 'specialty_bar'
+      const ssb = await service.getGearById('bar_ssb_29');
+      expect(ssb).not.toBeNull();
+      expect(ssb?.type).toBe('specialty_bar');
+      expect(ssb?.tare_weight_kg).toBe(29.0);
+
+      // 1. Generic Barbell Bench Press (no gearId specified) must resolve to standard 20 kg, NOT 29 kg SSB!
+      const benchTare = await service.resolveBarTareWeight(null, 20.0);
+      expect(benchTare).toBe(20.0);
+      expect(benchTare).not.toBe(29.0);
+
+      // 2. Generic Deadlift (no gearId specified) must resolve to standard 20 kg, NOT 29 kg SSB!
+      const deadliftTare = await service.resolveBarTareWeight(null, 20.0);
+      expect(deadliftTare).toBe(20.0);
+      expect(deadliftTare).not.toBe(29.0);
+
+      // 3. Squat specifically selecting the Safety Squat Bar must resolve to 29.0 kg!
+      const ssbSquatTare = await service.resolveBarTareWeight('bar_ssb_29', 20.0);
+      expect(ssbSquatTare).toBe(29.0);
+    });
+
+    it('resolves explicit gear tare weight when selected without requiring it to be default', async () => {
+      // Create non-default trap bar (25 kg)
+      const trapBar = await service.createGear({
+        name: 'Open Hex / Trap Bar (25 kg)',
+        type: 'specialty_bar',
+        tare_weight_kg: 25.0,
+        cable_ratio: 1.0,
+        is_default: false,
+        notes: 'For trap bar deadlifts and shrugs',
+      });
+
+      expect(trapBar.is_default).toBe(false);
+
+      // Exercise without gearId still resolves to 20 kg standard
+      const normalBar = await service.resolveBarTareWeight(null, 20.0);
+      expect(normalBar).toBe(20.0);
+
+      // Exercise explicitly selecting trap bar resolves to 25 kg
+      const trapBarTare = await service.resolveBarTareWeight(trapBar.id, 20.0);
+      expect(trapBarTare).toBe(25.0);
+    });
+  });
 });

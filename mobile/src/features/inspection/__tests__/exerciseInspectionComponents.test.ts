@@ -388,6 +388,18 @@ describe('Exercise Inspection UI, SBD Tier Widget & Symmetry Radar (Step 3.3)', 
       element.props.onClose?.();
       expect(closed).toBe(true);
     });
+
+    it('formats lift balance educational info correctly without LaTeX typo', () => {
+      const tree = SBDBalanceRadarChart({
+        balanceProfile: mockBalanceProfile,
+        gender: 'male',
+        bodyweightKg: 80.0,
+        unitSystem: 'kg',
+      });
+      const serialized = JSON.stringify(tree);
+      expect(serialized).toContain('≥ 8.0 points');
+      expect(serialized).not.toContain('$\\ge');
+    });
   });
 
   describe('ExerciseDetailScreen & Inspection Service Integration', () => {

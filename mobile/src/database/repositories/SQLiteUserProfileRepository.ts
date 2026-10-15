@@ -2,6 +2,7 @@ import { IUserProfileRepository } from '../../domain/repositories/IUserProfileRe
 import {
   UserProfile,
   Gender,
+  TrainingMentality,
   TrainingEnjoyment,
   IntensityStyle,
   PrimaryGoal,
@@ -14,8 +15,9 @@ interface UserProfileRow {
   gender: Gender;
   birthdate: string | null;
   height_cm: number | null;
-  training_enjoyment: TrainingEnjoyment;
-  intensity_style: IntensityStyle;
+  training_mentality?: TrainingMentality;
+  training_enjoyment?: TrainingEnjoyment;
+  intensity_style?: IntensityStyle;
   primary_goal: PrimaryGoal;
   secondary_goals: string | null;
   preferred_days_per_week: number;
@@ -38,13 +40,18 @@ function mapRowToUserProfile(row: UserProfileRow): UserProfile {
     }
   }
 
+  const mentality: TrainingMentality = row.training_mentality ??
+    (row.intensity_style === 'high_intensity_low_volume' ? 'fury' :
+     row.training_enjoyment === 'minimalist' ? 'get_out' : 'precision');
+
   return {
     id: row.id,
     gender: row.gender,
     birthdate: row.birthdate != null ? row.birthdate : null,
     height_cm: row.height_cm != null ? Number(row.height_cm) : null,
-    training_enjoyment: row.training_enjoyment ?? 'neutral',
-    intensity_style: row.intensity_style ?? 'balanced',
+    training_mentality: mentality,
+    training_enjoyment: row.training_enjoyment ?? (mentality === 'get_out' ? 'minimalist' : mentality === 'fury' ? 'enthusiast' : 'neutral'),
+    intensity_style: row.intensity_style ?? (mentality === 'fury' ? 'high_intensity_low_volume' : mentality === 'precision' ? 'volume_accumulation' : 'balanced'),
     primary_goal: row.primary_goal ?? 'hypertrophy',
     secondary_goals: secondaryGoals,
     preferred_days_per_week: Number(row.preferred_days_per_week ?? 4),
@@ -83,7 +90,7 @@ export class SQLiteUserProfileRepository implements IUserProfileRepository {
 
     await this.db.runAsync(
       `INSERT OR REPLACE INTO user_profiles (
-         id, gender, birthdate, height_cm, training_enjoyment, intensity_style,
+         id, gender, birthdate, height_cm, training_mentality, intensity_style,
          primary_goal, secondary_goals, preferred_days_per_week,
          preferred_session_duration_mins, equipment_access, created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
@@ -91,8 +98,8 @@ export class SQLiteUserProfileRepository implements IUserProfileRepository {
       profile.gender,
       profile.birthdate,
       profile.height_cm,
-      profile.training_enjoyment,
-      profile.intensity_style,
+      profile.training_mentality,
+      profile.intensity_style ?? null,
       profile.primary_goal,
       serializedSecondaryGoals,
       profile.preferred_days_per_week,

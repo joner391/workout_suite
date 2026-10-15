@@ -9,6 +9,7 @@ describe('MockUserProfileRepository', () => {
     gender: 'male',
     birthdate: '1995-05-15',
     height_cm: 180,
+    training_mentality: 'fury',
     training_enjoyment: 'enthusiast',
     intensity_style: 'high_intensity_low_volume',
     primary_goal: 'hypertrophy',

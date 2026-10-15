@@ -272,12 +272,28 @@ CREATE TABLE strength_standards (
 | **Phase 1** | **1.1** | **Domain Core Math** | **`[x] COMPLETED`** | `unitConversion.ts`, `heuristic1rm.ts`, `loadNormalizer.ts`, `plateCalculator.ts`, 75 unit tests verified |
 | | **1.2** | **Repository Interfaces & In-Memory Mocks** | **`[x] COMPLETED`** | `IExerciseRepository`, `IWorkoutRepository`, `IGearRepository`, `IUserSettingsRepository`, 4 in-memory mocks, 62 unit tests verified |
 | | **1.3** | **SQLite Schema & Concrete Repositories** | **`[x] COMPLETED`** | `schema.ts`, 46 default exercises seed, 6 gear items seed, 4 SQLite repositories, 52 unit tests verified |
-| | 1.4–1.6 | Logger Services & UI | `[ ] PENDING` | Active session service, rest timer, logger UI, crash recovery dialog |
-| **Phase 2** | 2.1–2.4 | Advanced Workout Mechanics & Onboarding | `[ ] PENDING` | Supersets, unilateral logging, CSV import, JSON export |
-| **Phase 3** | 3.1–3.4 | Meso-Cycles, Records & Strength Standards | `[ ] PENDING` | Program blocks, PR tables, SBD standards, DOTS scores |
-| **Phase 4** | 4.1–4.3 | Autonomous Progression Engine | `[ ] PENDING` | Condition-action rules, proposal banners, generator wizard |
-| **Phase 5** | 5.1–5.3 | Body Composition & Psychological Profiling | `[ ] PENDING` | Anthropometry, Navy body fat, psychological matrix |
-| **Phase 6** | 6.1–6.4 | Companion Analysis Engine & Streamlit UI | `[ ] PENDING` | Linear Kalman filter, Banister model, Streamlit dashboard |
+| | **1.4** | **Core Logger Application Services** | **`[x] COMPLETED`** | `activeSessionService.ts`, `restTimerService.ts`, `exerciseSubstitutionService.ts`, `crashRecoveryService.ts`, 50 unit tests verified |
+| | **1.5** | **Active Workout Logger UI & Popovers** | **`[x] COMPLETED`** | `ActiveLoggerScreen`, `SetRowComponent`, `RestTimerBanner`, `PlateCalculatorModal`, `ExerciseSubstitutionModal`, `CrashRecoveryDialog`, 16 unit tests verified |
+| | **1.6** | **Calendar View, Basic Settings & Root Navigation** | **`[x] COMPLETED`** | Calendar agenda, session detail modal, basic settings toggles, bottom tab navigation, 275/275 mobile tests passed |
+| **Phase 2** | **2.1** | **Superset Grouping & Unilateral Limb Mechanics** | **`[x] COMPLETED`** | Superset/giant set grouping/ungrouping, rest timer suppression, `SupersetBracketGroup.tsx`, dual unilateral inputs & steppers, 301/301 mobile tests passing |
+| | **2.2** | **Exercise Library Manager, Variant Tree & Gear Inventory UI** | **`[x] COMPLETED`** | Gear CRUD, tare weight kg/lbs, cable ratios (1:1, 2:1), exercise catalog search/filter, variant tree (`parent_exercise_id`), 338/338 mobile tests passing |
+| | **2.3** | **Standardized JSON Export Service (Contract-Verified)** | **`[x] COMPLETED`** | Full 12-table serialization, ADR-026 dual-load persistence, `expo-file-system`/`expo-sharing` 1-tap Settings integration, cross-stack verified by Jest & Pytest |
+| | **2.4** | **External Data Import Engine (Strong, Hevy & Generic CSV)** | **`[x] COMPLETED`** | Zero-dependency RFC 4180 tokenizer, format auto-detection, exercise catalog matching & custom fallback, duplicate detection, `ImportScreen.tsx` wizard, 383/383 mobile tests verified |
+
+
+| **Phase 3** | **3.1** | **Allometric Strength Standards, DOTS & Cohort Math Engine** | **`[x] COMPLETED`** | DOTS polynomial formula, 95-row empirical seed table, bilinear interpolation, continuous 0–100+ score, SBD symmetry, 110/110 math tests verified |
+| | **3.2** | **Exercise Inspection Service & Rep-Max Record (PR Board) Queries** | **`[x] COMPLETED`** | Window-function PR queries, program block date filters, cross-variant aggregation, e1RM benchmarks, peak PR detection, 440/440 mobile tests verified |
+| | **3.3** | **Exercise Inspection UI, SBD Tier Widget & Symmetry Radar** | **`[x] COMPLETED`** | `ExerciseDetailScreen`, `PRBoardTable`, `SBDStandardsCard`, `SBDBalanceRadarChart`, 451/451 mobile tests verified |
+| **Phase 4** | **4.1** | **Declarative Progression Rule Engine (Pure Evaluator)** | **`[x] COMPLETED`** | Pure side-effect-free evaluator, priority sorting, DDP set-level proposals, LP/DP/DDP presets, 32/32 tests verified |
+| | **4.2** | **Profile-Driven Program Synthesizer (Pure Generator)** | **`[x] COMPLETED`** | Pure multi-day split synthesis (Full Body, Upper/Lower, PPLUL, PPL), volume/exertion calibration, antagonist supersets, 20/20 tests verified |
+| | **4.3** | **Programs, Templates, Meso-Cycle Blocks & Profile Repositories** | **`[x] COMPLETED`** | SQLite & Mock repositories, aggregate persistence, ProgramBlockService 1-tap swap, 49/49 new tests, 552/552 mobile tests verified |
+| | **4.4** | **Questionnaire UI, Program Builder, Rule Editor & Progression UI** | **`[x] COMPLETED`** | UserProfileScreen, ProgramOverviewScreen, ProgressionBuilderModal, proposal banner, 568/568 mobile tests verified |
+| **Phase 5** | **5.1** | **U.S. Navy Body Fat, Rolling Averages & Body Metrics Repository** | **`[x] COMPLETED`** | DoD metric density, Siri equation, 7-day SMA/EMA, IBodyMetricsRepository, Mock & SQLite implementations, 618/618 mobile tests verified |
+| | **5.2** | **Body Metrics Screen & Longitudinal Plots with Program Era Shading** | **`[x] COMPLETED`** | Anthropometry, Navy body fat, 5-tab longitudinal charts, 644/644 mobile tests verified |
+| | 5.3 | Psychological Matrix Calibration & Volume Prescriptions | `[ ] PENDING` | Mental fatigue modulation, recovery scores |
+| **Phase 6** | **6.1** | **Tier 2 Adaptive Linear Kalman Filter Engine** | **`[x] COMPLETED`** | `kalman_1rm.py`, intra-session filtering, true 1RM bypass, quadratic noise scaling, 13/13 pytest, strict mypy verified |
+| | **6.2** | **Dynamic Recoverability & Banister Impulse-Response Engine** | **`[x] COMPLETED`** | `recovery_modifier.py`, `fatigue_banister.py`, `recommendations.py`, 13/13 pytest, strict mypy verified |
+| | 6.3–6.4 | Calibrated Exporter & Streamlit UI | `[ ] PENDING` | Export pipeline, mobile ingestion round-trip, Streamlit dashboard |
 | **Phase 7** | 7.1–7.2 | Cloud Synchronization & Social Leaderboards | `[ ] PENDING` | Supabase RLS migrations, offline-first sync queue |
 
 ---
@@ -375,40 +391,43 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 * **Verification Gate**: Run `cd mobile && npx tsc --noEmit` and unit-test SQL query generation/mapping against a mocked `SQLiteDatabase` driver in Jest. *(Verified: 52/52 driver unit tests passed, 192/192 mobile tests total, tsc exited 0)*
 
 
-#### Step 1.4: Core Logger Application Services (Session, Rest Timer, Substitution, Crash Recovery)
+#### Step 1.4: Core Logger Application Services (Session, Rest Timer, Substitution, Crash Recovery) [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx jest src/services` and `npx tsc --noEmit`.
 * **Scope**: `mobile/src/services/activeSessionService.ts`, `restTimerService.ts`, `exerciseSubstitutionService.ts`, `crashRecoveryService.ts`, `mobile/src/services/__tests__/`.
 * **Deliverables**:
-1. `activeSessionService.ts`: Orchestrates starting a session, adding/deleting/reordering sets, pre-filling ghost values from the most recent global session, normalizing weights via `loadNormalizer`, and immediately writing every edit to `IWorkoutRepository`.
-2. `restTimerService.ts`: Pure state machine & timer manager supporting start on set completion, `+30s` / `-30s` / `Skip`, and background expiration timestamp calculation (`endTimeMs - Date.now()` so locking the phone never drifts the timer).
-3. `exerciseSubstitutionService.ts`: Finds compatible replacement exercises via shared `parent_exercise_id` or `muscle_group`, transfers target rep brackets, and fetches ghost sets for the substitute movement.
-4. `crashRecoveryService.ts`: Detects `status = 'in_progress'` workouts on startup and provides `resumeSession()` or `discardSession()`.
+1. `activeSessionService.ts`: Orchestrates starting a session, adding/deleting/reordering sets, pre-filling ghost values from the most recent global session, normalizing weights via `loadNormalizer`, and immediately writing every edit to `IWorkoutRepository`. *(Done)*
+2. `restTimerService.ts`: Pure state machine & timer manager supporting start on set completion, `+30s` / `-30s` / `Skip`, and background expiration timestamp calculation (`endTimeMs - Date.now()` so locking the phone never drifts the timer). *(Done)*
+3. `exerciseSubstitutionService.ts`: Finds compatible replacement exercises via shared `parent_exercise_id` or `muscle_group`, transfers target rep brackets, and fetches ghost sets for the substitute movement. *(Done)*
+4. `crashRecoveryService.ts`: Detects `status = 'in_progress'` workouts on startup and provides `resumeSession()` or `discardSession()`. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/services && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest src/services && npx tsc --noEmit`. *(Verified: 50/50 services tests passed in 3.57s, 242/242 mobile tests total, tsc exited 0)*
 
-#### Step 1.5: Active Workout Logger UI & QoL Popovers
+#### Step 1.5: Active Workout Logger UI & QoL Popovers [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx jest src/features/logger`, `npx tsc --noEmit`, and `npm run lint`.
 * **Scope**: `mobile/src/features/logger/ActiveLoggerScreen.tsx`, `SetRowComponent.tsx`, `RestTimerBanner.tsx`, `PlateCalculatorModal.tsx`, `ExerciseSubstitutionModal.tsx`, `CrashRecoveryDialog.tsx`.
 * **Deliverables**:
-1. High-contrast OLED-friendly `ActiveLoggerScreen` with 1-tap set completion, RPE/RIR half-step inputs, set type tags (`warmup`, `working`, `drop`, `myorep`, `failure`), per-set notes, and ghost placeholders.
-2. Dumbbell `30 kg (×2)` badge and gear subtext indicator (e.g., `Safety Squat Bar (29 kg)`).
-3. 1-tap `PlateCalculatorModal` on barbell weight fields and 1-tap `ExerciseSubstitutionModal` ("Swap for this session only" vs "Update template permanently").
-4. `CrashRecoveryDialog` on launch when an interrupted workout is detected.
+1. High-contrast OLED-friendly `ActiveLoggerScreen` with 1-tap set completion, RPE/RIR half-step inputs, set type tags (`warmup`, `working`, `drop`, `myorep`, `failure`), per-set notes, and ghost placeholders. *(Done)*
+2. Dumbbell `30 kg (×2)` badge and gear subtext indicator (e.g., `Safety Squat Bar (29 kg)`). *(Done)*
+3. 1-tap `PlateCalculatorModal` on barbell weight fields and 1-tap `ExerciseSubstitutionModal` ("Swap for this session only" vs "Update template permanently"). *(Done)*
+4. `CrashRecoveryDialog` on launch when an interrupted workout is detected. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npm run lint`.
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npm run lint`. *(Verified: 16/16 logger tests passed, 258/258 mobile tests passed total, tsc exited 0, npm run lint exited 0)*
 
-#### Step 1.6: Calendar View, Basic Settings & Root Navigation
+#### Step 1.6: Calendar View, Basic Settings & Root Navigation [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx tsc --noEmit`, `npx jest`, and `npm run lint`.
 * **Scope**: `mobile/src/features/calendar/CalendarScreen.tsx`, `SessionDetailModal.tsx`, `mobile/src/features/settings/SettingsScreen.tsx`, `mobile/App.tsx`.
 * **Deliverables**:
-1. Monthly and weekly calendar agenda showing completed workout badges and drill-down inspection of past sessions (total volume, duration, sets, e1RM).
-2. Basic `SettingsScreen` with instant toggles for Unit System (`kg` / `lbs`), Intensity Metric (`RPE` / `RIR`), and `Pure Utility Mode`.
-3. Bottom Tab Navigation wiring `Logger`, `Calendar`, and `Settings`.
+1. Monthly and weekly calendar agenda showing completed workout badges and drill-down inspection of past sessions (total volume, duration, sets, e1RM). *(Done)*
+2. Basic `SettingsScreen` with instant toggles for Unit System (`kg` / `lbs`), Intensity Metric (`RPE` / `RIR`), and `Pure Utility Mode`. *(Done)*
+3. Bottom Tab Navigation wiring `Logger`, `Calendar`, and `Settings`. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest`. *(Milestone: Phase 1 MVP is complete and usable in the gym).*
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest`. *(Milestone: Phase 1 MVP is complete and usable in the gym).* *(Verified: 275/275 mobile tests passed, tsc exited 0, npm run lint exited 0)*
 
 ---
 
@@ -416,48 +435,53 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 
 *Goal: Support supersets, unilateral limb tracking, custom gear management, external CSV imports (Strong/Hevy), and standardized JSON exports.*
 
-#### Step 2.1: Superset Grouping & Unilateral Limb Mechanics
+#### Step 2.1: Superset Grouping & Unilateral Limb Mechanics [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx jest src/services; npx tsc --noEmit` and `npm test` (301/301 mobile tests passing).
 * **Scope**: `mobile/src/services/activeSessionService.ts`, `mobile/src/services/restTimerService.ts`, `mobile/src/features/logger/SupersetBracketGroup.tsx`, `SetRowComponent.tsx`.
 * **Deliverables**:
-1. Group/ungroup exercises into supersets or giant sets sharing an `exercise_group_id`.
-2. Suppress automatic rest timer triggers between exercises inside a superset group; trigger the full rest timer only when the final exercise in the group completes its set.
-3. Render dual rep inputs (`reps` Left, `reps_right` Right) on a single row when `exercise.is_unilateral === 1`.
+1. Group/ungroup exercises into supersets or giant sets sharing an `exercise_group_id` (`groupExercises`, `ungroupExercise`, `ungroupSuperset`, `getSupersetGroups`). *(Done)*
+2. Suppress automatic rest timer triggers between exercises inside a superset group; trigger the full rest timer only when the final exercise in the group completes its set (`RestTimerService.shouldTriggerForExerciseInGroup`). *(Done)*
+3. Render dual rep inputs (`reps` Left, `reps_right` Right) on a single row when `exercise.is_unilateral === 1`, with independent L/R steppers in drawer and formatted ghost display (`w × L/R`). *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/services && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest src/services && npx tsc --noEmit`. *(Verified: 58/58 services unit tests passed, 301/301 total mobile tests passed, tsc exited 0, lint exited 0)*
 
-#### Step 2.2: Exercise Library Manager, Variant Tree & Gear Inventory UI
+#### Step 2.2: Exercise Library Manager, Variant Tree & Gear Inventory UI [COMPLETED ✅]
 
-* **Scope**: `mobile/src/features/gear/GearInventoryScreen.tsx`, `mobile/src/features/inspection/ExerciseLibraryScreen.tsx`, `ExerciseFormModal.tsx`.
+* **Status**: **Completed**. Verified with `cd mobile && npx tsc --noEmit && npm run lint && npm test` (338/338 mobile tests passing).
+* **Scope**: `mobile/src/services/gearInventoryService.ts`, `mobile/src/features/gear/GearInventoryScreen.tsx`, `mobile/src/features/inspection/ExerciseLibraryScreen.tsx`, `ExerciseFormModal.tsx`.
 * **Deliverables**:
-1. CRUD interface for `gear_inventory` (custom barbells with tare weights, custom cable machines with mechanical ratios).
-2. Exercise catalog search/filter by muscle group and equipment, custom exercise creation, and linking variants to a root movement via `parent_exercise_id`.
+1. CRUD interface for `gear_inventory` (custom barbells with tare weights in kg/lbs, custom cable machines with mechanical ratios, default item toggling) and application service `GearInventoryService`. *(Done)*
+2. Exercise catalog search/filter by muscle group and equipment, custom exercise creation/editing, and linking variants to a root movement via `parent_exercise_id` (ADR-012) across flat catalog and expandable variant tree views. *(Done)*
+3. Full integration into `SettingsScreen.tsx` (navigation cards + full-screen modals) and `ActiveLoggerScreen.tsx` (in-gym library & variant browser). *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest`.
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest`. *(Verified: 25/25 test suites passed, 338/338 unit tests passed, tsc exited 0, lint exited 0)*
 
-#### Step 2.3: Standardized JSON Export Service (Contract-Verified)
 
-* **Scope**: `mobile/src/services/exportService.ts`, `mobile/src/services/__tests__/exportService.test.ts`.
+#### Step 2.3: Standardized JSON Export Service (Contract-Verified) *(Done)*
+
+* **Scope**: `mobile/src/services/exportService.ts`, `mobile/src/services/__tests__/exportService.test.ts`, `mobile/src/features/settings/SettingsScreen.tsx`, `schemas/fixtures/sample_workout_export.json`.
 * **Deliverables**:
-1. Serializes full SQLite database state into the exact structure defined by `schemas/workout_export.schema.json`.
-2. Integrates with `expo-file-system` and `expo-sharing` for 1-tap export from Settings.
-3. Writes a sample fixture `schemas/fixtures/sample_workout_export.json` during test execution so Python contract tests can verify it.
+1. Serializes full SQLite database state across all 12 tables into the exact structure defined by `schemas/workout_export.schema.json`. *(Done)*
+2. Integrates with `expo-file-system` and `expo-sharing` for 1-tap export from Settings. *(Done)*
+3. Writes a sample fixture `schemas/fixtures/sample_workout_export.json` during test execution so Python contract tests can verify it. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/services/__tests__/exportService.test.ts` AND run `pytest companion/tests/test_schemas.py` against the generated fixture.
+* **Verification Gate**: Run `cd mobile && npx jest src/services/__tests__/exportService.test.ts` AND run `pytest companion/tests/test_schemas.py` against the generated fixture. *(Verified: 8/8 export service Jest tests passed, 347/347 full mobile suite passed, 9/9 pytest tests passed including Draft-07 jsonschema validation and Pydantic v2 validation)*
 
-#### Step 2.4: External Data Import Engine (Strong CSV, Hevy CSV, Generic CSV)
 
-* **Scope**: `mobile/src/core/parsers/csvImportParser.ts`, `mobile/src/services/importService.ts`, `mobile/src/features/import/ImportScreen.tsx`, `mobile/src/core/parsers/__tests__/`.
+#### Step 2.4: External Data Import Engine (Strong CSV, Hevy CSV, Generic CSV) [COMPLETED ✅]
+
+* **Status**: **Completed**. Verified with `npx jest src/core/parsers`, `npx tsc --noEmit`, and `npm test` (383/383 mobile tests passing).
+* **Scope**: `mobile/src/core/parsers/csvImportParser.ts`, `mobile/src/services/importService.ts`, `mobile/src/features/import/ImportScreen.tsx`, `mobile/src/core/parsers/__tests__/`, `mobile/src/services/__tests__/importService.test.ts`, `mobile/src/features/import/__tests__/importComponents.test.ts`.
 * **Deliverables**:
-1. Pure, zero-dependency parsers in `csvImportParser.ts` for Strong CSV exports, Hevy CSV exports, and custom column-mapped CSVs.
-2. Exercise name matching against the existing catalog, automatic custom exercise fallback creation, duplicate session detection (matching date + exercise + set count), and `imported_from` provenance tagging.
-3. `ImportScreen.tsx` wizard using `expo-document-picker`.
+1. Pure, zero-dependency parsers in `csvImportParser.ts` for Strong CSV exports, Hevy CSV exports, and custom column-mapped CSVs with RFC 4180 tokenizer, `,` vs `;` auto-detection, quoted fields, multiline notes, and Imperial load conversion (`lbsToKg`). *(Done)*
+2. Multi-stage exercise matching against the catalog (exact, alias table, structural inversion, fuzzy token matching), automatic custom exercise synthesis fallback with inferred muscle group and category, duplicate session detection (matching date + exercise + set count), and `imported_from` provenance tagging in `importService.ts`. *(Done)*
+3. Interactive `ImportScreen.tsx` wizard with file picker (`expo-document-picker`) and direct CSV text paste, preview summary, exercise mapping review, and toggleable duplicate skipping, integrated into `SettingsScreen.tsx`. *(Done)*
 
-
-* **Verification Gate**: Run `cd mobile && npx jest src/core/parsers && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest src/core/parsers && npx tsc --noEmit`. *(Verified: 23/23 parser tests passed in 1.18s, tsc exited 0, 383/383 mobile test suite passed in 4.76s)*
 
 ---
 
@@ -465,37 +489,41 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 
 *Goal: Provide allometric strength classification tiers, powerlifting DOTS scores, Rep-Max PR boards, and balance radar charts.*
 
-#### Step 3.1: Allometric Strength Standards, DOTS & Cohort Math Engine
+#### Step 3.1: Allometric Strength Standards, DOTS & Cohort Math Engine [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx jest src/core/math` (110/110 tests passing) and `npx tsc --noEmit`.
 * **Scope**: `mobile/src/core/math/strengthStandards.ts`, `mobile/src/core/math/dotsCoefficients.ts`, `mobile/src/database/seeds/strengthStandardsSeed.ts`, `mobile/src/core/math/__tests__/`.
 * **Deliverables**:
-1. Official powerlifting DOTS polynomial coefficient formula in `dotsCoefficients.ts` for males and females.
-2. Seeded empirical weight-bracket lookup tables (`squat`, `bench`, `deadlift`, `ohp`, `row`) across 5 tiers (`Untrained`, `Novice`, `Intermediate`, `Advanced`, `Elite`).
-3. Continuous normalized strength score ($0\text{--}100+$) with bilinear interpolation across bodyweight and e1RM, returning `{ tier, continuousScore, nextTierName, kgNeededForNextTier, demographicPercentile }`.
+1. Official powerlifting DOTS polynomial coefficient formula in `dotsCoefficients.ts` for males and females with denominator polynomial guards and `calculateSBDTotal`. *(Done)*
+2. Seeded empirical weight-bracket lookup tables (`squat`, `bench`, `deadlift`, `ohp`, `row`) across 5 tiers (`Untrained`, `Novice`, `Intermediate`, `Advanced`, `Elite`) spanning 95 rows for males and females in `strengthStandardsSeed.ts`. *(Done)*
+3. Continuous normalized strength score ($0\text{--}100+$) with bilinear interpolation across bodyweight and e1RM, returning `{ tier, continuousScore, nextTierName, kgNeededForNextTier, demographicPercentile }` in `strengthStandards.ts`. *(Done)*
+4. SBD symmetry and balance profiling in `calculateSBDBalanceProfile` with dominant/lagging lift classification and normalized radar coordinates. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/core/math && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest src/core/math && npx tsc --noEmit`. *(Verified: 110/110 tests passed, 426/426 mobile test suite passed, tsc exited 0, lint exited 0)*
 
-#### Step 3.2: Exercise Inspection Service & Rep-Max Record (PR Board) Queries
+#### Step 3.2: Exercise Inspection Service & Rep-Max Record (PR Board) Queries [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx jest src/services/__tests__/exerciseInspectionService.test.ts` (8/8 tests passing, 440/440 mobile tests total) and `npx tsc --noEmit`.
 * **Scope**: `mobile/src/services/exerciseInspectionService.ts`, `mobile/src/database/repositories/SQLiteWorkoutRepository.ts`, `mobile/src/services/__tests__/`.
 * **Deliverables**:
-1. Repository query extracting the heaviest load lifted per unique repetition count (`1RM`, `2RM`, `3RM`, `5RM`, `8RM`, `10RM`, `12RM`, etc.) with optional filtering by `program_blocks` date range or cross-variant aggregation (`parent_exercise_id`).
-2. Service computing the set e1RM benchmark ($w \cdot r_{\text{eff}}^k$) alongside each rep record and resolving SBD standard classifications.
+1. Repository query in `SQLiteWorkoutRepository.ts` and `MockWorkoutRepository.ts` extracting the heaviest load lifted per unique repetition count (`1RM`, `2RM`, `3RM`, `5RM`, `8RM`, `10RM`, `12RM`, etc.) using SQLite window functions (`PARTITION BY s.reps ORDER BY s.weight DESC`), with optional date filtering for `program_blocks` and cross-variant aggregation (`parent_exercise_id`). *(Done)*
+2. Service `ExerciseInspectionService.ts` computing the set e1RM benchmark ($w \cdot r_{\text{eff}}^k$) alongside each rep record, peak e1RM record resolution, SBD standard classification integration via `evaluateStrengthStandard`, and historical volume aggregations. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/services/__tests__/exerciseInspectionService.test.ts && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest src/services/__tests__/exerciseInspectionService.test.ts && npx tsc --noEmit`. *(Verified: 8/8 tests passed in 1.4s, 440/440 mobile tests passed, tsc exited 0, lint exited 0)*
 
-#### Step 3.3: Exercise Inspection UI, SBD Tier Widget & Symmetry Radar
+#### Step 3.3: Exercise Inspection UI, SBD Tier Widget & Symmetry Radar [COMPLETED ✅]
 
-* **Scope**: `mobile/src/features/inspection/ExerciseDetailScreen.tsx`, `PRBoardTable.tsx`, `SBDStandardsCard.tsx`, `SBDBalanceRadarChart.tsx`.
+* **Status**: **Completed**. Verified with `npx tsc --noEmit`, `npm run lint`, and `npm test` (451/451 mobile tests passing).
+* **Scope**: `mobile/src/features/inspection/ExerciseDetailScreen.tsx`, `PRBoardTable.tsx`, `SBDStandardsCard.tsx`, `SBDBalanceRadarChart.tsx`, `mobile/src/features/inspection/__tests__/exerciseInspectionComponents.test.ts`.
 * **Deliverables**:
-1. `ExerciseDetailScreen` displaying the Rep-Max PR Board (with All-Time vs. Program Block toggle and tap-to-view historical session).
-2. `SBDStandardsCard` showing current classification badge, progress bar to next tier (`+X.X kg needed`), DOTS score, and offline demographic percentile bell curve placement.
-3. `SBDBalanceRadarChart` visualizing Squat, Bench, and Deadlift percentile symmetry.
+1. `ExerciseDetailScreen` displaying comprehensive exercise lifetime statistics (total sessions, total sets, lifetime tonnage in kg/lbs), the Rep-Max PR Board, and modal integration with `SessionDetailModal` upon tapping any historical PR row. *(Done)*
+2. `SBDStandardsCard` showing current classification badge (Untrained, Novice, Intermediate, Advanced, Elite), progress bar to next tier (`+X.X kg needed`), demographic percentile bell curve placement rendered via `react-native-svg`, and conditional DOTS score display strictly displayed only when the athlete has logged their bodyweight. *(Done)*
+3. `SBDBalanceRadarChart` visualizing 3-axis Squat, Bench, and Deadlift symmetry with concentric polygon web rings, symmetry classification badges (`Balanced Triad`, `Dominant`, `Lagging`), powerlifting SBD total load, and composite DOTS score in a dedicated modal. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npm run lint`.
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npm run lint`. *(Verified: tsc exited 0, lint exited 0, 451/451 unit tests passed across 33 suites)*
 
 ---
 
@@ -503,48 +531,52 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 
 *Goal: Adapt programming to user psychology, build multi-day meso-cycle templates, and run declarative IF/THEN/ELSE progression rules.*
 
-#### Step 4.1: Declarative Progression Rule Engine (Pure Evaluator)
+#### Step 4.1: Declarative Progression Rule Engine (Pure Evaluator) [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx jest src/core/rules` (32/32 tests passing) and `npx tsc --noEmit`.
 * **Scope**: `mobile/src/core/rules/progressionRuleEngine.ts`, `mobile/src/core/rules/__tests__/progressionRuleEngine.test.ts`.
 * **Deliverables**:
-1. Pure, side-effect-free evaluator taking `(rules: ProgressionRule[], recentSessions: WorkoutSession[], currentPrescription: TemplateExercise)` and evaluating conditions (`ALL_SETS_HIT_TARGET_REPS`, `ANY_SET_HIT_TOP_REP_RANGE`, `AVERAGE_RPE_LESS_THAN`, `CONSECUTIVE_SUCCESSFUL_SESSIONS`, `CONSECUTIVE_FAILED_SESSIONS`).
-2. Outputs deterministic proposed actions (`INCREASE_LOAD_FIXED`, `INCREASE_LOAD_PERCENT`, `DECREASE_LOAD_FIXED`, `INCREASE_TARGET_REPS`, `ADD_WORKING_SET`, `RESET_TO_BASELINE`, `TRIGGER_DELOAD`) with human-readable explanation strings.
-3. Presets for Linear Progression (LP), Double Progression (DP), and Dynamic Double Progression (DDP).
+1. Pure, side-effect-free evaluator taking `(rules: ProgressionRule[], recentSessions: WorkoutSession[], currentPrescription: TemplateExercise)` and evaluating conditions (`ALL_SETS_HIT_TARGET_REPS`, `ANY_SET_HIT_TOP_REP_RANGE`, `AVERAGE_RPE_LESS_THAN`, `CONSECUTIVE_SUCCESSFUL_SESSIONS`, `CONSECUTIVE_FAILED_SESSIONS`). *(Done)*
+2. Outputs deterministic proposed actions (`INCREASE_LOAD_FIXED`, `INCREASE_LOAD_PERCENT`, `DECREASE_LOAD_FIXED`, `INCREASE_TARGET_REPS`, `ADD_WORKING_SET`, `RESET_TO_BASELINE`, `TRIGGER_DELOAD`) with human-readable explanation strings. *(Done)*
+3. Presets for Linear Progression (LP), Double Progression (DP), and Dynamic Double Progression (DDP). *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/core/rules && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest src/core/rules && npx tsc --noEmit`. *(Verified: 32/32 tests passed, 483/483 mobile test suite passed, tsc exited 0, lint exited 0)*
 
-#### Step 4.2: Profile-Driven Program Synthesizer (Pure Generator)
+#### Step 4.2: Profile-Driven Program Synthesizer (Pure Generator) [COMPLETED ✅]
 
+* **Status**: **Completed**. Verified with `npx jest src/core/generator` (20/20 tests passing) and `npx tsc --noEmit`.
 * **Scope**: `mobile/src/core/generator/programSynthesizer.ts`, `mobile/src/core/generator/__tests__/programSynthesizer.test.ts`.
 * **Deliverables**:
-1. Pure generator mapping `UserProfile` (`training_enjoyment`, `intensity_style`, `primary_goal`, `preferred_days_per_week`, `preferred_session_duration_mins`, `equipment_access`) to a complete multi-day program split (Full Body, Upper/Lower, or PPL).
-2. Automatically configures set counts (1–2 high-intensity sets @ RPE 9.5 vs. 3–4 volume sets @ RPE 7.5), antagonist superset pairings (`exercise_group_id`) for `minimalist` time budgets, and default `progression_rules`.
+1. Pure generator mapping `UserProfile` (`training_enjoyment`, `intensity_style`, `primary_goal`, `preferred_days_per_week`, `preferred_session_duration_mins`, `equipment_access`) to a complete multi-day program split (Full Body, Upper/Lower, PPLUL, or PPL). *(Done)*
+2. Automatically configures set counts (1–2 high-intensity sets @ RPE 9.5 vs. 3–4 volume sets @ RPE 7.5), antagonist superset pairings (`exercise_group_id`) for `minimalist` time budgets, and default `progression_rules`. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/core/generator && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest src/core/generator && npx tsc --noEmit`. *(Verified: 20/20 tests passed, 503/503 mobile test suite passed, tsc exited 0, lint exited 0)*
 
-#### Step 4.3: Programs, Templates, Meso-Cycle Blocks & Profile Repositories
+#### Step 4.3: Programs, Templates, Meso-Cycle Blocks & Profile Repositories [COMPLETED ✅]
 
-* **Scope**: `mobile/src/domain/repositories/IProgramRepository.ts`, `IUserProfileRepository.ts`, `mobile/src/database/repositories/SQLiteProgramRepository.ts`, `SQLiteUserProfileRepository.ts`, `mobile/src/services/programBlockService.ts`.
+* **Status**: **Completed**. Verified with `npx jest` (552/552 tests passing across 40 test suites), `npx tsc --noEmit`, and `npm run lint`.
+* **Scope**: `mobile/src/domain/repositories/IProgramRepository.ts`, `IUserProfileRepository.ts`, `mobile/src/database/repositories/SQLiteProgramRepository.ts`, `SQLiteUserProfileRepository.ts`, `mobile/src/database/mocks/MockProgramRepository.ts`, `MockUserProfileRepository.ts`, `mobile/src/services/programBlockService.ts`.
 * **Deliverables**:
-1. Full persistence for `programs`, `workout_templates`, `template_exercises`, `progression_rules`, `program_blocks`, and `user_profiles`.
-2. `programBlockService.ts`: Handles 1-tap active program swapping (closing the previous `program_blocks.end_date` and opening a new block with the program's `color_hex`).
+1. Full persistence for `programs`, `workout_templates`, `template_exercises`, `progression_rules`, `program_blocks`, and `user_profiles` with cascade deletion, JSON serialization, and aggregate fetching (`getProgramWithDetails`, `saveSynthesizedProgram`). *(Done)*
+2. `programBlockService.ts`: Handles 1-tap active program swapping (closing previous `program_blocks.end_date` and opening a new block), active template querying, and date-based program block era lookup (`getBlockForDate`). *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest && npx tsc --noEmit`. *(Verified: 49/49 new repository and service tests passed, 552/552 total mobile test suite passed, tsc exited 0, lint exited 0)*
 
-#### Step 4.4: Questionnaire UI, Program Builder, Rule Editor & Interactive Progression Banner
+#### Step 4.4: Questionnaire UI, Program Builder, Rule Editor & Interactive Progression Banner [COMPLETED ✅]
 
-* **Scope**: `mobile/src/features/profile/UserProfileScreen.tsx`, `mobile/src/features/progression/ProgramOverviewScreen.tsx`, `ProgressionBuilderModal.tsx`, `mobile/src/features/logger/ProgressionProposalBanner.tsx`.
+* **Status**: **Completed**. Verified with `npx tsc --noEmit`, `npm run lint`, and `npm test` (568/568 mobile tests passing across 43 test suites).
+* **Scope**: `mobile/src/features/profile/UserProfileScreen.tsx`, `mobile/src/features/progression/ProgramOverviewScreen.tsx`, `ProgressionBuilderModal.tsx`, `mobile/src/features/logger/ProgressionProposalBanner.tsx`, `mobile/src/features/calendar/CalendarScreen.tsx`, `mobile/src/features/settings/SettingsScreen.tsx`, `mobile/App.tsx`, and associated feature tests.
 * **Deliverables**:
-1. `UserProfileScreen`: Multi-step training psychology & logistics questionnaire with 1-tap "Generate Custom Program" button.
-2. `ProgramOverviewScreen` & `ProgressionBuilderModal`: Manage multi-day splits, program accent colors (`color_hex`), and IF/THEN/ELSE progression rules.
-3. `ProgressionProposalBanner` in the logger: Surfaces pending rule triggers before starting a session (`"Target hit last session! Increase Squat to 142.5 kg? [Accept / Dismiss]"`).
-4. Calendar program swap badges tinted with `color_hex`.
+1. `UserProfileScreen`: Multi-step training psychology & logistics questionnaire with biological metrics, enjoyment style, intensity preferences, equipment constraints, and 1-tap "Generate Custom Program" synthesis button. *(Done)*
+2. `ProgramOverviewScreen` & `ProgressionBuilderModal`: Multi-day training split manager, program color swatches (`color_hex`), 1-tap program swapping via `ProgramBlockService`, expandable daily templates with prescribed sets/reps/RPE/superset badges, and visual IF/THEN/ELSE progression rule editor with LP, DP, and DDP presets. *(Done)*
+3. `ProgressionProposalBanner` in Active Logger: OLED high-contrast logger banner rendering pending progression/deload triggers, explanation text, DDP set-level pill breakdowns, and Accept / Dismiss actions that directly update active sets. *(Done)*
+4. Calendar program swap badges tinted with program `color_hex`, month/week grid swap dots, and active meso-cycle banner display. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npm run lint`.
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npm run lint`. *(Verified: tsc exited 0, lint exited 0, 568/568 unit tests passed across 43 suites)*
 
 ---
 
@@ -552,26 +584,34 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 
 *Goal: Track bodyweight, U.S. Navy body fat %, circumference metrics, and render longitudinal charts with synchronized program era background shading.*
 
-#### Step 5.1: U.S. Navy Body Fat, Rolling Averages & Body Metrics Repository
+#### Step 5.1: U.S. Navy Body Fat, Rolling Averages & Body Metrics Repository [COMPLETED ✅]
 
-* **Scope**: `mobile/src/core/math/navyBodyFat.ts`, `mobile/src/core/math/__tests__/navyBodyFat.test.ts`, `mobile/src/domain/repositories/IBodyMetricsRepository.ts`, `mobile/src/database/repositories/SQLiteBodyMetricsRepository.ts`.
+* **Status**: **Completed**. Verified with `npx jest src/core/math/__tests__/navyBodyFat.test.ts` (22/22 tests passing), `npx tsc --noEmit`, and full mobile suite `npm test` (618/618 tests passing across 47 suites).
+* **Scope**: `mobile/src/core/math/navyBodyFat.ts`, `mobile/src/core/math/__tests__/navyBodyFat.test.ts`, `mobile/src/domain/repositories/IBodyMetricsRepository.ts`, `mobile/src/database/repositories/SQLiteBodyMetricsRepository.ts`, `mobile/src/database/mocks/MockBodyMetricsRepository.ts`.
 * **Deliverables**:
-1. `navyBodyFat.ts`: Pure U.S. Navy circumference formula for males and females (in cm) + 7-day rolling exponential/simple moving average calculator for bodyweight time-series.
-2. `SQLiteBodyMetricsRepository`: CRUD operations for `body_metrics` with automatic `navy_body_fat` calculation when waist, neck, and height (plus hip for females) are present.
+1. `navyBodyFat.ts`: Pure U.S. Navy circumference formula for males and females using official DoD metric body density and Siri's equation (in cm) + calendar-aware 7-day Simple Moving Average (SMA) and Exponential Moving Average (EMA $\alpha=0.25$) for bodyweight time-series. *(Done)*
+2. `SQLiteBodyMetricsRepository` & `MockBodyMetricsRepository`: Full CRUD operations for `body_metrics` with automatic `navy_body_fat` calculation resolved from the active `user_profiles` table or explicit overrides when waist, neck, and height (plus hip for females) are present. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx jest src/core/math/__tests__/navyBodyFat.test.ts && npx tsc --noEmit`.
+* **Verification Gate**: Run `cd mobile && npx jest src/core/math/__tests__/navyBodyFat.test.ts && npx tsc --noEmit`. *(Verified: 22/22 math tests passed, 618/618 mobile tests passed, tsc exited 0, lint exited 0)*
 
-#### Step 5.2: Body Metrics Screen & Longitudinal Plots with Program Era Shading
+#### Step 5.2: Body Metrics Screen & Longitudinal Plots with Program Era Shading [COMPLETED ✅]
 
-* **Scope**: `mobile/src/features/bodyMetrics/BodyMetricsScreen.tsx`, `mobile/src/features/plots/PlotsScreen.tsx`, `ProgramEraShadedChart.tsx`.
+* **Status**: **Completed**. Verified with `npx tsc --noEmit`, `npm run lint`, full mobile test suite `npm test` (644/644 tests passing across 49 test suites), and companion test suite `pytest companion/tests` (9/9 tests passing).
+* **Scope**: `mobile/src/features/bodyMetrics/BodyMetricsScreen.tsx`, `mobile/src/features/plots/PlotsScreen.tsx`, `ProgramEraShadedChart.tsx`, `mobile/src/features/plots/__tests__/plotsComponents.test.ts`, `mobile/src/features/bodyMetrics/__tests__/bodyMetricsComponents.test.ts`.
 * **Deliverables**:
-1. `BodyMetricsScreen`: Log bodyweight, manual BF%, and tape measurements (neck, waist, hip, bicep, chest, thigh, calf).
-2. `ProgramEraShadedChart`: Reusable chart wrapper rendering semi-transparent vertical background spans from `program_blocks` in each program's `color_hex`.
-3. Time-series charts for Exercise e1RM progression, Bodyweight + 7-day rolling average, Body Fat %, Muscle Circumferences, and Weekly Tonnage Volume.
+1. `BodyMetricsScreen`: Measurement logging for bodyweight, manual body fat %, and tape circumferences (neck, waist, hip, bicep, chest, thigh, calf) with real-time Navy formula recalculation, 7-day rolling average summary banner, historical logs list, and delete actions. Supports canonical metric cm/kg storage with automatic imperial inches/lbs conversions. *(Done)*
+2. `ProgramEraShadedChart`: Reusable SVG time-series and volume bar chart wrapper rendering semi-transparent vertical background spans from `program_blocks` in each program's `color_hex`, horizontal gridlines, date markers, interactive point callouts, and support for multi-series lines and volume bars. *(Done)*
+3. `PlotsScreen`: 5-tab longitudinal suite:
+   - Exercise e1RM progression with Lombardi power law + RPE/RIR intensity modeling and 1-tap compound lift picker.
+   - Bodyweight time series with 7-day rolling SMA and EMA smoothed trendlines.
+   - Body Fat % tracking (U.S. Navy DoD metric density + manual overrides).
+   - Muscle circumferences with segmented control for anatomical sites.
+   - Weekly tonnage volume bars (Monday-based weeks, excluding warmups) with 4-week moving average and peak tonnage indicators. *(Done)*
+4. Monorepo Integration: Inline `PlotsScreen` embedded into `HomeScreen` bottom section, modal views in `HomeScreen` and `UserProfileScreen`, and full test suites in `plotsComponents.test.ts` and `bodyMetricsComponents.test.ts`. *(Done)*
 
 
-* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npm run lint`.
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npm run lint`. *(Verified: tsc exited 0, lint exited 0, 644/644 unit tests passed across 49 suites)*
 
 ---
 
@@ -579,31 +619,31 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 
 *Goal: Implement the Adaptive Linear Kalman Filter for individualized $(1\text{RM}, k)$ tracking, Banister Fitness-Fatigue ODEs with $\Delta BW / \Delta t$ recovery scaling, and the Streamlit dashboard.*
 
-#### Step 6.1: Tier 2 Adaptive Linear Kalman Filter Engine (`kalman_1rm.py`)
+#### Step 6.1: Tier 2 Adaptive Linear Kalman Filter Engine (`kalman_1rm.py`) [COMPLETED ✅]
 
-* **Scope**: `companion/src/models/kalman_1rm.py`, `companion/tests/test_kalman_1rm.py`.
+* **Status**: **Completed**. Verified with `pytest companion/tests/test_kalman_1rm.py` (13/13 tests passing, 22/22 companion tests passing) and `mypy --strict companion/src/models/kalman_1rm.py companion/tests/test_kalman_1rm.py`.
+* **Scope**: `companion/src/models/kalman_1rm.py`, `companion/src/models/__init__.py`, `companion/tests/test_kalman_1rm.py`.
 * **Deliverables**:
 1. Implement the exact specification from `1RM_calculation.txt`:
-* Intra-session filtering: keep top 2 sets with lowest RIR per exercise per session; discard sets with $\text{RIR} > 3$ or $0$ completed reps.
-* State vector $\mathbf{x}_t = [\ln(1\text{RM}_t), k_t]^T$, observation $z_t = \ln(w_t)$, observation matrix $\mathbf{H}_t = [1, -\ln(r_{\text{eff}, t})]$.
-* Quadratic measurement noise $R_t = \sigma_{\text{base}}^2 (1 + \lambda r_{\text{eff}, t}^2)$ and diagonal process noise $\mathbf{Q}$.
-* Exercise-specific priors ($k_0 = 0.085$ bench, $0.095$ squat, $0.075$ deadlift) and post-update constraint $k_t \in [0.03, 0.16]$.
+* Intra-session filtering: keep top 2 sets with lowest RIR per exercise per session; discard sets with $\text{RIR} > 3$, $0$ completed reps, warmup sets, or unrated intensity; break ties by highest load. *(Done)*
+* State vector $\mathbf{x}_t = [\ln(1\text{RM}_t), k_t]^T$, observation $z_t = \ln(w_t)$, observation matrix $\mathbf{H}_t = [1, -\ln(r_{\text{eff}, t})]$. *(Done)*
+* Quadratic measurement noise $R_t = \sigma_{\text{base}}^2 (1 + \lambda r_{\text{eff}, t}^2)$ and diagonal process noise $\mathbf{Q}$. *(Done)*
+* Exercise-specific priors ($k_0 = 0.085$ bench, $0.095$ squat, $0.075$ deadlift, $0.10$ default) and post-update box-clipping constraint $k_t \in [0.03, 0.16]$. *(Done)*
+* True 1RM tests ($r_{\text{eff}} = 1.0$) mathematically bypass $k$ updates ($\mathbf{H} = [1, 0]$). *(Done)*
+* Zero $+10\%$ deadlift heuristic scalar applied to Kalman state per ADR-026. *(Done)*
 
+* **Verification Gate**: Run `pytest companion/tests/test_kalman_1rm.py` and `mypy --strict companion/src/models/kalman_1rm.py`. Verify true 1RM tests ($r_{\text{eff}} = 1.0$) bypass $k$ updates and high-rep sets are discounted. *(Verified: 13/13 unit tests passed in 0.32s, 22/22 total companion tests passed, strict mypy 0 issues)*
 
+#### Step 6.2: Dynamic Recoverability ($\Delta BW / \Delta t$) & Banister Impulse-Response Engine [COMPLETED ✅]
 
-
-* **Verification Gate**: Run `pytest companion/tests/test_kalman_1rm.py` and `mypy --strict companion/src/models/kalman_1rm.py`. Verify true 1RM tests ($r_{\text{eff}} = 1.0$) bypass $k$ updates and high-rep sets are discounted.
-
-#### Step 6.2: Dynamic Recoverability ($\Delta BW / \Delta t$) & Banister Impulse-Response Engine
-
-* **Scope**: `companion/src/models/recovery_modifier.py`, `companion/src/models/fatigue_banister.py`, `companion/src/models/recommendations.py`, `companion/tests/test_banister.py`.
+* **Status**: **Completed**. Verified with `pytest companion/tests/test_banister.py` (13/13 tests passing, 35/35 total companion tests passing) and `mypy --strict companion/src/models/`.
+* **Scope**: `companion/src/models/recovery_modifier.py`, `companion/src/models/fatigue_banister.py`, `companion/src/models/recommendations.py`, `companion/src/models/__init__.py`, `companion/tests/test_banister.py`.
 * **Deliverables**:
-1. `recovery_modifier.py`: Computes 14-day rolling OLS slope of bodyweight ($\Delta BW / \Delta t$) and scales fatigue decay time constant $\tau_2$ (shortened by 10–25% in caloric surplus, lengthened by 15–30% in caloric deficit).
-2. `fatigue_banister.py`: Computes session Effective Stimulating Sets ($\text{RPE} \ge 7.0$ scaled by $\text{weight}/1\text{RM}$) and integrates daily Fitness ($P_t$, $\tau_1 \approx 42\text{d}$) and Fatigue ($F_t$, dynamic $\tau_2$) to output Net Preparedness.
-3. `recommendations.py`: Computes Acute:Chronic Workload Ratio (ACWR) and generates structured advisories (`OPTIMAL_OVERLOAD`, `DELOAD_WARNING` if $\text{ACWR} > 1.5$, `UNDER_STIMULATION` if $\text{ACWR} < 0.8$).
+1. `recovery_modifier.py`: Computes 14-day rolling OLS slope of bodyweight ($\Delta BW / \Delta t$) via polynomial regression and scales fatigue decay time constant $\tau_2$ (shortened by 10–25% in caloric surplus, lengthened by 15–30% in caloric deficit). *(Done)*
+2. `fatigue_banister.py`: Computes session Effective Stimulating Sets ($\text{RPE} \ge 7.0$ scaled by $\text{weight}/1\text{RM}$) and integrates daily Fitness ($P_t$, $\tau_1 \approx 42\text{d}$) and Fatigue ($F_t$, dynamic $\tau_2$) to output Net Preparedness. *(Done)*
+3. `recommendations.py`: Computes Acute:Chronic Workload Ratio (ACWR) and generates structured advisories (`OPTIMAL_OVERLOAD`, `DELOAD_WARNING` if $\text{ACWR} > 1.5$, `UNDER_STIMULATION` if $\text{ACWR} < 0.8$, `OVERREACHING` if $1.3 < \text{ACWR} \le 1.5$). *(Done)*
 
-
-* **Verification Gate**: Run `pytest companion/tests/test_banister.py` and `mypy --strict companion/src/models/`.
+* **Verification Gate**: Run `pytest companion/tests/test_banister.py` and `mypy --strict companion/src/models/`. *(Verified: 13/13 unit tests passed in 0.22s, 35/35 total companion tests passed, strict mypy 0 issues across all models)*
 
 #### Step 6.3: Calibrated Parameter Exporter & Mobile Ingestion Round-Trip
 

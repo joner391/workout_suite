@@ -8,8 +8,7 @@ describe('Profile-Driven Program Synthesizer', () => {
     gender: 'male',
     birthdate: '1995-05-15',
     height_cm: 180,
-    training_enjoyment: 'neutral',
-    intensity_style: 'balanced',
+    training_mentality: 'precision',
     primary_goal: 'hypertrophy',
     secondary_goals: ['strength'],
     preferred_days_per_week: 4,
@@ -428,6 +427,112 @@ describe('Profile-Driven Program Synthesizer', () => {
       // 4. Summary metrics consistency
       expect(result.summary.totalWeeklySets).toBeGreaterThan(0);
       expect(result.summary.daysPerWeek).toBe(4);
+    });
+  });
+
+  // ==========================================================================
+  // Training Mentality Matrix (Phase 4 Specification)
+  // ==========================================================================
+
+  describe('Training Mentality Matrix', () => {
+    it('synthesizes Fury mentality with 1-2 sets @ RPE 9.5 and DDP rules', () => {
+      const profile: UserProfile = {
+        ...baseProfile,
+        training_mentality: 'fury',
+      };
+
+      const result = synthesizeProgram(profile);
+
+      for (const te of result.templateExercises) {
+        expect(te.target_sets).toBeLessThanOrEqual(2);
+        expect(te.target_sets).toBeGreaterThanOrEqual(1);
+        expect(te.target_rpe).toBe(9.5);
+        expect(te.target_rir).toBe(0.5);
+      }
+
+      expect(result.summary.progressionSchemeSummary).toContain('Dynamic Double Progression');
+      expect(result.program.notes).toContain('fury mentality');
+    });
+
+    it('synthesizes Precision mentality with high volume @ RPE 8.0 and LP/DP rules', () => {
+      const profile: UserProfile = {
+        ...baseProfile,
+        training_mentality: 'precision',
+      };
+
+      const result = synthesizeProgram(profile);
+
+      for (const te of result.templateExercises) {
+        expect(te.target_sets).toBeGreaterThanOrEqual(3);
+        expect(te.target_rpe).toBe(8.0);
+        expect(te.target_rir).toBe(2.0);
+      }
+
+      expect(result.summary.progressionSchemeSummary).toContain('Linear Progression');
+      expect(result.program.notes).toContain('precision mentality');
+    });
+
+    it('synthesizes Get Out mentality with 2 sets, auto antagonist supersets and DP', () => {
+      const profile: UserProfile = {
+        ...baseProfile,
+        training_mentality: 'get_out',
+        preferred_session_duration_mins: 60,
+      };
+
+      const result = synthesizeProgram(profile);
+
+      for (const te of result.templateExercises) {
+        expect(te.target_sets).toBe(2);
+        expect(te.target_rpe).toBe(8.5);
+        expect(te.target_rir).toBe(1.5);
+      }
+
+      expect(result.summary.hasSupersets).toBe(true);
+      expect(result.summary.progressionSchemeSummary).toContain('Double Progression');
+      expect(result.program.notes).toContain('get_out mentality');
+    });
+  });
+
+  // ==========================================================================
+  // 15-Minute Target Workout Duration (Phase 4 Specification)
+  // ==========================================================================
+
+  describe('15-Minute Target Workout Duration', () => {
+    it('synthesizes exactly 4 exercises in 2 antagonist pairs with 2 sets per exercise', () => {
+      const profile: UserProfile = {
+        ...baseProfile,
+        preferred_session_duration_mins: 15,
+        preferred_days_per_week: 4,
+      };
+
+      const result = synthesizeProgram(profile);
+
+      expect(result.summary.estimatedSessionDurationMins).toBe(15);
+      expect(result.summary.hasSupersets).toBe(true);
+
+      for (const template of result.templates) {
+        const exercisesInDay = result.templateExercises.filter(
+          (te) => te.template_id === template.id
+        );
+        expect(exercisesInDay).toHaveLength(4);
+
+        // Exactly 2 sets per exercise -> 8 sets per workout session
+        for (const te of exercisesInDay) {
+          expect(te.target_sets).toBe(2);
+          expect(te.exercise_group_id).toBeTruthy();
+        }
+
+        // Two distinct superset pairs (slots 0+1 and slots 2+3)
+        const pair1Id = exercisesInDay[0].exercise_group_id;
+        const pair2Id = exercisesInDay[2].exercise_group_id;
+
+        expect(exercisesInDay[1].exercise_group_id).toBe(pair1Id);
+        expect(exercisesInDay[3].exercise_group_id).toBe(pair2Id);
+        expect(pair1Id).not.toBe(pair2Id);
+      }
+
+      // Total weekly sets: 4 days * 8 sets = 32 sets
+      expect(result.summary.totalWeeklySets).toBe(32);
     });
   });
 });

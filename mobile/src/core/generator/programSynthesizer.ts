@@ -17,6 +17,7 @@
 
 import {
   UserProfile,
+  TrainingMentality,
   Program,
   WorkoutTemplate,
   TemplateExercise,
@@ -53,6 +54,10 @@ export interface ProgramSynthesizerOptions {
    * Optional accent color override (hex format).
    */
   colorHex?: string;
+  /**
+   * Optional custom program overview notes
+   */
+  notes?: string;
 }
 
 // ============================================================================
@@ -64,7 +69,7 @@ interface ExerciseSlotConfig {
   fallbackIds: string[];
   muscleGroup: string;
   isPrimaryCompound?: boolean;
-  antagonistTag?: 'chest' | 'back' | 'quad' | 'hamstring' | 'bicep' | 'tricep' | 'calves' | 'abs';
+  antagonistTag?: 'chest' | 'back' | 'quad' | 'hamstring' | 'bicep' | 'tricep' | 'calves' | 'abs' | 'delts' | 'rear_delts';
 }
 
 interface TemplateBlueprint {
@@ -589,6 +594,148 @@ function getPPLBlueprints(): TemplateBlueprint[] {
   ];
 }
 
+function get15MinBlueprints(days: number): TemplateBlueprint[] {
+  const day1: TemplateBlueprint = {
+    name: 'Day 1 — Upper Antagonist 15-Min Express',
+    notes: '2 Antagonist superset pairs: Incline DB Press + Seated Row (Pair 1), then Lateral Raise + Face Pull (Pair 2). 0s rest in pair, 90s between rounds.',
+    slots: [
+      {
+        preferredId: 'dumbbell_incline_bench_press',
+        fallbackIds: ['barbell_bench_press', 'machine_chest_press', 'dumbbell_bench_press'],
+        muscleGroup: 'Chest',
+        isPrimaryCompound: true,
+        antagonistTag: 'chest',
+      },
+      {
+        preferredId: 'cable_seated_row',
+        fallbackIds: ['barbell_bent_over_row', 'dumbbell_single_arm_row', 'bodyweight_pull_up'],
+        muscleGroup: 'Back',
+        isPrimaryCompound: true,
+        antagonistTag: 'back',
+      },
+      {
+        preferredId: 'cable_lateral_raise',
+        fallbackIds: ['dumbbell_lateral_raise'],
+        muscleGroup: 'Shoulders',
+        antagonistTag: 'delts',
+      },
+      {
+        preferredId: 'cable_face_pull',
+        fallbackIds: ['dumbbell_rear_delt_fly'],
+        muscleGroup: 'Shoulders',
+        antagonistTag: 'rear_delts',
+      },
+    ],
+  };
+
+  const day2: TemplateBlueprint = {
+    name: 'Day 2 — Lower & Arms 15-Min Express',
+    notes: '2 Antagonist superset pairs: Back Squat + RDL (Pair 1), then Bicep Curl + Tricep Pushdown (Pair 2). 0s rest in pair, 90s between rounds.',
+    slots: [
+      {
+        preferredId: 'barbell_back_squat',
+        fallbackIds: ['machine_leg_press', 'barbell_front_squat', 'dumbbell_walking_lunge'],
+        muscleGroup: 'Quads',
+        isPrimaryCompound: true,
+        antagonistTag: 'quad',
+      },
+      {
+        preferredId: 'barbell_rdl',
+        fallbackIds: ['machine_leg_curl'],
+        muscleGroup: 'Hamstrings',
+        isPrimaryCompound: true,
+        antagonistTag: 'hamstring',
+      },
+      {
+        preferredId: 'dumbbell_bicep_curl',
+        fallbackIds: ['cable_bicep_curl'],
+        muscleGroup: 'Biceps',
+        antagonistTag: 'bicep',
+      },
+      {
+        preferredId: 'tricep_cable_pushdown',
+        fallbackIds: ['dumbbell_overhead_tricep_extension', 'barbell_skull_crusher'],
+        muscleGroup: 'Triceps',
+        antagonistTag: 'tricep',
+      },
+    ],
+  };
+
+  const day3: TemplateBlueprint = {
+    name: 'Day 3 — Upper Body Dips & Chins 15-Min Express',
+    notes: '2 Antagonist superset pairs: Dips + Pull-ups (Pair 1), then Hammer Curl + Overhead Tricep Extension (Pair 2). 0s rest in pair, 90s between rounds.',
+    slots: [
+      {
+        preferredId: 'bodyweight_dips',
+        fallbackIds: ['barbell_bench_press', 'dumbbell_bench_press'],
+        muscleGroup: 'Chest',
+        isPrimaryCompound: true,
+        antagonistTag: 'chest',
+      },
+      {
+        preferredId: 'bodyweight_pull_up',
+        fallbackIds: ['cable_lat_pulldown', 'cable_seated_row'],
+        muscleGroup: 'Back',
+        isPrimaryCompound: true,
+        antagonistTag: 'back',
+      },
+      {
+        preferredId: 'dumbbell_hammer_curl',
+        fallbackIds: ['dumbbell_bicep_curl'],
+        muscleGroup: 'Biceps',
+        antagonistTag: 'bicep',
+      },
+      {
+        preferredId: 'dumbbell_overhead_tricep_extension',
+        fallbackIds: ['tricep_cable_pushdown'],
+        muscleGroup: 'Triceps',
+        antagonistTag: 'tricep',
+      },
+    ],
+  };
+
+  const day4: TemplateBlueprint = {
+    name: 'Day 4 — Lower & Shoulders 15-Min Express',
+    notes: '2 Antagonist superset pairs: Leg Press + Leg Curl (Pair 1), then Lateral Raise + Face Pull (Pair 2). 0s rest in pair, 90s between rounds.',
+    slots: [
+      {
+        preferredId: 'machine_leg_press',
+        fallbackIds: ['barbell_back_squat', 'barbell_front_squat'],
+        muscleGroup: 'Quads',
+        isPrimaryCompound: true,
+        antagonistTag: 'quad',
+      },
+      {
+        preferredId: 'machine_leg_curl',
+        fallbackIds: ['barbell_rdl'],
+        muscleGroup: 'Hamstrings',
+        isPrimaryCompound: true,
+        antagonistTag: 'hamstring',
+      },
+      {
+        preferredId: 'cable_lateral_raise',
+        fallbackIds: ['dumbbell_lateral_raise'],
+        muscleGroup: 'Shoulders',
+        antagonistTag: 'delts',
+      },
+      {
+        preferredId: 'cable_face_pull',
+        fallbackIds: ['dumbbell_rear_delt_fly'],
+        muscleGroup: 'Shoulders',
+        antagonistTag: 'rear_delts',
+      },
+    ],
+  };
+
+  const pool = [day1, day2, day3, day4];
+  const count = Math.min(days, 6);
+  const result: TemplateBlueprint[] = [];
+  for (let i = 0; i < count; i++) {
+    result.push(pool[i % pool.length]);
+  }
+  return result;
+}
+
 // ============================================================================
 // Main Program Synthesizer Function
 // ============================================================================
@@ -612,12 +759,16 @@ export function synthesizeProgram(
     catalogMap.set(ex.id, ex);
   }
 
-  // 1. Determine split type based on weekly frequency
+  // 1. Determine split type based on weekly frequency and duration
   const daysPerWeek = Math.max(1, Math.min(7, Math.round(profile.preferred_days_per_week || 4)));
+  const is15MinRoutine = profile.preferred_session_duration_mins === 15;
   let splitType: 'full_body' | 'upper_lower' | 'pplul' | 'ppl';
   let blueprints: TemplateBlueprint[];
 
-  if (daysPerWeek <= 3) {
+  if (is15MinRoutine) {
+    splitType = 'upper_lower';
+    blueprints = get15MinBlueprints(daysPerWeek);
+  } else if (daysPerWeek <= 3) {
     splitType = 'full_body';
     blueprints = getFullBodyBlueprints(daysPerWeek);
   } else if (daysPerWeek === 4) {
@@ -658,40 +809,86 @@ export function synthesizeProgram(
       break;
   }
 
+  const isMinimalist = profile.training_mentality === 'get_out' || profile.training_enjoyment === 'minimalist';
+  const isHighIntensity = profile.training_mentality === 'fury' || profile.intensity_style === 'high_intensity_low_volume';
+  const isVolumeAccumulator = profile.intensity_style === 'volume_accumulation';
+  const isBalanced = profile.intensity_style === 'balanced';
+  const isPrecision = (profile.training_mentality === 'precision' && !isHighIntensity && !isVolumeAccumulator && !isBalanced) || isVolumeAccumulator;
+  const isFury = isHighIntensity;
+  const isGetOut = isMinimalist;
+
+  const mentality: TrainingMentality =
+    profile.training_mentality ??
+    (isHighIntensity
+      ? 'fury'
+      : isMinimalist
+      ? 'get_out'
+      : 'precision');
+
   const program: Program = {
     id: programId,
     name: options.programName || defaultName,
     color_hex: options.colorHex || defaultColor,
-    notes: `Synthesized for ${profile.gender} lifter (${profile.intensity_style}, ${profile.training_enjoyment}, ${daysPerWeek}d/wk).`,
+    notes:
+      options.notes ||
+      `Synthesized for ${profile.gender} lifter (${mentality} mentality, ${profile.preferred_session_duration_mins || 60}m/session, ${daysPerWeek}d/wk).`,
     created_at: new Date().toISOString(),
   };
 
   // 3. Antagonist Superset Pairing Trigger
-  // Rule: Pair if minimalist enjoyment OR session duration <= 45 mins
   const shouldPairSupersets =
-    profile.training_enjoyment === 'minimalist' ||
+    is15MinRoutine ||
+    isGetOut ||
     (profile.preferred_session_duration_mins != null &&
       profile.preferred_session_duration_mins <= 45);
 
   // 4. Session Duration Volume Constraint (limit exercise count if short session)
-  const maxExercisesPerSession =
-    profile.preferred_session_duration_mins && profile.preferred_session_duration_mins <= 35
-      ? 4
-      : profile.preferred_session_duration_mins && profile.preferred_session_duration_mins <= 45
-      ? 5
-      : 8;
+  const maxExercisesPerSession = is15MinRoutine
+    ? 4
+    : profile.preferred_session_duration_mins && profile.preferred_session_duration_mins <= 35
+    ? 4
+    : profile.preferred_session_duration_mins && profile.preferred_session_duration_mins <= 45
+    ? 5
+    : 8;
 
   // 5. Volume & Exertion Parameters
-  const isHighIntensity = profile.intensity_style === 'high_intensity_low_volume';
-  const isVolumeAccumulator = profile.intensity_style === 'volume_accumulation';
+  let compoundSetCount: number;
+  let accessorySetCount: number;
+  let targetRpe: number;
+  let targetRir: number;
 
-  // Target sets per exercise
-  const compoundSetCount = isHighIntensity ? 2 : isVolumeAccumulator ? 4 : 3;
-  const accessorySetCount = isHighIntensity ? 1 : isVolumeAccumulator ? 3 : 2;
-
-  // Target RPE & RIR
-  const targetRpe = isHighIntensity ? 9.5 : isVolumeAccumulator ? 7.5 : 8.5;
-  const targetRir = isHighIntensity ? 0.5 : isVolumeAccumulator ? 2.5 : 1.5;
+  if (is15MinRoutine) {
+    compoundSetCount = 2;
+    accessorySetCount = 2;
+    targetRpe = isFury ? 9.5 : 8.5;
+    targetRir = isFury ? 0.5 : 1.5;
+  } else if (isFury) {
+    compoundSetCount = 2;
+    accessorySetCount = 1;
+    targetRpe = 9.5;
+    targetRir = 0.5;
+  } else if (isVolumeAccumulator) {
+    compoundSetCount = 4;
+    accessorySetCount = 3;
+    targetRpe = 7.5;
+    targetRir = 2.5;
+  } else if (isPrecision) {
+    compoundSetCount = 4;
+    accessorySetCount = 3;
+    targetRpe = 8.0;
+    targetRir = 2.0;
+  } else if (isGetOut) {
+    compoundSetCount = 2;
+    accessorySetCount = 2;
+    targetRpe = 8.5;
+    targetRir = 1.5;
+  } else {
+    // balanced fallback
+    compoundSetCount = 3;
+    accessorySetCount = 2;
+    targetRpe = 8.5;
+    targetRir = 1.5;
+  }
 
   // 6. Build WorkoutTemplates, TemplateExercises & ProgressionRules
   const templates: WorkoutTemplate[] = [];
@@ -788,6 +985,8 @@ export function synthesizeProgram(
         else if (tag === 'tricep') partnerTag = 'bicep';
         else if (tag === 'calves') partnerTag = 'abs';
         else if (tag === 'abs') partnerTag = 'calves';
+        else if (tag === 'delts') partnerTag = 'rear_delts';
+        else if (tag === 'rear_delts') partnerTag = 'delts';
 
         if (partnerTag && antagonistPairs.has(partnerTag)) {
           // Link with already existing group
@@ -818,20 +1017,27 @@ export function synthesizeProgram(
       // 7. Progression Rules Configuration
       let rulesForExercise: ProgressionRule[];
 
-      if (isHighIntensity) {
-        // High Intensity / HIT -> Dynamic Double Progression (DDP)
+      if (isFury) {
+        // High Intensity / Fury -> Dynamic Double Progression (DDP)
         rulesForExercise = createDynamicDoubleProgressionRule(teId, {
           incrementKg: isPrimaryCompound ? 2.5 : 1.25,
         });
-      } else if (profile.primary_goal === 'strength' && isPrimaryCompound) {
-        // Pure strength compound -> Linear Progression (LP)
-        rulesForExercise = createLinearProgressionRule(teId, {
-          incrementKg: 2.5,
-          plateauThresholdSessions: 3,
-          deloadPercent: 0.10,
-        });
+      } else if (isPrecision || (profile.primary_goal === 'strength' && isPrimaryCompound)) {
+        if (isPrimaryCompound) {
+          rulesForExercise = createLinearProgressionRule(teId, {
+            incrementKg: 2.5,
+            plateauThresholdSessions: 3,
+            deloadPercent: 0.10,
+          });
+        } else {
+          rulesForExercise = createDoubleProgressionRule(teId, {
+            incrementKg: 1.25,
+            plateauThresholdSessions: 3,
+            deloadPercent: 0.10,
+          });
+        }
       } else {
-        // Hypertrophy & balanced -> Standard Double Progression (DP)
+        // Hypertrophy & balanced & get_out -> Standard Double Progression (DP)
         rulesForExercise = createDoubleProgressionRule(teId, {
           incrementKg: isPrimaryCompound ? 2.5 : 1.25,
           plateauThresholdSessions: 3,
@@ -845,19 +1051,23 @@ export function synthesizeProgram(
 
   // 8. Summary Information
   let progressionSummary = 'Standard Double Progression (DP)';
-  if (isHighIntensity) {
+  if (isFury) {
     progressionSummary = 'Dynamic Double Progression (DDP per-set advancement)';
-  } else if (profile.primary_goal === 'strength') {
+  } else if (isPrecision || profile.primary_goal === 'strength') {
     progressionSummary = 'Linear Progression (LP) on main compounds, DP on accessories';
+  } else if (isGetOut) {
+    progressionSummary = 'Double Progression (DP) with time-compressed execution';
   }
 
   const summary: SynthesizedProgramSummary = {
     splitType,
     daysPerWeek,
-    estimatedSessionDurationMins: Math.min(
-      profile.preferred_session_duration_mins || 60,
-      shouldPairSupersets ? 45 : 75
-    ),
+    estimatedSessionDurationMins: is15MinRoutine
+      ? 15
+      : Math.min(
+          profile.preferred_session_duration_mins || 60,
+          shouldPairSupersets ? 45 : 75
+        ),
     totalWeeklySets,
     hasSupersets: shouldPairSupersets,
     progressionSchemeSummary: progressionSummary,

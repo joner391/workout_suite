@@ -273,5 +273,160 @@ describe('Progression Builder & Program Overview Management (Step 4.4)', () => {
       const active = await blockService.getActiveProgram();
       expect(active?.program.id).toBe('prog-2');
     });
+
+    test('supports template CRUD and exercise prescription reordering/supersets', async () => {
+      const prog: Program = {
+        id: 'prog_custom_test_123',
+        name: 'Custom Upper Lower',
+        color_hex: '#3B82F6',
+        notes: 'Test split',
+        created_at: new Date().toISOString(),
+      };
+      await programRepo.create(prog);
+
+      // 1. Add Days
+      const tmpl1: WorkoutTemplate = {
+        id: 'tpl_day_1',
+        program_id: prog.id,
+        name: 'Day 1 — Upper',
+        order_index: 0,
+        notes: null,
+        created_at: new Date().toISOString(),
+      };
+      const tmpl2: WorkoutTemplate = {
+        id: 'tpl_day_2',
+        program_id: prog.id,
+        name: 'Day 2 — Lower',
+        order_index: 1,
+        notes: null,
+        created_at: new Date().toISOString(),
+      };
+      await programRepo.createTemplate(tmpl1);
+      await programRepo.createTemplate(tmpl2);
+
+      // Reorder days
+      await programRepo.updateTemplate({ ...tmpl1, order_index: 1 });
+      await programRepo.updateTemplate({ ...tmpl2, order_index: 0 });
+
+      let details = await programRepo.getProgramWithDetails(prog.id);
+      expect(details?.templates.length).toBe(2);
+      const sortedTemplates = details!.templates.sort((a, b) => a.order_index - b.order_index);
+      expect(sortedTemplates[0].name).toBe('Day 2 — Lower');
+      expect(sortedTemplates[1].name).toBe('Day 1 — Upper');
+
+      // 2. Add Exercises & Superset
+      const ex1: TemplateExercise = {
+        id: 'te_1',
+        template_id: tmpl1.id,
+        exercise_id: 'bench_press',
+        gear_id: null,
+        target_sets: 3,
+        target_reps_min: 8,
+        target_reps_max: 12,
+        target_rpe: 8.0,
+        target_rir: null,
+        order_index: 0,
+        exercise_group_id: null,
+      };
+      const ex2: TemplateExercise = {
+        id: 'te_2',
+        template_id: tmpl1.id,
+        exercise_id: 'cable_row',
+        gear_id: null,
+        target_sets: 3,
+        target_reps_min: 8,
+        target_reps_max: 12,
+        target_rpe: 8.0,
+        target_rir: null,
+        order_index: 1,
+        exercise_group_id: null,
+      };
+      await programRepo.createTemplateExercise(ex1);
+      await programRepo.createTemplateExercise(ex2);
+
+      // Link in superset
+      const ssId = 'ss_day1_1';
+      await programRepo.updateTemplateExercise({ ...ex1, exercise_group_id: ssId });
+      await programRepo.updateTemplateExercise({ ...ex2, exercise_group_id: ssId });
+
+      let tmpl1Details = await programRepo.getTemplateWithDetails(tmpl1.id);
+      expect(tmpl1Details?.exercises.length).toBe(2);
+      expect(tmpl1Details?.exercises[0].exercise_group_id).toBe(ssId);
+      expect(tmpl1Details?.exercises[1].exercise_group_id).toBe(ssId);
+
+      // 3. Swap Exercise
+      await programRepo.updateTemplateExercise({ ...ex1, exercise_id: 'incline_dumbbell_press' });
+      tmpl1Details = await programRepo.getTemplateWithDetails(tmpl1.id);
+      expect(tmpl1Details?.exercises[0].exercise_id).toBe('incline_dumbbell_press');
+      expect(tmpl1Details?.exercises[0].target_sets).toBe(3); // Preserved prescription!
+
+      // 4. Delete Exercise
+      await programRepo.deleteTemplateExercise('te_2');
+      tmpl1Details = await programRepo.getTemplateWithDetails(tmpl1.id);
+      expect(tmpl1Details?.exercises.length).toBe(1);
+
+      // 5. Delete Day
+      await programRepo.deleteTemplate(tmpl2.id);
+      details = await programRepo.getProgramWithDetails(prog.id);
+      expect(details?.templates.length).toBe(1);
+    });
+
+    test('prescribes custom gear (e.g., Safety Squat Bar) to template exercises', async () => {
+      const prog: Program = {
+        id: 'prog_squat_spec',
+        name: 'Powerlifting Squat Specialization',
+        color_hex: '#EF4444',
+        notes: null,
+        created_at: new Date().toISOString(),
+      };
+      await programRepo.create(prog);
+
+      const tmpl: WorkoutTemplate = {
+        id: 'tmpl_squat_day',
+        program_id: prog.id,
+        name: 'Day 1: Heavy Squat Focus',
+        order_index: 0,
+        notes: null,
+        created_at: new Date().toISOString(),
+      };
+      await programRepo.createTemplate(tmpl);
+
+      // Prescribe Barbell Back Squat specifically with Safety Squat Bar (29 kg)
+      await programRepo.createTemplateExercise({
+        id: 'te_ssb_squat',
+        template_id: tmpl.id,
+        exercise_id: 'barbell_back_squat',
+        gear_id: 'gear_bar_ssb_29kg',
+        target_sets: 4,
+        target_reps_min: 6,
+        target_reps_max: 8,
+        target_rpe: 8.5,
+        target_rir: null,
+        order_index: 0,
+        exercise_group_id: null,
+      });
+
+      // Prescribe Barbell Bench Press with standard bar (gear_id: null)
+      await programRepo.createTemplateExercise({
+        id: 'te_std_bench',
+        template_id: tmpl.id,
+        exercise_id: 'barbell_bench_press',
+        gear_id: null,
+        target_sets: 3,
+        target_reps_min: 8,
+        target_reps_max: 10,
+        target_rpe: 8.0,
+        target_rir: null,
+        order_index: 1,
+        exercise_group_id: null,
+      });
+
+      const details = await programRepo.getTemplateWithDetails(tmpl.id);
+      expect(details?.exercises).toHaveLength(2);
+      expect(details?.exercises[0].exercise_id).toBe('barbell_back_squat');
+      expect(details?.exercises[0].gear_id).toBe('gear_bar_ssb_29kg');
+      expect(details?.exercises[1].exercise_id).toBe('barbell_bench_press');
+      expect(details?.exercises[1].gear_id).toBeNull();
+    });
   });
 });

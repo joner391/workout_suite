@@ -16,10 +16,12 @@ import {
   ActivityIndicator,
   TextInput,
   Alert,
+  Modal,
 } from 'react-native';
 import {
   UserProfile,
   Gender,
+  TrainingMentality,
   TrainingEnjoyment,
   IntensityStyle,
   PrimaryGoal,
@@ -30,16 +32,30 @@ import {
 import { IUserProfileRepository } from '../../domain/repositories/IUserProfileRepository';
 import { IProgramRepository } from '../../domain/repositories/IProgramRepository';
 import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
-import { ProgramBlockService } from '../../services/programBlockService';
+import { IGearRepository } from '../../domain/repositories/IGearRepository';
+import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
+import { IBodyMetricsRepository } from '../../domain/repositories/IBodyMetricsRepository';
+import {
+  ProgramBlockService,
+  ActiveProgramInfo,
+} from '../../services/programBlockService';
 import { synthesizeProgram } from '../../core/generator/programSynthesizer';
+import { ProgramOverviewScreen } from '../progression/ProgramOverviewScreen';
+import { GearInventoryScreen } from '../gear/GearInventoryScreen';
+import { BodyMetricsScreen } from '../bodyMetrics/BodyMetricsScreen';
 
 export interface UserProfileScreenProps {
   userProfileRepo: IUserProfileRepository;
   programRepo?: IProgramRepository;
   programBlockService?: ProgramBlockService;
   exerciseRepo?: IExerciseRepository;
+  gearRepo?: IGearRepository;
+  userSettingsRepo?: IUserSettingsRepository;
+  bodyMetricsRepo?: IBodyMetricsRepository;
+  initialQuestionnaireExpanded?: boolean;
   onClose?: () => void;
   onProgramGenerated?: (programId: string) => void;
+  onOpenProgramOverview?: () => void;
 }
 
 export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
@@ -47,20 +63,29 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   programRepo,
   programBlockService,
   exerciseRepo,
+  gearRepo,
+  userSettingsRepo,
+  bodyMetricsRepo,
+  initialQuestionnaireExpanded = false,
   onClose,
   onProgramGenerated,
+  onOpenProgramOverview,
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [generating, setGenerating] = useState<boolean>(false);
   const [profileId, setProfileId] = useState<string>('profile_default');
+  const [activeInfo, setActiveInfo] = useState<ActiveProgramInfo | null>(null);
+  const [showProgramOverview, setShowProgramOverview] = useState<boolean>(false);
+  const [showGearInventory, setShowGearInventory] = useState<boolean>(false);
+  const [showBodyMetrics, setShowBodyMetrics] = useState<boolean>(false);
+  const [questionnaireExpanded, setQuestionnaireExpanded] = useState<boolean>(initialQuestionnaireExpanded);
 
   // Form State
   const [gender, setGender] = useState<Gender>('male');
   const [birthdate, setBirthdate] = useState<string>('1995-01-01');
   const [heightCm, setHeightCm] = useState<string>('180');
-  const [trainingEnjoyment, setTrainingEnjoyment] = useState<TrainingEnjoyment>('neutral');
-  const [intensityStyle, setIntensityStyle] = useState<IntensityStyle>('balanced');
+  const [trainingMentality, setTrainingMentality] = useState<TrainingMentality>('precision');
   const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal>('hypertrophy');
   const [secondaryGoals, setSecondaryGoals] = useState<string[]>(['strength']);
   const [preferredDays, setPreferredDays] = useState<number>(4);
@@ -76,14 +101,29 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const loadProfile = useCallback(async () => {
     try {
       setLoading(true);
+      if (programBlockService) {
+        try {
+          const active = await programBlockService.getActiveProgram();
+          setActiveInfo(active);
+        } catch {
+          // Ignore
+        }
+      }
+
       const existing = await userProfileRepo.getProfile();
       if (existing) {
         setProfileId(existing.id);
         setGender(existing.gender);
         if (existing.birthdate) setBirthdate(existing.birthdate);
         if (existing.height_cm != null) setHeightCm(String(existing.height_cm));
-        setTrainingEnjoyment(existing.training_enjoyment);
-        setIntensityStyle(existing.intensity_style);
+        setTrainingMentality(
+          existing.training_mentality ??
+          (existing.intensity_style === 'high_intensity_low_volume'
+            ? 'fury'
+            : existing.training_enjoyment === 'minimalist'
+            ? 'get_out'
+            : 'precision')
+        );
         setPrimaryGoal(existing.primary_goal);
         if (existing.secondary_goals) setSecondaryGoals(existing.secondary_goals);
         setPreferredDays(existing.preferred_days_per_week);
@@ -95,7 +135,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [userProfileRepo]);
+  }, [userProfileRepo, programBlockService]);
 
   useEffect(() => {
     loadProfile();
@@ -109,8 +149,19 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       gender,
       birthdate: birthdate.trim() || null,
       height_cm: isNaN(parsedHeight) ? null : parsedHeight,
-      training_enjoyment: trainingEnjoyment,
-      intensity_style: intensityStyle,
+      training_mentality: trainingMentality,
+      training_enjoyment:
+        trainingMentality === 'get_out'
+          ? 'minimalist'
+          : trainingMentality === 'fury'
+          ? 'enthusiast'
+          : 'neutral',
+      intensity_style:
+        trainingMentality === 'fury'
+          ? 'high_intensity_low_volume'
+          : trainingMentality === 'precision'
+          ? 'volume_accumulation'
+          : 'balanced',
       primary_goal: primaryGoal,
       secondary_goals: secondaryGoals.length > 0 ? secondaryGoals : null,
       preferred_days_per_week: preferredDays,
@@ -218,6 +269,36 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Active Program Banner & Program Overview Hub */}
+        <View testID="active-program-banner-card" style={styles.activeProgramCard}>
+          <View style={styles.activeProgramHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.activeProgramBadge}>ACTIVE PROGRAM</Text>
+              <Text style={styles.activeProgramTitle} numberOfLines={1}>
+                {activeInfo ? activeInfo.program.name : 'No Program Active'}
+              </Text>
+              {activeInfo && (
+                <Text style={styles.activeProgramMeta}>
+                  Active since {activeInfo.block.start_date || 'recently'}
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              testID="open-program-overview-btn"
+              style={styles.openOverviewBtn}
+              onPress={() => {
+                if (onOpenProgramOverview) {
+                  onOpenProgramOverview();
+                } else {
+                  setShowProgramOverview(true);
+                }
+              }}
+            >
+              <Text style={styles.openOverviewBtnText}>Programs 📋</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Status Notification Banner */}
         {statusMessage && (
           <View
@@ -261,8 +342,42 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           </View>
         )}
 
-        {/* Section 1: Demographics */}
-        <Text style={styles.sectionTitle}>1. ATHLETE DEMOGRAPHICS</Text>
+        {/* Athlete Questionnaire Collapsible Section */}
+        <View style={styles.questionnaireSection}>
+          <TouchableOpacity
+            testID="toggle-questionnaire-btn"
+            style={[
+              styles.questionnaireHeaderCard,
+              questionnaireExpanded && styles.questionnaireHeaderCardExpanded,
+            ]}
+            onPress={() => setQuestionnaireExpanded((prev) => !prev)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle Athlete Questionnaire"
+          >
+            <View style={styles.questionnaireHeaderLeft}>
+              <View style={styles.questionnaireTitleRow}>
+                <Text style={styles.questionnaireTitle}>Athlete Questionnaire</Text>
+                <Text style={styles.questionnaireBadge}>ADR-038</Text>
+              </View>
+              <Text style={styles.questionnaireSubtitle}>
+                {gender.charAt(0).toUpperCase() + gender.slice(1)} • {trainingMentality.toUpperCase()} • {primaryGoal.toUpperCase()} • {preferredDays}d/wk • {preferredDurationMins}m
+              </Text>
+              <Text style={styles.questionnaireHint}>
+                {questionnaireExpanded ? 'Tap to collapse questionnaire' : 'Tap to expand & customize preferences'}
+              </Text>
+            </View>
+            <View style={styles.questionnaireChevronContainer}>
+              <Text style={styles.questionnaireChevron}>
+                {questionnaireExpanded ? '▲' : '▼'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {questionnaireExpanded && (
+            <View testID="questionnaire-body" style={styles.questionnaireBody}>
+              {/* Section 1: Demographics */}
+              <Text style={[styles.sectionTitle, { marginTop: 0 }]}>1. ATHLETE DEMOGRAPHICS</Text>
         <View style={styles.card}>
           <Text style={styles.inputLabel}>Biological Sex (for strength standards & Navy body fat)</Text>
           <View style={styles.toggleRow}>
@@ -305,107 +420,76 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               />
             </View>
           </View>
+
+          {bodyMetricsRepo && (
+            <TouchableOpacity
+              testID="profile-open-body-metrics-btn"
+              style={styles.openBodyMetricsBtn}
+              onPress={() => setShowBodyMetrics(true)}
+            >
+              <Text style={styles.openBodyMetricsBtnText}>
+                Anthropometry, Tape Measurements & Navy BF% ⚖️
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Section 2: Training Enjoyment (Psychology) */}
-        <Text style={styles.sectionTitle}>2. TRAINING ENJOYMENT (ADR-014)</Text>
+        {/* Section 2: Training Mentality Matrix */}
+        <Text style={styles.sectionTitle}>2. TRAINING MENTALITY</Text>
         <View style={styles.card}>
           <Text style={styles.cardDescription}>
-            How do you feel about working out in the gym?
+            Select your training philosophy. This drives exertion targets, volume accumulation, and progression schemes.
           </Text>
           {[
             {
-              id: 'enthusiast',
-              title: 'Gym Enthusiast ⚡',
-              desc: 'Enjoys the gym, high variety, thrives on 4–6 days/week and 60–90 min workouts.',
+              id: 'fury' as TrainingMentality,
+              title: 'Fury ⚡',
+              subtitle: 'Maximum Effort / Low Volume',
+              desc: 'Pushes with high intensity and aggression; leaves nothing in the tank. (1–2 working sets to RPE 9.5–10, Dynamic Double Progression)',
             },
             {
-              id: 'neutral',
-              title: 'Disciplined Routine 🎯',
-              desc: 'Committed to results, consistent, prefers structured 3–4 days/week and 45–60 min sessions.',
+              id: 'precision' as TrainingMentality,
+              title: 'Precision 🎯',
+              subtitle: 'Deliberate Mastery / High Volume',
+              desc: 'Hones craft with deliberate technical mastery. (3–4 working sets @ RPE 7.5–8.5, Linear & Double Progression)',
             },
             {
-              id: 'minimalist',
-              title: 'Minimalist Efficiency ⏱️',
-              desc: 'Gym is a chore or time is very tight; wants compound supersets and max efficiency in 30–45 min.',
+              id: 'get_out' as TrainingMentality,
+              title: 'I Wanna Get Out of Here ⏱️',
+              subtitle: 'Minimalist Efficiency / Antagonist Supersets',
+              desc: 'Wants to get out of the gym, doing the least work possible for meaningful results. (2 sets, automatic antagonist supersets, tight rest)',
             },
           ].map((item) => (
             <TouchableOpacity
               key={item.id}
-              testID={`enjoyment-option-${item.id}`}
+              testID={`mentality-option-${item.id}`}
               style={[
                 styles.optionRow,
-                trainingEnjoyment === item.id && styles.optionRowActive,
+                trainingMentality === item.id && styles.optionRowActive,
               ]}
-              onPress={() => setTrainingEnjoyment(item.id as TrainingEnjoyment)}
+              onPress={() => setTrainingMentality(item.id)}
             >
               <View style={styles.optionRadio}>
-                {trainingEnjoyment === item.id && <View style={styles.optionRadioInner} />}
+                {trainingMentality === item.id && <View style={styles.optionRadioInner} />}
               </View>
               <View style={styles.optionTextContainer}>
                 <Text
                   style={[
                     styles.optionTitle,
-                    trainingEnjoyment === item.id && styles.optionTitleActive,
+                    trainingMentality === item.id && styles.optionTitleActive,
                   ]}
                 >
                   {item.title}
                 </Text>
+                <Text style={styles.optionSubtitle}>{item.subtitle}</Text>
                 <Text style={styles.optionDesc}>{item.desc}</Text>
               </View>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Section 3: Effort & Intensity Style */}
-        <Text style={styles.sectionTitle}>3. INTENSITY & EXERTION STYLE</Text>
-        <View style={styles.card}>
-          {[
-            {
-              id: 'high_intensity_low_volume',
-              title: 'High Intensity / Low Volume (HIT)',
-              desc: '1–2 all-out working sets to RPE 9.5–10 / failure. Utilizes Dynamic Double Progression.',
-            },
-            {
-              id: 'volume_accumulation',
-              title: 'Volume Accumulation',
-              desc: '3–4 submaximal sets @ RPE 7.5. Emphasizes steady volume accrual and fatigue management.',
-            },
-            {
-              id: 'balanced',
-              title: 'Balanced Hybrid',
-              desc: '3 working sets @ target RPE 8.5. The classic middle ground for strength and hypertrophy.',
-            },
-          ].map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              testID={`intensity-style-${item.id}`}
-              style={[
-                styles.optionRow,
-                intensityStyle === item.id && styles.optionRowActive,
-              ]}
-              onPress={() => setIntensityStyle(item.id as IntensityStyle)}
-            >
-              <View style={styles.optionRadio}>
-                {intensityStyle === item.id && <View style={styles.optionRadioInner} />}
-              </View>
-              <View style={styles.optionTextContainer}>
-                <Text
-                  style={[
-                    styles.optionTitle,
-                    intensityStyle === item.id && styles.optionTitleActive,
-                  ]}
-                >
-                  {item.title}
-                </Text>
-                <Text style={styles.optionDesc}>{item.desc}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Section 4: Primary Goal */}
-        <Text style={styles.sectionTitle}>4. PRIMARY TRAINING GOAL</Text>
+        {/* Section 3: Primary Goal */}
+        <Text style={styles.sectionTitle}>3. PRIMARY TRAINING GOAL</Text>
         <View style={styles.card}>
           <View style={styles.goalPillContainer}>
             {(
@@ -464,8 +548,8 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           </View>
         </View>
 
-        {/* Section 5: Schedule & Logistics */}
-        <Text style={styles.sectionTitle}>5. SCHEDULE & EQUIPMENT CONSTRAINTS</Text>
+        {/* Section 4: Schedule & Logistics */}
+        <Text style={styles.sectionTitle}>4. SCHEDULE & EQUIPMENT CONSTRAINTS</Text>
         <View style={styles.card}>
           <Text style={styles.inputLabel}>Available Training Days Per Week</Text>
           <View style={styles.daysSelectorRow}>
@@ -493,7 +577,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
           <Text style={[styles.inputLabel, { marginTop: 16 }]}>Target Workout Duration</Text>
           <View style={styles.daysSelectorRow}>
-            {[30, 45, 60, 75, 90].map((dur) => (
+            {[15, 30, 45, 60, 75, 90].map((dur) => (
               <TouchableOpacity
                 key={dur}
                 testID={`duration-${dur}`}
@@ -544,6 +628,29 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               </Text>
             </TouchableOpacity>
           ))}
+
+          {/* Section: Gym Equipment & Gear Inventory (ADR-025) */}
+          <View style={styles.gearCard}>
+            <View style={styles.gearCardHeader}>
+              <Text style={styles.gearCardTitle}>Gear & Equipment Inventory</Text>
+              <Text style={styles.gearBadge}>ADR-025</Text>
+            </View>
+            <Text style={styles.gearCardDesc}>
+              Configure your gym's specific barbells (Olympic, Safety Squat Bar, Trap Bar) and cable machines. Equipment saved here is available for selection across exercises, workout sessions, and program templates.
+            </Text>
+            {gearRepo ? (
+              <TouchableOpacity
+                testID="open-gear-inventory-btn"
+                style={styles.openGearBtn}
+                onPress={() => setShowGearInventory(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.openGearBtnText}>Manage Equipment Inventory ➔</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.gearDisabledText}>Gear repository not connected</Text>
+            )}
+          </View>
         </View>
 
         {/* Action Buttons */}
@@ -576,12 +683,125 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             )}
           </TouchableOpacity>
         </View>
+            </View>
+          )}
+        </View>
       </ScrollView>
+
+      {/* Program Overview & Builder Modal */}
+      {showProgramOverview && programRepo && programBlockService && (
+        <Modal
+          visible={showProgramOverview}
+          animationType="slide"
+          onRequestClose={() => {
+            setShowProgramOverview(false);
+            loadProfile();
+          }}
+        >
+          <ProgramOverviewScreen
+            programRepo={programRepo}
+            programBlockService={programBlockService}
+            exerciseRepo={exerciseRepo}
+            gearRepo={gearRepo}
+            onClose={() => {
+              setShowProgramOverview(false);
+              loadProfile();
+            }}
+            onSelectProgram={async (progId) => {
+              await programBlockService.swapActiveProgram(progId);
+              setShowProgramOverview(false);
+              loadProfile();
+            }}
+          />
+        </Modal>
+      )}
+
+      {/* Gear & Equipment Inventory Modal (ADR-025) */}
+      {showGearInventory && gearRepo && (
+        <Modal
+          visible={showGearInventory}
+          animationType="slide"
+          onRequestClose={() => setShowGearInventory(false)}
+        >
+          <GearInventoryScreen
+            gearRepo={gearRepo}
+            userSettingsRepo={userSettingsRepo}
+            onClose={() => setShowGearInventory(false)}
+          />
+        </Modal>
+      )}
+
+      {/* Body Metrics & Anthropometry Modal (Step 5.2) */}
+      {showBodyMetrics && bodyMetricsRepo && (
+        <Modal
+          visible={showBodyMetrics}
+          animationType="slide"
+          onRequestClose={() => setShowBodyMetrics(false)}
+        >
+          <BodyMetricsScreen
+            bodyMetricsRepo={bodyMetricsRepo}
+            userProfileRepo={userProfileRepo}
+            userSettingsRepo={userSettingsRepo}
+            onClose={() => setShowBodyMetrics(false)}
+          />
+        </Modal>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  activeProgramCard: {
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  activeProgramHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  activeProgramBadge: {
+    color: '#00E676',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  activeProgramTitle: {
+    color: '#FAFAFA',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  activeProgramMeta: {
+    color: '#71717A',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  openOverviewBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  openOverviewBtnText: {
+    color: '#00E676',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  optionSubtitle: {
+    color: '#A1A1AA',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+    marginBottom: 2,
+  },
   screen: {
     flex: 1,
     backgroundColor: '#0A0A0A',
@@ -932,5 +1152,151 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     opacity: 0.6,
+  },
+  gearCard: {
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  gearCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  gearCardTitle: {
+    color: '#FAFAFA',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  gearBadge: {
+    backgroundColor: '#27272A',
+    color: '#00E676',
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  gearCardDesc: {
+    color: '#A1A1AA',
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  openGearBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  openGearBtnText: {
+    color: '#00E676',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  gearDisabledText: {
+    color: '#71717A',
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  openBodyMetricsBtn: {
+    backgroundColor: '#14291B',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  openBodyMetricsBtnText: {
+    color: '#00E676',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  questionnaireSection: {
+    marginBottom: 20,
+  },
+  questionnaireHeaderCard: {
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  questionnaireHeaderCardExpanded: {
+    borderColor: '#00E676',
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  questionnaireHeaderLeft: {
+    flex: 1,
+  },
+  questionnaireTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  questionnaireTitle: {
+    color: '#FAFAFA',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  questionnaireBadge: {
+    color: '#00E676',
+    fontSize: 10,
+    fontWeight: '900',
+    backgroundColor: '#002914',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  questionnaireSubtitle: {
+    color: '#A1A1AA',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  questionnaireHint: {
+    color: '#71717A',
+    fontSize: 11,
+    marginTop: 4,
+  },
+  questionnaireChevronContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  questionnaireChevron: {
+    color: '#00E676',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  questionnaireBody: {
+    backgroundColor: '#09090B',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#00E676',
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    paddingTop: 16,
+    paddingHorizontal: 12,
+    paddingBottom: 16,
   },
 });

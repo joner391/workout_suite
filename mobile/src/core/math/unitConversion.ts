@@ -125,3 +125,72 @@ export function formatWeight(
 
   return showUnit ? `${formattedNumber} ${unit}` : formattedNumber;
 }
+
+/**
+ * Standard international length conversion factor (1 inch = 2.54 cm).
+ */
+export const CM_PER_INCH = 2.54;
+export const INCHES_PER_CM = 1 / CM_PER_INCH;
+
+/**
+ * Converts a length in centimeters to inches.
+ */
+export function cmToInches(cm: number): number {
+  if (typeof cm !== 'number' || isNaN(cm)) {
+    return 0;
+  }
+  return cm * INCHES_PER_CM;
+}
+
+/**
+ * Converts a length in inches to centimeters.
+ */
+export function inchesToCm(inches: number): number {
+  if (typeof inches !== 'number' || isNaN(inches)) {
+    return 0;
+  }
+  return inches * CM_PER_INCH;
+}
+
+export interface FormatLengthOptions {
+  precision?: number;
+  showUnit?: boolean;
+  trimTrailingZeros?: boolean;
+}
+
+/**
+ * Formats a canonical centimeter measurement for user-facing display.
+ * If unitSystem is 'lbs', formats in inches ('in').
+ * If unitSystem is 'kg', formats in centimeters ('cm').
+ */
+export function formatLength(
+  lengthCm: number | null | undefined,
+  unitSystem: WeightUnit = 'kg',
+  options: FormatLengthOptions = {}
+): string {
+  if (lengthCm == null) {
+    return '—';
+  }
+
+  if (typeof lengthCm !== 'number' || isNaN(lengthCm)) {
+    const unit = unitSystem === 'lbs' ? 'in' : 'cm';
+    return options.showUnit !== false ? `0 ${unit}` : '0';
+  }
+
+  const {
+    precision = 1,
+    showUnit = true,
+    trimTrailingZeros = true,
+  } = options;
+
+  const isImperial = unitSystem === 'lbs';
+  const displayValue = isImperial ? cmToInches(lengthCm) : lengthCm;
+  const unit = isImperial ? 'in' : 'cm';
+
+  let formattedNumber = displayValue.toFixed(precision);
+  if (trimTrailingZeros && precision > 0) {
+    formattedNumber = formattedNumber.replace(/\.?0+$/, '');
+  }
+
+  return showUnit ? `${formattedNumber} ${unit}` : formattedNumber;
+}

@@ -896,6 +896,79 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
       expect(finishedSets[0].exercise_group_id).toBe(groupId);
       expect(finishedSets[1].exercise_group_id).toBe(groupId);
     });
+
+    test('supports 1-tap gear assignment for specific exercise in active session without affecting other exercises', async () => {
+      // Create SSB gear in gearRepo
+      const ssb = await gearRepo.create({
+        id: 'gear_bar_ssb_29kg',
+        name: 'Safety Squat Bar (29 kg)',
+        type: 'specialty_bar',
+        tare_weight_kg: 29.0,
+        cable_ratio: 1.0,
+        is_default: false,
+        notes: null,
+      });
+
+      await exerciseRepo.create({
+        id: 'ex-bench',
+        name: 'Barbell Bench Press',
+        muscle_group: 'Chest',
+        category: 'Barbell',
+        is_compound: true,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'total',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 20.0,
+        is_custom: false,
+        parent_exercise_id: null,
+        standard_lift_type: 'bench',
+        default_rest_seconds: 180,
+      });
+
+      const activeWorkout = await sessionService.startWorkout({ name: 'Leg Day with SSB' });
+
+      // Add sets for Squat and Bench Press
+      const set1 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'ex-squat',
+        rawInputWeight: 100,
+        reps: 5,
+      });
+      const set2 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'ex-squat',
+        rawInputWeight: 100,
+        reps: 5,
+      });
+      const benchSet = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'ex-bench',
+        rawInputWeight: 80,
+        reps: 8,
+      });
+
+      // Initially, no gearId assigned
+      expect(set1.gear_id).toBeNull();
+      expect(set2.gear_id).toBeNull();
+      expect(benchSet.gear_id).toBeNull();
+
+      // Switch Squat to Safety Squat Bar
+      const squatSets = [set1, set2];
+      for (const s of squatSets) {
+        await sessionService.updateSet(activeWorkout.id, s.id, {
+          gearId: ssb.id,
+        });
+      }
+
+      // Verify Squat sets updated to SSB
+      const updatedSets = await workoutRepo.getSetsByWorkoutId(activeWorkout.id);
+      const updatedSquats = updatedSets.filter((s) => s.exercise_id === 'ex-squat');
+      const updatedBench = updatedSets.filter((s) => s.exercise_id === 'ex-bench');
+
+      expect(updatedSquats[0].gear_id).toBe('gear_bar_ssb_29kg');
+      expect(updatedSquats[1].gear_id).toBe('gear_bar_ssb_29kg');
+
+      // Crucial: Bench Press sets remain COMPLETELY UNTOUCHED with null gear_id (20 kg standard bar)!
+      expect(updatedBench[0].gear_id).toBeNull();
+    });
   });
 });
 

@@ -475,13 +475,27 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
                     onChangeText={setBarWeightInput}
                   />
                   <View style={styles.quickPresetsRow}>
-                    {(unitSystem === 'lbs' ? [45, 35, 55, 65] : [20, 15, 25, 29]).map((val) => (
+                    {(unitSystem === 'lbs'
+                      ? [
+                          { val: 45, label: 'Olympic (45)' },
+                          { val: 35, label: 'Tech (35)' },
+                          { val: 55, label: 'Trap (55)' },
+                          { val: 64, label: 'SSB (64)' },
+                        ]
+                      : [
+                          { val: 20, label: 'Olympic (20)' },
+                          { val: 15, label: 'Tech (15)' },
+                          { val: 25, label: 'Trap (25)' },
+                          { val: 29, label: 'SSB (29)' },
+                        ]
+                    ).map((preset) => (
                       <TouchableOpacity
-                        key={val}
+                        key={preset.val}
+                        testID={`bar-preset-${preset.val}`}
                         style={styles.quickChip}
-                        onPress={() => setBarWeightInput(String(val))}
+                        onPress={() => setBarWeightInput(String(preset.val))}
                       >
-                        <Text style={styles.quickChipText}>{val}</Text>
+                        <Text style={styles.quickChipText}>{preset.label}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>

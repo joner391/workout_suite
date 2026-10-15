@@ -36,8 +36,9 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
       gender: 'male',
       height_cm: 180,
       birthdate: '1995-05-15',
+      training_mentality: 'fury',
       training_enjoyment: 'enthusiast',
-      intensity_style: 'volume_accumulation',
+      intensity_style: 'high_intensity_low_volume',
       primary_goal: 'hypertrophy',
       secondary_goals: ['strength'],
       preferred_days_per_week: 4,
@@ -52,13 +53,13 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
     expect(created.id).toBe('profile-1');
     expect(created.gender).toBe('male');
     expect(created.height_cm).toBe(180);
-    expect(created.training_enjoyment).toBe('enthusiast');
-    expect(created.intensity_style).toBe('volume_accumulation');
+    expect(created.training_mentality).toBe('fury');
     expect(created.preferred_days_per_week).toBe(4);
 
     const fetched = await profileRepo.getProfile();
     expect(fetched).not.toBeNull();
     expect(fetched?.id).toBe(created.id);
+    expect(fetched?.training_mentality).toBe('fury');
     expect(fetched?.primary_goal).toBe('hypertrophy');
   });
 
@@ -68,6 +69,7 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
       gender: 'female',
       height_cm: 165,
       birthdate: '1998-02-10',
+      training_mentality: 'get_out',
       training_enjoyment: 'minimalist',
       intensity_style: 'high_intensity_low_volume',
       primary_goal: 'strength',
@@ -83,18 +85,19 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
 
     const updated = await profileRepo.saveProfile({
       ...profile,
-      training_enjoyment: 'neutral',
+      training_mentality: 'precision',
       preferred_days_per_week: 4,
       preferred_session_duration_mins: 60,
       equipment_access: 'commercial_gym',
     });
 
-    expect(updated.training_enjoyment).toBe('neutral');
+    expect(updated.training_mentality).toBe('precision');
     expect(updated.preferred_days_per_week).toBe(4);
     expect(updated.preferred_session_duration_mins).toBe(60);
     expect(updated.equipment_access).toBe('commercial_gym');
 
     const fresh = await profileRepo.getProfile();
+    expect(fresh?.training_mentality).toBe('precision');
     expect(fresh?.preferred_days_per_week).toBe(4);
     expect(fresh?.equipment_access).toBe('commercial_gym');
   });
@@ -105,8 +108,7 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
       gender: 'male',
       height_cm: 182,
       birthdate: '1992-08-20',
-      training_enjoyment: 'enthusiast',
-      intensity_style: 'volume_accumulation',
+      training_mentality: 'precision',
       primary_goal: 'hypertrophy',
       secondary_goals: ['strength'],
       preferred_days_per_week: 4,
@@ -146,32 +148,84 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
     expect(active?.block.start_date).toBe('2026-10-15');
   });
 
-  test('handles minimalist time-crunched profile with superset generation', async () => {
-    const minimalistProfile: UserProfile = {
-      id: 'profile-minimalist',
+  test('handles 15-minute time-crunched profile with 2 antagonist pairs and 8 total sets', async () => {
+    const timeCrunchedProfile: UserProfile = {
+      id: 'profile-15m',
       gender: 'female',
       height_cm: 168,
       birthdate: '1990-11-05',
-      training_enjoyment: 'minimalist',
-      intensity_style: 'high_intensity_low_volume',
+      training_mentality: 'get_out',
       primary_goal: 'strength',
       secondary_goals: null,
-      preferred_days_per_week: 2,
-      preferred_session_duration_mins: 30,
-      equipment_access: 'dumbbells_only',
+      preferred_days_per_week: 3,
+      preferred_session_duration_mins: 15,
+      equipment_access: 'commercial_gym',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    const synthesized = synthesizeProgram(minimalistProfile);
-    expect(synthesized.summary.daysPerWeek).toBe(2);
-    expect(synthesized.summary.splitType).toBe('full_body');
+    const synthesized = synthesizeProgram(timeCrunchedProfile);
+    expect(synthesized.summary.daysPerWeek).toBe(3);
+    expect(synthesized.summary.splitType).toBe('upper_lower');
     expect(synthesized.summary.hasSupersets).toBe(true);
-    expect(synthesized.templates.length).toBe(2);
+    expect(synthesized.summary.estimatedSessionDurationMins).toBe(15);
+    expect(synthesized.templates.length).toBe(3);
+
+    // Verify 15-minute routine properties on Day 1
+    const day1Exercises = synthesized.templateExercises.filter(
+      (te) => te.template_id === synthesized.templates[0].id
+    );
+    expect(day1Exercises.length).toBe(4);
+    day1Exercises.forEach((ex) => {
+      expect(ex.target_sets).toBe(2);
+      expect(ex.exercise_group_id).not.toBeNull();
+    });
 
     await programRepo.saveSynthesizedProgram(synthesized);
     const details = await programRepo.getProgramWithDetails(synthesized.program.id);
     expect(details).not.toBeNull();
-    expect(details?.templates.length).toBe(2);
+    expect(details?.templates.length).toBe(3);
+  });
+
+  test('integrates gearRepo for equipment and gym inventory in profile', async () => {
+    const { MockGearRepository } = await import('../../../database/mocks/MockGearRepository');
+    const gearRepo = new MockGearRepository([
+      {
+        id: 'gear-ssb',
+        name: 'Safety Squat Bar (29 kg)',
+        type: 'specialty_bar',
+        tare_weight_kg: 29.0,
+        cable_ratio: 1.0,
+        is_default: false,
+        notes: null,
+      },
+    ]);
+
+    const items = await gearRepo.findAll();
+    expect(items).toHaveLength(1);
+    expect(items[0].name).toBe('Safety Squat Bar (29 kg)');
+    expect(items[0].tare_weight_kg).toBe(29.0);
+  });
+
+  test('UserProfileScreen component instantiates with collapsible questionnaire support', async () => {
+    const React = await import('react');
+    const { UserProfileScreen } = await import('../UserProfileScreen');
+
+    const elementDefault = React.createElement(UserProfileScreen, {
+      userProfileRepo: profileRepo,
+      programRepo,
+      programBlockService: blockService,
+    });
+    expect(elementDefault).toBeDefined();
+    expect(elementDefault.props.initialQuestionnaireExpanded).toBeUndefined();
+
+    const elementExpanded = React.createElement(UserProfileScreen, {
+      userProfileRepo: profileRepo,
+      programRepo,
+      programBlockService: blockService,
+      initialQuestionnaireExpanded: true,
+    });
+    expect(elementExpanded).toBeDefined();
+    expect(elementExpanded.props.initialQuestionnaireExpanded).toBe(true);
   });
 });

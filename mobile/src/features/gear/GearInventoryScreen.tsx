@@ -236,9 +236,9 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Gear & Equipment</Text>
+          <Text style={styles.headerTitle}>Equipment & Gear Inventory</Text>
           <Text style={styles.headerSubtitle}>
-            {gearList.length} items • Barbells & Pulley Ratios
+            {gearList.length} items • Available equipment in your gym
           </Text>
         </View>
 
@@ -276,33 +276,34 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
       </View>
 
       {/* Type Filter Chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterScrollView}
-        contentContainerStyle={styles.filterChipsRow}
-      >
-        {FILTER_TYPES.map((filter) => {
-          const isSelected = selectedFilter === filter;
-          const label =
-            filter === 'all'
-              ? 'All Equipment'
-              : GEAR_TYPES.find((gt) => gt.type === filter)?.label || filter;
+      <View style={styles.filterBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterChipsRow}
+        >
+          {FILTER_TYPES.map((filter) => {
+            const isSelected = selectedFilter === filter;
+            const label =
+              filter === 'all'
+                ? 'All Equipment'
+                : GEAR_TYPES.find((gt) => gt.type === filter)?.label || filter;
 
-          return (
-            <TouchableOpacity
-              key={filter}
-              testID={`gear-filter-${filter}`}
-              style={[styles.filterChip, isSelected && styles.filterChipActive]}
-              onPress={() => setSelectedFilter(filter)}
-            >
-              <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+            return (
+              <TouchableOpacity
+                key={filter}
+                testID={`gear-filter-${filter}`}
+                style={[styles.filterChip, isSelected && styles.filterChipActive]}
+                onPress={() => setSelectedFilter(filter)}
+              >
+                <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {/* Main List */}
       {loading ? (
@@ -312,6 +313,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
         </View>
       ) : (
         <FlatList
+          style={styles.flatList}
           data={filteredGear}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -323,11 +325,12 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
 
             const isBarbell = item.type === 'barbell' || item.type === 'specialty_bar';
             const isCable = item.type === 'cable_machine';
+            const isStandardFallback = item.is_default && item.type !== 'specialty_bar';
 
             return (
               <View
                 testID={`gear-card-${item.id}`}
-                style={[styles.gearCard, item.is_default && styles.gearCardDefault]}
+                style={styles.gearCard}
               >
                 <TouchableOpacity
                   style={styles.cardHeader}
@@ -343,9 +346,11 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
                   <View style={styles.cardTitleCol}>
                     <View style={styles.nameRow}>
                       <Text style={styles.gearNameText}>{item.name}</Text>
-                      {item.is_default && (
+                      {isStandardFallback && (
                         <View style={styles.defaultBadge}>
-                          <Text style={styles.defaultBadgeText}>DEFAULT</Text>
+                          <Text style={styles.defaultBadgeText}>
+                            STANDARD {item.type === 'barbell' ? 'BAR' : 'PULLEY'}
+                          </Text>
                         </View>
                       )}
                     </View>
@@ -383,13 +388,13 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
 
                 {/* Card Actions */}
                 <View style={styles.cardActions}>
-                  {!item.is_default && (
+                  {!item.is_default && item.type !== 'specialty_bar' && (
                     <TouchableOpacity
                       testID={`make-default-${item.id}`}
                       style={styles.defaultBtn}
                       onPress={() => handleMakeDefault(item)}
                     >
-                      <Text style={styles.defaultBtnText}>★ Set Default</Text>
+                      <Text style={styles.defaultBtnText}>★ Set Standard</Text>
                     </TouchableOpacity>
                   )}
 
@@ -548,22 +553,30 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
                 </View>
               )}
 
-              {/* Default Toggle */}
-              <View style={styles.toggleRow}>
-                <View style={styles.toggleCol}>
-                  <Text style={styles.toggleTitle}>Set as Default for {type}</Text>
-                  <Text style={styles.toggleSubtitle}>
-                    Automatically applied to exercises of this equipment type
+              {/* Default Toggle - only show for standard barbell or cable, not specialty bars */}
+              {type !== 'specialty_bar' ? (
+                <View style={styles.toggleRow}>
+                  <View style={styles.toggleCol}>
+                    <Text style={styles.toggleTitle}>Set as Default for {type}</Text>
+                    <Text style={styles.toggleSubtitle}>
+                      Fallback implement applied when no specific gear is selected
+                    </Text>
+                  </View>
+                  <Switch
+                    testID="gear-default-switch"
+                    value={isDefault}
+                    onValueChange={setIsDefault}
+                    trackColor={{ false: '#27272A', true: '#00E676' }}
+                    thumbColor={isDefault ? '#000000' : '#A1A1AA'}
+                  />
+                </View>
+              ) : (
+                <View style={styles.specialtyBarNotice}>
+                  <Text style={styles.specialtyBarNoticeText}>
+                    ℹ Specialty bars (like Safety Squat Bar and Trap Bar) are exercise-specific implements. They are selected directly for appropriate exercises (e.g. Squats) rather than replacing standard barbells across the board.
                   </Text>
                 </View>
-                <Switch
-                  testID="gear-default-switch"
-                  value={isDefault}
-                  onValueChange={setIsDefault}
-                  trackColor={{ false: '#27272A', true: '#00E676' }}
-                  thumbColor={isDefault ? '#000000' : '#A1A1AA'}
-                />
-              </View>
+              )}
 
               {/* Notes */}
               <View style={styles.formGroup}>
@@ -620,6 +633,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
+    flexShrink: 0,
   },
   headerLeft: {
     flex: 1,
@@ -663,6 +677,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 6,
+    flexShrink: 0,
   },
   searchInput: {
     backgroundColor: '#18181B',
@@ -674,37 +689,47 @@ const styles = StyleSheet.create({
     color: '#FAFAFA',
     fontSize: 13,
   },
-  filterScrollView: {
-    maxHeight: 46,
+  filterBar: {
+    height: 50,
+    flexShrink: 0,
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
+    backgroundColor: '#000000',
+    justifyContent: 'center',
   },
   filterChipsRow: {
     paddingHorizontal: 16,
-    paddingVertical: 6,
-    gap: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   filterChip: {
     backgroundColor: '#18181B',
     borderWidth: 1,
     borderColor: '#27272A',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginRight: 6,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginRight: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   filterChipActive: {
     backgroundColor: '#0F291E',
     borderColor: '#00E676',
   },
   filterChipText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#A1A1AA',
     fontWeight: '600',
+    includeFontPadding: false,
   },
   filterChipTextActive: {
     color: '#00E676',
     fontWeight: '800',
+  },
+  flatList: {
+    flex: 1,
   },
   listContent: {
     padding: 16,
@@ -753,18 +778,31 @@ const styles = StyleSheet.create({
     color: '#FAFAFA',
   },
   defaultBadge: {
-    backgroundColor: '#0F291E',
+    backgroundColor: '#1E293B',
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: '#38BDF8',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   defaultBadgeText: {
     fontSize: 9,
-    fontWeight: '900',
-    color: '#00E676',
+    fontWeight: '800',
+    color: '#38BDF8',
     letterSpacing: 0.5,
+  },
+  specialtyBarNotice: {
+    backgroundColor: '#18181B',
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  specialtyBarNoticeText: {
+    color: '#A1A1AA',
+    fontSize: 11,
+    lineHeight: 15,
   },
   gearNotesText: {
     fontSize: 11,

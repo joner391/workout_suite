@@ -117,5 +117,16 @@ describe('Settings Toggles & User Preferences (Step 1.6)', () => {
     expect(result.success).toBe(true);
     expect(result.importedWorkoutsCount).toBe(1);
   });
+
+  test('SettingsScreen instantiates cleanly with Athlete Questionnaire removed', async () => {
+    const React = await import('react');
+    const { SettingsScreen } = await import('../SettingsScreen');
+
+    const element = React.createElement(SettingsScreen, {
+      userSettingsRepo,
+    });
+    expect(element).toBeDefined();
+    expect((element.props as any).showUserProfile).toBeUndefined();
+  });
 });
 

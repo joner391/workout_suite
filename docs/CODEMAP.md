@@ -13,7 +13,9 @@ c:/Programmering/Eget/Workout_suite/
 ├── market_analysis.md          # Market ergonomics, competitor taxonomy, and user retention research
 ├── schemas/                    # Contract-first JSON Schema definitions
 │   ├── workout_export.schema.json
-│   └── calibrated_parameters.schema.json
+│   ├── calibrated_parameters.schema.json
+│   └── fixtures/
+│       └── sample_workout_export.json
 ├── mobile/                     # Isolated React Native (Expo TypeScript) workspace
 │   ├── app.json
 │   ├── App.tsx
@@ -30,11 +32,27 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   ├── heuristic1rm.ts
 │       │   │   ├── loadNormalizer.ts
 │       │   │   ├── plateCalculator.ts
+│       │   │   ├── dotsCoefficients.ts
+│       │   │   ├── strengthStandards.ts
 │       │   │   └── __tests__/
 │       │   │       ├── unitConversion.test.ts
 │       │   │       ├── heuristic1rm.test.ts
 │       │   │       ├── loadNormalizer.test.ts
-│       │   │       └── plateCalculator.test.ts
+│       │   │       ├── plateCalculator.test.ts
+│       │   │       ├── dotsCoefficients.test.ts
+│       │   │       └── strengthStandards.test.ts
+│       │   ├── generator/
+│       │   │   ├── programSynthesizer.ts
+│       │   │   └── __tests__/
+│       │   │       └── programSynthesizer.test.ts
+│       │   ├── parsers/
+│       │   │   ├── csvImportParser.ts
+│       │   │   └── __tests__/
+│       │   │       └── csvImportParser.test.ts
+│       │   ├── rules/
+│       │   │   ├── progressionRuleEngine.ts
+│       │   │   └── __tests__/
+│       │   │       └── progressionRuleEngine.test.ts
 │       │   └── types/
 │       │       ├── index.ts
 │       │       └── __tests__/types.test.ts
@@ -44,33 +62,145 @@ c:/Programmering/Eget/Workout_suite/
 │       │       ├── IExerciseRepository.ts
 │       │       ├── IWorkoutRepository.ts
 │       │       ├── IGearRepository.ts
-│       │       └── IUserSettingsRepository.ts
+│       │       ├── IUserSettingsRepository.ts
+│       │       ├── IProgramRepository.ts
+│       │       └── IUserProfileRepository.ts
+│       ├── services/
+│       │   ├── index.ts
+│       │   ├── activeSessionService.ts
+│       │   ├── restTimerService.ts
+│       │   ├── exerciseSubstitutionService.ts
+│       │   ├── crashRecoveryService.ts
+│       │   ├── gearInventoryService.ts
+│       │   ├── exportService.ts
+│       │   ├── importService.ts
+│       │   ├── exerciseInspectionService.ts
+│       │   ├── programBlockService.ts
+│       │   ├── programCloneService.ts
+│       │   ├── dashboardMetricsService.ts
+│       │   └── __tests__/
+│       │       ├── activeSessionService.test.ts
+│       │       ├── restTimerService.test.ts
+│       │       ├── exerciseSubstitutionService.test.ts
+│       │       ├── crashRecoveryService.test.ts
+│       │       ├── gearInventoryService.test.ts
+│       │       ├── exportService.test.ts
+│       │       ├── importService.test.ts
+│       │       ├── exerciseInspectionService.test.ts
+│       │       ├── programBlockService.test.ts
+│       │       └── programCloneService.test.ts
+│       ├── features/
+│       │   ├── home/
+│       │   │   ├── index.ts
+│       │   │   └── HomeScreen.tsx
+│       │   ├── logger/
+│       │   │   ├── index.ts
+│       │   │   ├── ActiveLoggerScreen.tsx
+│       │   │   ├── WorkoutTabRouter.tsx
+│       │   │   ├── SetRowComponent.tsx
+│       │   │   ├── RestTimerBanner.tsx
+│       │   │   ├── PlateCalculatorModal.tsx
+│       │   │   ├── ExerciseSubstitutionModal.tsx
+│       │   │   ├── CrashRecoveryDialog.tsx
+│       │   │   ├── SupersetBracketGroup.tsx
+│       │   │   ├── ProgressionProposalBanner.tsx
+│       │   │   └── __tests__/
+│       │   │       ├── loggerComponents.test.ts
+│       │   │       └── progressionProposalBanner.test.ts
+│       │   ├── profile/
+│       │   │   ├── index.ts
+│       │   │   ├── UserProfileScreen.tsx
+│       │   │   └── __tests__/
+│       │   │       └── userProfileComponents.test.ts
+│       │   ├── gear/
+│       │   │   ├── index.ts
+│       │   │   ├── GearInventoryScreen.tsx
+│       │   │   └── __tests__/
+│       │   │       └── gearComponents.test.ts
+│       │   ├── progression/
+│       │   │   ├── index.ts
+│       │   │   ├── ProgramOverviewScreen.tsx
+│       │   │   ├── ProgressionBuilderModal.tsx
+│       │   │   ├── CatalogPickerModal.tsx
+│       │   │   ├── PrescriptionEditorModal.tsx
+│       │   │   ├── EditTemplateModal.tsx
+│       │   │   └── __tests__/
+│       │   │       └── progressionComponents.test.ts
+│       │   ├── calendar/
+│       │   │   ├── index.ts
+│       │   │   ├── CalendarScreen.tsx
+│       │   │   ├── SessionDetailModal.tsx
+│       │   │   └── __tests__/
+│       │   │       └── calendarComponents.test.ts
+│       │   ├── inspection/
+│       │   │   ├── index.ts
+│       │   │   ├── ExerciseLibraryScreen.tsx
+│       │   │   ├── ExerciseFormModal.tsx
+│       │   │   ├── ExerciseDetailScreen.tsx
+│       │   │   ├── PRBoardTable.tsx
+│       │   │   ├── SBDStandardsCard.tsx
+│       │   │   ├── SBDBalanceRadarChart.tsx
+│       │   │   └── __tests__/
+│       │   │       ├── exerciseLibraryComponents.test.ts
+│       │   │       └── exerciseInspectionComponents.test.ts
+│       │   ├── plots/
+│       │   │   ├── index.ts
+│       │   │   ├── PlotsScreen.tsx
+│       │   │   ├── ProgramEraShadedChart.tsx
+│       │   │   └── __tests__/
+│       │   │       └── plotsComponents.test.ts
+│       │   ├── bodyMetrics/
+│       │   │   ├── index.ts
+│       │   │   ├── BodyMetricsScreen.tsx
+│       │   │   └── __tests__/
+│       │   │       └── bodyMetricsComponents.test.ts
+│       │   ├── import/
+│       │   │   ├── ImportScreen.tsx
+│       │   │   └── __tests__/
+│       │   │       └── importComponents.test.ts
+│       │   └── settings/
+│       │       ├── index.ts
+│       │       ├── SettingsScreen.tsx
+│       │       └── __tests__/
+│       │           └── settingsComponents.test.ts
+│       ├── __tests__/
+│       │   └── App.test.ts
 │       └── database/
+│           ├── index.ts
 │           ├── schema.ts
 │           ├── seeds/
-│           │   └── defaultExercises.ts
+│           │   ├── defaultExercises.ts
+│           │   └── strengthStandardsSeed.ts
 │           ├── repositories/
 │           │   ├── index.ts
 │           │   ├── SQLiteExerciseRepository.ts
 │           │   ├── SQLiteWorkoutRepository.ts
 │           │   ├── SQLiteGearRepository.ts
 │           │   ├── SQLiteUserSettingsRepository.ts
+│           │   ├── SQLiteProgramRepository.ts
+│           │   ├── SQLiteUserProfileRepository.ts
 │           │   └── __tests__/
 │           │       ├── SQLiteExerciseRepository.test.ts
 │           │       ├── SQLiteWorkoutRepository.test.ts
 │           │       ├── SQLiteGearRepository.test.ts
-│           │       └── SQLiteUserSettingsRepository.test.ts
+│           │       ├── SQLiteUserSettingsRepository.test.ts
+│           │       ├── SQLiteProgramRepository.test.ts
+│           │       └── SQLiteUserProfileRepository.test.ts
 │           ├── mocks/
 │           │   ├── index.ts
 │           │   ├── MockExerciseRepository.ts
 │           │   ├── MockWorkoutRepository.ts
 │           │   ├── MockGearRepository.ts
 │           │   ├── MockUserSettingsRepository.ts
+│           │   ├── MockProgramRepository.ts
+│           │   ├── MockUserProfileRepository.ts
 │           │   └── __tests__/
 │           │       ├── MockExerciseRepository.test.ts
 │           │       ├── MockWorkoutRepository.test.ts
 │           │       ├── MockGearRepository.test.ts
-│           │       └── MockUserSettingsRepository.test.ts
+│           │       ├── MockUserSettingsRepository.test.ts
+│           │       ├── MockProgramRepository.test.ts
+│           │       └── MockUserProfileRepository.test.ts
 │           └── __tests__/
 │               ├── MockSQLiteDatabase.ts
 │               └── schema.test.ts
@@ -80,12 +210,20 @@ c:/Programmering/Eget/Workout_suite/
 │   ├── README.md
 │   ├── src/
 │   │   ├── __init__.py
-│   │   └── ingestion/
+│   │   ├── ingestion/
+│   │   │   ├── __init__.py
+│   │   │   └── schemas.py      # Pydantic v2 export & calibration models
+│   │   └── models/
 │   │       ├── __init__.py
-│   │       └── schemas.py      # Pydantic v2 export & calibration models
+│   │       ├── kalman_1rm.py        # Tier 2 Adaptive Linear Kalman Filter
+│   │       ├── recovery_modifier.py # Dynamic recoverability (Delta BW / Delta t)
+│   │       ├── fatigue_banister.py  # Banister two-component impulse-response ODEs
+│   │       └── recommendations.py   # ACWR and actionable training advisories
 │   └── tests/
 │       ├── __init__.py
-│       └── test_schemas.py     # Schema validation and boundary test suite
+│       ├── test_schemas.py          # Schema validation and boundary test suite
+│       ├── test_kalman_1rm.py       # 1RM Kalman filter mathematical tests
+│       └── test_banister.py         # Banister & recoverability test suite
 └── docs/                       # Architecture documentation and decision records
     ├── ARCHITECTURE.md         # Subsystem responsibilities, data flow, and build commands
     ├── CODEMAP.md              # Current navigation index and symbol directory
@@ -107,7 +245,40 @@ c:/Programmering/Eget/Workout_suite/
   - **Step 1.1**: `[x]` Completed — Domain Core Math (`unitConversion.ts`, `heuristic1rm.ts`, `loadNormalizer.ts`, `plateCalculator.ts`), 75 unit tests passing with strict TypeScript verification.
   - **Step 1.2**: `[x]` Completed — Repository Interfaces & In-Memory Mocks (`IExerciseRepository.ts`, `IWorkoutRepository.ts`, `IGearRepository.ts`, `IUserSettingsRepository.ts`, and mock implementations with 62 unit tests passing).
   - **Step 1.3**: `[x]` Completed — SQLite Schema Migrations, Seed Catalog & Concrete Repositories (`schema.ts`, `defaultExercises.ts`, `SQLiteExerciseRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserSettingsRepository.ts`, 52 SQL driver unit tests passing).
-- **Next Up**: **Step 1.4: Core Logger Application Services (Session, Rest Timer, Substitution, Crash Recovery)** (`activeSessionService.ts`, `restTimerService.ts`, `exerciseSubstitutionService.ts`, `crashRecoveryService.ts`).
+  - **Step 1.4**: `[x]` Completed — Core Logger Application Services (`activeSessionService.ts`, `restTimerService.ts`, `exerciseSubstitutionService.ts`, `crashRecoveryService.ts`), 50 unit tests passing with strict TypeScript verification (242 tests passing across mobile).
+  - **Step 1.5**: `[x]` Completed — Active Workout Logger UI & QoL Popovers (`ActiveLoggerScreen.tsx`, `SetRowComponent.tsx`, `RestTimerBanner.tsx`, `PlateCalculatorModal.tsx`, `ExerciseSubstitutionModal.tsx`, `CrashRecoveryDialog.tsx`), 16 unit tests passing (258 mobile tests total, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 1.6**: `[x]` Completed — Calendar View, Basic Settings & Root Navigation (`CalendarScreen.tsx`, `SessionDetailModal.tsx`, `SettingsScreen.tsx`, `App.tsx`), 275 mobile tests passing total, `npx tsc --noEmit` and `npm run lint` verified. Phase 1 Minimum Viable Logger MVP is now complete and gym-ready.
+  - **Step 1.7 (Phase 1 Refinements)**: `[x]` Completed — Implemented ADR-029: Rebranded app to **MomentRM**, integrated `react-native-safe-area-context` for Android 15 / Xiaomi 15 edge-to-edge support, implemented compact set rows with single-set accordion editor drawer, eliminated redundant "working" badges and mixed RPE/RIR in `SessionDetailModal.tsx`, made RPE/RIR optional with per-exercise inheritance, and added e1RM exclusion guardrails for sets under 6.0 RPE (283 mobile tests passing total).
+  - **Step 1.8 (Active Logger Accordion & Incomplete Sets Handling)**: `[x]` Completed — Implemented ADR-030: Single-exercise accordion focus with auto-advance upon exercise completion, minimal collapsed headers, subtle green tint for completed collapsed exercise cards (`#0F1A12`, `#14532D`, `#00E676`), interactive finish modal warning with toggle checkbox (`[ ] Log remaining sets as complete`, default unchecked: exclude/delete uncompleted sets from SQLite to preserve volume/summary/ghost purity), and write-through persistence of completed sets in `user_settings` (288 mobile tests passing total, `npx tsc --noEmit` verified).
+- **Phase 2: Advanced Workout Mechanics, Hierarchy & Data Onboarding**
+  - **Step 2.1: Superset Grouping & Unilateral Limb Mechanics**: `[x]` Completed — Implemented ADR-009 & ADR-021: Superset/giant set grouping/ungrouping (`groupExercises`, `ungroupExercise`, `ungroupSuperset`, `getSupersetGroups` in `activeSessionService.ts`), superset rest timer suppression logic (`RestTimerService.shouldTriggerForExerciseInGroup`), visual connector bracket component (`SupersetBracketGroup.tsx`), and dual unilateral rep inputs (`reps` L / `reps_right` R) with independent L/R steppers and formatted ghost display in `SetRowComponent.tsx` (301 mobile tests passing total, 58/58 services tests, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 2.2: Exercise Library Manager, Variant Tree & Gear Inventory UI**: `[x]` Completed — Implemented ADR-012, ADR-024, ADR-025: Equipment inventory CRUD and application service (`GearInventoryService.ts`, `GearInventoryScreen.tsx`), barbell tare weights in kg/lbs, cable pulley ratios (1:1, 2:1), catalog search/filtering, custom exercise creation and editing (`ExerciseFormModal.tsx`), and variant tree hierarchy (`ExerciseLibraryScreen.tsx` with `parent_exercise_id`), fully integrated into `SettingsScreen.tsx` and `ActiveLoggerScreen.tsx` (338 mobile tests passing total, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 2.3: Standardized JSON Export Service (Contract-Verified)**: `[x]` Completed — Implemented ADR-026 & ADR-027: Full 12-table SQLite database state serialization conforming strictly to `schemas/workout_export.schema.json`, ADR-026 dual-weight load preservation, boolean transformations, progression rule/user profile JSON parsing, 1-tap Settings export with `expo-file-system` and `expo-sharing`, and sample fixture `schemas/fixtures/sample_workout_export.json` verified cross-stack by Jest (347/347 tests) and Pytest (9/9 tests including Draft-07 JSON Schema validation).
+  - **Step 2.4: External Data Import Engine (Strong CSV, Hevy CSV, Generic CSV)**: `[x]` Completed — Implemented ADR-033: Pure zero-dependency RFC 4180 CSV tokenizer (`csvImportParser.ts`) supporting `,` and `;` auto-detection, quoted fields, multiline notes, Imperial lbs-to-kg conversion, Strong and Hevy format signatures, multi-stage exercise catalog matching & custom fallback synthesis (`importService.ts`), duplicate session detection, provenance tagging (`imported_from`), and full interactive wizard (`ImportScreen.tsx`) integrated into SettingsScreen (383 mobile tests passing total, 29 test suites, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 2.5 (Phase 2 Refinements — Completed Workout Superset Summary & Post-Workout Modal)**: `[x]` Completed — Implemented specification in `edits_for_phase_2.md`: Deterministic superset badge computation (`computeSupersetInfo` mapping `exercise_group_id` to `SS A1`, `SS A2`...), subtle superset badges in exercise headers and set rows in `SessionDetailModal.tsx` while preserving original sequential exercise ordering, and seamless immediate post-workout summary presentation in `ActiveLoggerScreen.tsx` upon tapping "Save & Finish" before returning to Calendar (389 mobile tests passing total, `npx tsc --noEmit` and `npm run lint` verified).
+- **Phase 3: SBD Strength Standards & Performance Intelligence**
+  - **Step 3.1: Allometric Strength Standards, DOTS & Cohort Math Engine**: `[x]` Completed — Implemented ADR-034: Official IPF DOTS 4th-degree polynomial formula (`dotsCoefficients.ts`) with male and female coefficients and SBD total calculation, 95-row empirical benchmark catalog (`strengthStandardsSeed.ts`) across Squat, Bench, Deadlift, OHP, and Row for Male and Female, bilinear quantile interpolation (`interpolateStandards`), continuous normalized strength scoring (`calculateContinuousScore` mapping 0–100+ across Untrained, Novice, Intermediate, Advanced, Elite), demographic population percentiles (`calculateDemographicPercentile` mapping 0.1%–99.9%), and composite SBD symmetry/balance profiling (`calculateSBDBalanceProfile` with radar coordinates) (426 mobile tests passing total, 31 test suites, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 3.2: Exercise Inspection Service & Rep-Max Record (PR Board) Queries**: `[x]` Completed — Implemented ADR-035: Heaviest load lifted per unique repetition count queries with SQLite window functions (`PARTITION BY s.reps ORDER BY s.weight DESC, intensity DESC`), date scoping for program blocks, cross-variant family aggregation (`parent_exercise_id`), set e1RM benchmark calculations ($w \cdot r_{\text{eff}}^k$), peak e1RM record resolution, SBD standard classification integration, and comprehensive exercise inspection overviews (`ExerciseInspectionService.ts`) (440 mobile tests passing total, 32 test suites, `npx tsc --noEmit` and `npm run lint` verified).
+- **Phase 4: Training Psychology, Program Generation & Rule Builder**
+  - **Step 4.1: Declarative Progression Rule Engine Pure Evaluator**: `[x]` Completed — Implemented ADR-037: Pure side-effect-free progression evaluator (`progressionRuleEngine.ts`) with priority ordering, composite proposals, and Dynamic Double Progression (DDP) set-level granularity, supporting conditions (`ALL_SETS_HIT_TARGET_REPS`, `ANY_SET_HIT_TOP_REP_RANGE`, `AVERAGE_RPE_LESS_THAN`, `CONSECUTIVE_SUCCESSFUL_SESSIONS`, `CONSECUTIVE_FAILED_SESSIONS`, `MISSED_REPS_COUNT`, `TOP_SET_RIR_GREATER_THAN`) and actions (`INCREASE_LOAD_FIXED`, `INCREASE_LOAD_PERCENT`, `DECREASE_LOAD_FIXED`, `INCREASE_TARGET_REPS`, `ADD_WORKING_SET`, `RESET_TO_BASELINE`, `TRIGGER_DELOAD`, `RESET_WEIGHT_PERCENT`), plus built-in presets for LP, DP, and DDP (483 mobile tests passing total, 34 test suites, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 4.2: Profile-Driven Program Synthesizer Pure Generator**: `[x]` Completed — Implemented ADR-038: Pure deterministic generator (`programSynthesizer.ts`) mapping `UserProfile` matrix (days per week, intensity style, primary goal, session duration, equipment access, training enjoyment) into complete multi-day program splits (Full Body, Upper/Lower, PPLUL 5-day, PPL 6-day) with set counts (1–2 @ RPE 9.5 vs 3–4 @ RPE 7.5), antagonist superset grouping (`exercise_group_id`) for minimalist / short sessions, equipment resolution, and progression rules (503 mobile tests passing total, 35 test suites, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 4.3: Programs, Templates, Meso-Cycle Blocks & Profile Repositories**: `[x]` Completed — Full persistence for `programs`, `workout_templates`, `template_exercises`, `progression_rules`, `program_blocks`, and `user_profiles` across repository interfaces (`IProgramRepository.ts`, `IUserProfileRepository.ts`), concrete SQLite repositories (`SQLiteProgramRepository.ts`, `SQLiteUserProfileRepository.ts`), in-memory mock repositories (`MockProgramRepository.ts`, `MockUserProfileRepository.ts`), and application service `ProgramBlockService.ts` for 1-tap program swapping and meso-cycle era resolution (552 mobile tests passing total, 40 test suites, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 4.4: Questionnaire UI, Program Builder, Rule Editor & Interactive Progression Banner**: `[x]` Completed — Implemented ADR-039 & ADR-040: Athlete psychological profile & logistics questionnaire (`UserProfileScreen.tsx`) with 1-tap custom program generation wiring `programSynthesizer.ts` and `ProgramBlockService`, visual IF/THEN/ELSE progression rule editor modal (`ProgressionBuilderModal.tsx`) with LP, DP, and DDP quick presets, multi-day split overview manager (`ProgramOverviewScreen.tsx`) with 1-tap program swapping and prescription inspection, high-contrast OLED logger progression proposal banner (`ProgressionProposalBanner.tsx`), and calendar month/week swap badges and meso-cycle headers (`CalendarScreen.tsx`) (568 mobile tests passing total, 43 test suites, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 4.5: Program Builder & Editor, Training Mentality Matrix, 15m Routines & 4-Hub Navigation Overhaul**: `[x]` Completed — Implemented ADR-041 per `edits_for_phase_4.md`:
+    - *Custom Program Builder & Presets Protection*: Program deep-cloning service (`programCloneService.ts`, `prog_custom_<ts>_<hash>`), top-level program actions (Create blank custom, Duplicate/clone, cascade delete, Set as active), template CRUD (add day, edit metadata, up/down reorder, delete day), and template exercise editor (catalog picker modal with search/filters, delete, up/down reorder, 1-tap swap, sets/reps/exertion/gear/rest configuration modal, antagonist superset linking/unlinking, and ProgressionBuilderModal integration).
+    - *Training Mentality Model (Rule 8.4)*: Unified `TrainingMentality = 'fury' | 'precision' | 'get_out'` replacing `training_enjoyment` and deprecating `intensity_style` across `mobile/`, `schemas/`, and `companion/`.
+    - *15-Minute Target Duration*: Exactly 4 exercises in 2 antagonist pairs, 2 sets each (8 total working sets), 0s intra-pair rest, 90s inter-pair rest.
+    - *4-Hub Navigation Overhaul*: Root navigation transitioned to `HOME (🏠)` (`HomeScreen.tsx` with status dashboard, calendar agenda, analytics mount point), `WORKOUT (⚡)` (`WorkoutTabRouter.tsx` resolving State A in-progress logger, State B pre-flight screen with circular template sequencing, and State C empty state), `PROFILE (👤)` (`UserProfileScreen.tsx`), and `SETTINGS (⚙️)` (`SettingsScreen.tsx`). (577 mobile tests passing total, 44 test suites, `npx tsc --noEmit` and `pytest` 9/9 passing verified).
+  - **Step 4.6 (Phase 4 Refinements — Equipment Access & 3-Level Implement Assignment)**: `[x]` Completed — Implemented ADR-040: Relocated Equipment Inventory to `UserProfileScreen` under 'Equipment Access', removed misleading full-card green default highlights in `GearInventoryScreen`, restricted global 'Set Default' on specialty bars (SSB, Trap Bar) while preserving fallback on standard barbells, added 3-level gear selection (Exercise catalog presets in `ExerciseFormModal`, Program template prescriptions in `PrescriptionEditorModal`, and Active Logger 1-tap switcher `GearPickerModal` in `ActiveLoggerScreen`), and confirmed bar tare isolation preventing specialty bars from ever swapping onto Bench Press or Deadlift (582 mobile tests passing total, 44 test suites, `npx tsc --noEmit` and `pytest` 9/9 passing verified).
+  - **Step 4.7 (Phase 4 Refinements — Questionnaire Consolidation & Radar Formatting)**: `[x]` Completed — Consolidated Athlete Questionnaire exclusively into `UserProfileScreen` as an OLED accordion card (collapsed by default with preference summary chips, expandable on demand to prevent UI clutter) and removed redundant questionnaire access from `SettingsScreen`. Fixed LaTeX markup typo (`$\ge 8.0$` -> `≥ 8.0`) in `SBDBalanceRadarChart.tsx` educational copy (647 mobile tests passing total across 49 test suites, `npx tsc --noEmit` and `pytest companion/tests` 9/9 passing verified).
+- **Phase 5: Anthropometry, Body Composition & Longitudinal Plotting**
+  - **Step 5.1: U.S. Navy Body Fat, Rolling Averages & Body Metrics Repository**: `[x]` Completed — Implemented ADR-041: Official DoD metric body density formula with Siri equation (`navyBodyFat.ts`) with male and female circumference equations in cm, strict anatomical guards, physiological bounds clamping, dual-curve bodyweight smoothing (calendar-aware 7-day SMA and exponential smoothing EMA $\alpha=0.25$), abstract repository interface (`IBodyMetricsRepository.ts`), in-memory mock (`MockBodyMetricsRepository.ts`), and concrete SQLite repository (`SQLiteBodyMetricsRepository.ts`) with automatic active `user_profiles` resolution and persistence (618 mobile tests passing total across 47 test suites, `npx tsc --noEmit` and `npm run lint` verified).
+  - **Step 5.2: Body Metrics Screen & Longitudinal Plots with Program Era Shading**: `[x]` Completed — Implemented ADR-042: Reusable SVG time-series chart wrapper with meso-cycle program era shading (`ProgramEraShadedChart.tsx`), complete 5-chart longitudinal suite (`PlotsScreen.tsx` for e1RM progression, bodyweight with 7-day rolling SMA/EMA, body fat %, circumferences, and Monday-bucketed volume tonnage), anthropometry logger (`BodyMetricsScreen.tsx`), bidirectional metric/imperial unit conversion (`unitConversion.ts`), and HomeScreen inline integration (644 mobile tests passing total across 49 test suites, `npx tsc --noEmit` and `pytest companion/tests` 9/9 passing verified).
+- **Phase 6: Companion Scientific Analysis Suite (Python Engine & Dashboard)**
+  - **Step 6.1: Tier 2 Adaptive Linear Kalman Filter Engine (`kalman_1rm.py`)**: `[x]` Completed — Implemented ADR-044: Discrete state-space Linear Kalman Filter tracking $\mathbf{x}_t = [\ln(1\text{RM}_t), k_t]^T$ under linearized Lombardi power law, quadratic measurement noise variance $R_t = \sigma_{\text{base}}^2 (1 + \lambda r_{\text{eff}}^2)$, diagonal process noise $\mathbf{Q}$, lift-specific priors (Bench 0.085, Squat 0.095, Deadlift 0.075, Default 0.10), deadlift +10% heuristic exclusion invariant (ADR-026), true 1RM bypass ($r_{\text{eff}}=1.0 \implies \mathbf{H}=[1, 0]$), intra-session pre-processing (top 2 sets with lowest RIR / highest weight, discarding RIR > 3, warmups, and failed reps), and box-clipping heuristic $k \in [0.03, 0.16]$ (13/13 pytest unit tests passing, 22/22 total companion tests passing, strict mypy verified).
+  - **Step 6.2: Dynamic Recoverability & Banister Impulse-Response Engine**: `[x]` Completed — Implemented ADR-045: 14-day rolling bodyweight OLS linear regression slope ($\Delta BW / \Delta t$) scaling fatigue decay constant $\tau_2$ dynamically (shortened 10–25% in surplus, lengthened 15–30% in deficit) in `recovery_modifier.py`; Effective Stimulating Sets ($\text{RPE} \ge 7.0$ scaled by $\text{weight}/1\text{RM}$) and two-component Fitness ($P_t, \tau_1=42\text{d}$) and Fatigue ($F_t, \text{dynamic } \tau_2$) ODE integrator in `fatigue_banister.py`; rolling Acute:Chronic Workload Ratio (ACWR) and structured training advisories (`OPTIMAL_OVERLOAD`, `DELOAD_WARNING`, `UNDER_STIMULATION`, `OVERREACHING`) in `recommendations.py` (13/13 pytest unit tests passing, 35/35 total companion tests passing, strict mypy verified).
+- **Next Up**: **Phase 6: Companion Scientific Analysis Suite — Step 6.3: Calibrated Parameter Exporter & Mobile Ingestion Round-Trip**.
+
 - For complete phase-by-phase status, refer to the [Implementation Progress & Milestone Tracker](file:///c:/Programmering/Eget/Workout_suite/IMPLEMENTATION_PLAN.md#3-step-by-step-atomic-execution-plan).
 
 
@@ -145,23 +316,29 @@ When code generation begins in subsequent phases, components must be placed into
   - `math/loadNormalizer.ts` — Normalizes dumbbell per-hand input, bodyweight total system load, and cable ratios (ADR-026: computes normalized effective mechanical load in kg alongside lifter's raw input weight).
   - `math/strengthStandards.ts` — Evaluates SBD e1RM against empirical & allometric bodyweight tiers (Untrained to Elite) and computes continuous score + kg delta.
   - `math/dotsCoefficients.ts` — Official powerlifting DOTS formula score calculator.
-  - `math/navyBodyFat.ts` — U.S. Navy circumference body fat algorithm.
+  - `math/navyBodyFat.ts` — U.S. Navy circumference body fat algorithm (DoD metric density + Siri equation) and calendar-aware 7-day rolling SMA / EMA smoothing engines.
   - `math/unitConversion.ts` — Pure kg ↔ lbs conversion functions.
+  - `generator/programSynthesizer.ts` — Pure profile-driven program synthesizer mapping user demographics, schedule, exertion intensity, and equipment access to complete multi-day splits with antagonist supersets and progression rules.
+  - `rules/progressionRuleEngine.ts` — Pure side-effect-free evaluator for declarative progression rules, supporting condition matching, priority sorting, DDP set-level proposals, and LP/DP/DDP presets.
+  - `parsers/csvImportParser.ts` — Pure zero-dependency RFC 4180 CSV tokenizer and format auto-detector.
   - `types/` — Shared domain types (Exercise, Set, SetType, Unit, RPE/RIR, ProgressionRule, UserProfile, StrengthStandard, LiftType, GearItem).
 - `mobile/src/domain/repositories/` — Abstract repository interfaces (Ports).
   - `IProgramRepository.ts`, `IWorkoutRepository.ts`, `IExerciseRepository.ts`, `IGearRepository.ts`, `IBodyMetricsRepository.ts`, `IProgramBlockRepository.ts`, `IProgressionRuleRepository.ts`, `ICalibratedParamRepository.ts`, `IUserProfileRepository.ts`.
 - `mobile/src/features/` — Vertical feature slices (encapsulated screens, hooks, and local components).
-  - `features/logger/` — `ActiveLoggerScreen.tsx`, `PlateCalculatorModal.tsx`, `ExerciseSubstitutionModal.tsx`, ghosting logic (global scope), set checklist, set type selector, per-set notes, superset bracket UI, rest timer hooks, crash recovery Resume/Discard prompt.
+  - `features/home/` — `HomeScreen.tsx`, Quick Status Dashboard (active program, next workout quick card, weekly metrics: workouts this week, tonnage, streak), interactive calendar agenda, reserved analytics mount point.
+  - `features/logger/` — `WorkoutTabRouter.tsx` (resolving State A active logger, State B circular template pre-flight screen, State C empty state), `ActiveLoggerScreen.tsx` (with on-the-fly implement switcher `GearPickerModal` and PlateCalculator tare synchronization), `PlateCalculatorModal.tsx`, `ExerciseSubstitutionModal.tsx`, ghosting logic, set checklist, spelled-out set type selector (`Reg`, `Warm`, `Drop`, `Myo`, `DC`), per-set notes, superset bracket UI, set-type-specific rest timer triggers (0s drop, 10s myo, 30s dc), crash recovery Resume/Discard prompt.
   - `features/calendar/` — `CalendarScreen.tsx`, monthly agenda, meso-cycle swap indicators.
   - `features/inspection/` — `ExerciseDetailScreen.tsx`, Rep-Max Record PR board (all-time / per-program toggle), SBD Strength Standards tier badge, progress bar to next tier, set e1RM benchmarks, variant hierarchy display.
-  - `features/progression/` — `ProgressionBuilderScreen.tsx`, visual IF/THEN/ELSE condition-action rule builder, `ProgramGeneratorModal.tsx` (profile-driven routine wizard), `progression_rules` CRUD.
-  - `features/gear/` — `GearInventoryScreen.tsx`, specialty barbell tare weights, custom machine cable ratios manager.
-  - `features/profile/` — `UserProfileScreen.tsx`, multi-step psychological questionnaire (enjoyment, effort style, primary/secondary goals, schedule, equipment).
+  - `features/progression/` — `ProgramOverviewScreen.tsx` (full CRUD builder with cloning protection, template CRUD/reordering, exercise CRUD/reordering/swap/superset), `ProgressionBuilderModal.tsx` (visual IF/THEN/ELSE condition-action rule builder with LP/DP/DDP presets), `CatalogPickerModal.tsx`, `PrescriptionEditorModal.tsx` (with implement/gear assignment chips), `EditTemplateModal.tsx`.
+  - `features/gear/` — `GearInventoryScreen.tsx`, accessible gym equipment inventory, specialty barbell tare weights, custom machine cable ratios manager, accessed via Profile hub Equipment Access modal.
+  - `features/profile/` — `UserProfileScreen.tsx`, Training Mentality matrix (`fury`, `precision`, `get_out`), demographics, logistics (including 15m duration), Equipment Access hub (`GearInventoryScreen` modal integration), 1-tap generator, active program banner.
   - `features/bodyMetrics/` — `BodyMetricsScreen.tsx`, tape measurement inputs, body fat estimator, 7-day rolling average.
   - `features/plots/` — `PlotsScreen.tsx`, time-series charts with program era shaded bands, SBD Symmetry & Balance Radar chart, demographic cohort percentiles.
   - `features/import/` — `ImportScreen.tsx`, Strong CSV / Hevy CSV / generic parsers, exercise mapping UI, duplicate detection.
   - `features/settings/` — `SettingsScreen.tsx`, units, RPE/RIR preferences, `pure_utility_mode` toggle, export trigger, calibrated parameter import trigger.
 - `mobile/src/services/` — Application orchestration services.
+  - `programCloneService.ts` — Deep cloning service protecting pre-built/synthesized templates by cloning to custom (`prog_custom_<ts>_<hash>`).
+  - `dashboardMetricsService.ts` — Computes weekly workouts count, total tonnage in kg, and consecutive active training streak.
   - `plateCalculatorService.ts` — Manages plate breakdown popover state and bar tare calculation.
   - `exerciseSubstitutionService.ts` — Recommends variant movements during active sessions and transfers targets.
   - `gearInventoryService.ts` — Equipment inventory and mechanical advantage resolver (defaults: 20kg bar, 1:1 rows/pulldowns, 2:1 functional trainers).
@@ -177,7 +354,8 @@ When code generation begins in subsequent phases, components must be placed into
   - `programBlockService.ts` — Meso-cycle date interval resolver and color band calculator.
 - `mobile/src/database/` — Infrastructure Layer (Adapters).
   - `schema.ts` — SQLite table DDL and `PRAGMA user_version` migration framework (`expo-sqlite`).
-  - `repositories/` — Concrete SQLite implementations of domain repository interfaces (`SQLiteProgramRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserProfileRepository.ts`, `SQLiteProgressionRuleRepository.ts`, `SQLiteCalibratedParamRepository.ts`, etc.).
+  - `repositories/` — Concrete SQLite implementations of domain repository interfaces (`SQLiteProgramRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserProfileRepository.ts`, `SQLiteBodyMetricsRepository.ts`, `SQLiteUserSettingsRepository.ts`, etc.).
+  - `mocks/` — In-memory test repositories (`MockProgramRepository.ts`, `MockWorkoutRepository.ts`, `MockGearRepository.ts`, `MockUserProfileRepository.ts`, `MockBodyMetricsRepository.ts`, `MockUserSettingsRepository.ts`, etc.).
 
 ### 3.3 Companion Analysis Suite (`companion/`)
 > **Workspace Execution Rule**: All Python commands (`pip`, `pytest`, `mypy`, `streamlit`) MUST be executed within the virtual environment `companion/.venv`.

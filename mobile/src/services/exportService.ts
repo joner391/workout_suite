@@ -25,6 +25,7 @@ import {
   GearInventory,
   BodyMetric,
   UserProfile,
+  TrainingMentality,
 } from '../core/types';
 
 export const EXPORT_SCHEMA_VERSION = '1.0.0';
@@ -291,11 +292,7 @@ export class ExportService {
 
     // 12. User Profiles
     const rawProfiles = await db.getAllAsync<any>(
-      `SELECT id, gender, birthdate, height_cm, training_enjoyment, intensity_style,
-              primary_goal, secondary_goals, preferred_days_per_week,
-              preferred_session_duration_mins, equipment_access, created_at, updated_at
-       FROM user_profiles
-       ORDER BY created_at ASC;`
+      `SELECT * FROM user_profiles ORDER BY created_at ASC;`
     );
     const user_profiles: UserProfile[] = (rawProfiles || []).map((r) => {
       let secondaryGoals: string[] | null = null;
@@ -310,13 +307,16 @@ export class ExportService {
           secondaryGoals = r.secondary_goals;
         }
       }
+      const mentality: TrainingMentality = r.training_mentality ??
+        (r.intensity_style === 'high_intensity_low_volume' ? 'fury' :
+         r.training_enjoyment === 'minimalist' ? 'get_out' : 'precision');
+
       return {
         id: String(r.id),
         gender: r.gender,
         birthdate: r.birthdate != null ? String(r.birthdate) : null,
         height_cm: r.height_cm != null ? Number(r.height_cm) : null,
-        training_enjoyment: r.training_enjoyment ?? 'neutral',
-        intensity_style: r.intensity_style ?? 'balanced',
+        training_mentality: mentality,
         primary_goal: r.primary_goal ?? 'hypertrophy',
         secondary_goals: secondaryGoals,
         preferred_days_per_week: Number(r.preferred_days_per_week ?? 4),

@@ -4,6 +4,9 @@ import {
   convertWeight,
   roundToStep,
   formatWeight,
+  cmToInches,
+  inchesToCm,
+  formatLength,
   LBS_PER_KG,
   KG_PER_LB,
 } from '../unitConversion';
@@ -116,6 +119,52 @@ describe('Unit Conversion & Formatting Utilities', () => {
     it('should safely fallback for NaN', () => {
       expect(formatWeight(NaN, 'kg')).toBe('0 kg');
       expect(formatWeight(NaN, 'lbs', { showUnit: false })).toBe('0');
+    });
+  });
+
+  describe('cmToInches and inchesToCm', () => {
+    it('accurately converts centimeters to inches (e.g. 2.54 cm -> 1 inch)', () => {
+      expect(cmToInches(2.54)).toBeCloseTo(1.0, 4);
+      expect(cmToInches(80)).toBeCloseTo(31.496, 2);
+    });
+
+    it('accurately converts inches to centimeters (e.g. 32 inches -> 81.28 cm)', () => {
+      expect(inchesToCm(1.0)).toBeCloseTo(2.54, 4);
+      expect(inchesToCm(32)).toBeCloseTo(81.28, 2);
+    });
+
+    it('handles zero and NaN safely', () => {
+      expect(cmToInches(0)).toBe(0);
+      expect(inchesToCm(0)).toBe(0);
+      expect(cmToInches(NaN)).toBe(0);
+      expect(inchesToCm(NaN)).toBe(0);
+    });
+
+    it('satisfies round-trip invariant', () => {
+      const orig = 75.5;
+      expect(inchesToCm(cmToInches(orig))).toBeCloseTo(orig, 5);
+    });
+  });
+
+  describe('formatLength', () => {
+    it('formats metric length in cm', () => {
+      expect(formatLength(82.5, 'kg')).toBe('82.5 cm');
+      expect(formatLength(80.0, 'kg')).toBe('80 cm');
+    });
+
+    it('formats imperial length in inches when unitSystem is lbs', () => {
+      // 81.28 cm = 32 inches
+      expect(formatLength(81.28, 'lbs')).toBe('32 in');
+    });
+
+    it('respects showUnit = false', () => {
+      expect(formatLength(80.0, 'kg', { showUnit: false })).toBe('80');
+      expect(formatLength(81.28, 'lbs', { showUnit: false })).toBe('32');
+    });
+
+    it('handles fallback for NaN', () => {
+      expect(formatLength(NaN, 'kg')).toBe('0 cm');
+      expect(formatLength(NaN, 'lbs')).toBe('0 in');
     });
   });
 });

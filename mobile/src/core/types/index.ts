@@ -55,6 +55,8 @@ export type ImportSource = 'strong' | 'hevy' | 'csv' | 'fitnotes';
 
 export type Gender = 'male' | 'female';
 
+export type TrainingMentality = 'fury' | 'precision' | 'get_out';
+
 export type TrainingEnjoyment = 'enthusiast' | 'neutral' | 'minimalist';
 
 export type IntensityStyle =
@@ -282,8 +284,9 @@ export interface UserProfile {
   gender: Gender;
   birthdate: string | null;
   height_cm: number | null;
-  training_enjoyment: TrainingEnjoyment;
-  intensity_style: IntensityStyle;
+  training_mentality: TrainingMentality;
+  training_enjoyment?: TrainingEnjoyment;
+  intensity_style?: IntensityStyle;
   primary_goal: PrimaryGoal;
   secondary_goals: string[] | null;
   preferred_days_per_week: number;

@@ -216,6 +216,7 @@ describe('ExportService (Step 2.3)', () => {
       gender: 'male',
       birthdate: '1995-06-20',
       height_cm: 182.0,
+      training_mentality: 'precision',
       training_enjoyment: 'enthusiast',
       intensity_style: 'balanced',
       primary_goal: 'hypertrophy',

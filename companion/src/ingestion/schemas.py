@@ -25,8 +25,9 @@ GearType = Literal[
     "accessory",
 ]
 WorkoutStatus = Literal["in_progress", "completed", "discarded"]
-SetType = Literal["warmup", "working", "drop", "myorep", "failure"]
+SetType = Literal["warmup", "working", "drop", "myorep", "dc"]
 Gender = Literal["male", "female"]
+TrainingMentality = Literal["fury", "precision", "get_out"]
 TrainingEnjoyment = Literal["enthusiast", "neutral", "minimalist"]
 IntensityStyle = Literal[
     "high_intensity_low_volume",
@@ -436,13 +437,9 @@ class UserProfile(StrictSchemaModel):
         le=260.0,
         description="Height in centimeters.",
     )
-    training_enjoyment: TrainingEnjoyment = Field(
-        default="neutral",
-        description="Psychological motivation and volume affinity index.",
-    )
-    intensity_style: IntensityStyle = Field(
-        default="balanced",
-        description="Preferred exertion and volume distribution strategy.",
+    training_mentality: TrainingMentality = Field(
+        default="precision",
+        description="Athlete training mentality and volume/intensity profile.",
     )
     primary_goal: PrimaryGoal = Field(
         default="hypertrophy",

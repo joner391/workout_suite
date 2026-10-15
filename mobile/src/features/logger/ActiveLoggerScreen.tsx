@@ -158,6 +158,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const [finishNotes, setFinishNotes] = useState<string>('');
   const [showSupersetModal, setShowSupersetModal] = useState<boolean>(false);
   const [supersetSourceExercise, setSupersetSourceExercise] = useState<Exercise | null>(null);
+  const [gearPickerExercise, setGearPickerExercise] = useState<Exercise | null>(null);
   const [summaryWorkoutId, setSummaryWorkoutId] = useState<string | null>(null);
   const [finishedWorkoutObj, setFinishedWorkoutObj] = useState<Workout | null>(null);
 
@@ -479,6 +480,21 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       setSets((prev) => prev.map((s) => (s.id === setId ? persisted : s)));
     } catch (err) {
       console.error('Failed to update set:', err);
+    }
+  };
+
+  // Switch gear/implement for all sets of an exercise in the active session (ADR-025)
+  const handleSelectGearForExercise = async (exerciseId: string, selectedGearId: string | null) => {
+    if (!activeWorkout) return;
+    try {
+      const exerciseSets = sets.filter((s) => s.exercise_id === exerciseId);
+      for (const set of exerciseSets) {
+        await handleUpdateSet(set.id, { gear_id: selectedGearId });
+      }
+    } catch (err) {
+      console.error('Failed to update gear for exercise sets:', err);
+    } finally {
+      setGearPickerExercise(null);
     }
   };
 
@@ -890,15 +906,24 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               )}
             </View>
 
-            {/* Gear Subtext Indicator (ADR-025) */}
-            {gear ? (
-              <Text testID="gear-subtext-indicator" style={styles.gearSubtext}>
-                ⚙ {gear.name} ({gear.tare_weight_kg} kg bar)
-              </Text>
-            ) : exercise.category === 'Cable' && exercise.default_cable_ratio !== 1.0 ? (
-              <Text testID="gear-subtext-indicator" style={styles.gearSubtext}>
-                ⚙ Cable Pulley ({exercise.default_cable_ratio}:1 ratio)
-              </Text>
+            {/* Gear Subtext Indicator & 1-Tap Implement Switcher (ADR-025) */}
+            {exercise.category === 'Barbell' || exercise.category === 'Cable' || gear ? (
+              <TouchableOpacity
+                testID={`change-gear-button-${exercise.id}`}
+                style={styles.gearPillBtn}
+                onPress={() => setGearPickerExercise(exercise)}
+                activeOpacity={0.7}
+              >
+                <Text testID="gear-subtext-indicator" style={styles.gearSubtextInteractive}>
+                  ⚙ {gear
+                    ? `${gear.name} (${gear.tare_weight_kg} kg bar) ▾`
+                    : exercise.category === 'Barbell'
+                    ? `${exercise.default_bar_weight_kg || 20} kg Bar ▾`
+                    : exercise.default_cable_ratio !== 1.0
+                    ? `Cable Pulley (${exercise.default_cable_ratio}:1) ▾`
+                    : 'Standard Cable (1:1) ▾'}
+                </Text>
+              </TouchableOpacity>
             ) : null}
           </View>
 
@@ -1096,6 +1121,77 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           <Text style={styles.discardFooterText}>Discard Workout</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Implement / Bar Selection Modal (ADR-025) */}
+      {gearPickerExercise && (
+        <Modal
+          visible={!!gearPickerExercise}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setGearPickerExercise(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.gearPickerModalContent}>
+              <View style={styles.gearPickerHeader}>
+                <Text style={styles.gearPickerTitle}>
+                  Select Implement: {gearPickerExercise.name}
+                </Text>
+                <TouchableOpacity
+                  testID="gear-picker-close-btn"
+                  onPress={() => setGearPickerExercise(null)}
+                >
+                  <Text style={styles.closeText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ maxHeight: 350 }}>
+                {/* Default option */}
+                <TouchableOpacity
+                  testID="select-gear-default"
+                  style={styles.gearOptionRow}
+                  onPress={() => handleSelectGearForExercise(gearPickerExercise.id, null)}
+                >
+                  <Text style={styles.gearOptionName}>
+                    {gearPickerExercise.category === 'Barbell'
+                      ? `Standard Bar (${gearPickerExercise.default_bar_weight_kg || 20} kg)`
+                      : `Standard Cable (${gearPickerExercise.default_cable_ratio || 1.0}:1)`}
+                  </Text>
+                  <Text style={styles.gearOptionSubtext}>Default Catalog Implement</Text>
+                </TouchableOpacity>
+
+                {/* Inventory gear options */}
+                {Array.from(gearMap.values())
+                  .filter((g) => {
+                    if (gearPickerExercise.category === 'Barbell') {
+                      return g.type === 'barbell' || g.type === 'specialty_bar';
+                    }
+                    if (gearPickerExercise.category === 'Cable') {
+                      return g.type === 'cable_machine';
+                    }
+                    return true;
+                  })
+                  .map((g) => (
+                    <TouchableOpacity
+                      key={g.id}
+                      testID={`select-gear-${g.id}`}
+                      style={styles.gearOptionRow}
+                      onPress={() => handleSelectGearForExercise(gearPickerExercise.id, g.id)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.gearOptionName}>{g.name}</Text>
+                        <Text style={styles.gearOptionSubtext}>
+                          {g.type === 'cable_machine'
+                            ? `Pulley Ratio: ${g.cable_ratio}:1`
+                            : `Tare Weight: ${g.tare_weight_kg} kg bar`}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* Plate Calculator Popover Modal */}
       <PlateCalculatorModal
@@ -1531,6 +1627,64 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#38BDF8',
     marginTop: 4,
+    fontWeight: '500',
+  },
+  gearPillBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  gearSubtextInteractive: {
+    fontSize: 11,
+    color: '#38BDF8',
+    fontWeight: '600',
+  },
+  gearPickerModalContent: {
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 12,
+    padding: 16,
+    width: '90%',
+    maxHeight: '80%',
+  },
+  gearPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#27272A',
+    paddingBottom: 8,
+  },
+  gearPickerTitle: {
+    color: '#FAFAFA',
+    fontSize: 15,
+    fontWeight: '800',
+    flex: 1,
+  },
+  gearOptionRow: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  gearOptionName: {
+    color: '#FAFAFA',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  gearOptionSubtext: {
+    color: '#38BDF8',
+    fontSize: 11,
+    marginTop: 2,
     fontWeight: '500',
   },
   headerRightActions: {

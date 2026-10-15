@@ -185,8 +185,7 @@ def valid_user_profile_dict() -> Dict[str, Any]:
         "gender": "male",
         "birthdate": "1995-05-15",
         "height_cm": 180.0,
-        "training_enjoyment": "enthusiast",
-        "intensity_style": "balanced",
+        "training_mentality": "precision",
         "primary_goal": "hypertrophy",
         "secondary_goals": ["strength"],
         "preferred_days_per_week": 4,
@@ -278,6 +277,14 @@ def test_workout_set_validation_boundaries(valid_workout_set_dict: Dict[str, Any
     with pytest.raises(ValidationError):
         WorkoutSet.model_validate({**valid_workout_set_dict, "rpe": 10.5})
 
+    # 'dc' set type is valid
+    dc_set = WorkoutSet.model_validate({**valid_workout_set_dict, "set_type": "dc"})
+    assert dc_set.set_type == "dc"
+
+    # 'failure' set type was purged and is forbidden
+    with pytest.raises(ValidationError):
+        WorkoutSet.model_validate({**valid_workout_set_dict, "set_type": "failure"})
+
     # Reps < 0 forbidden
     with pytest.raises(ValidationError):
         WorkoutSet.model_validate({**valid_workout_set_dict, "reps": -1})
@@ -368,3 +375,56 @@ def test_valid_calibrated_envelope() -> None:
     assert envelope.version == "1.0.0"
     assert len(envelope.parameters) == 1
     assert envelope.parameters[0].calibrated_1rm == 125.0
+
+
+# ============================================================================
+# Tests: Step 2.3 Generated Fixture Contract Verification
+# ============================================================================
+
+def test_sample_workout_export_fixture() -> None:
+    """Verifies that the mobile SQLite export fixture conforms to both the Draft-07 JSON Schema and Companion Pydantic v2 models."""
+    import json
+    from pathlib import Path
+    import jsonschema
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    fixture_path = repo_root / "schemas" / "fixtures" / "sample_workout_export.json"
+    schema_path = repo_root / "schemas" / "workout_export.schema.json"
+
+    assert fixture_path.exists(), f"Sample export fixture missing at {fixture_path}"
+    assert schema_path.exists(), f"Workout export schema missing at {schema_path}"
+
+    with open(fixture_path, "r", encoding="utf-8") as f:
+        fixture_data = json.load(f)
+
+    with open(schema_path, "r", encoding="utf-8") as f:
+        schema_data = json.load(f)
+
+    # 1. Validate against canonical Draft-07 JSON Schema
+    jsonschema.validate(instance=fixture_data, schema=schema_data)
+
+    # 2. Validate against Companion Pydantic v2 data model
+    payload = WorkoutExportPayload.model_validate(fixture_data)
+
+    assert payload.version == "1.0.0"
+    assert len(payload.programs) >= 1
+    assert len(payload.exercises) >= 2
+    assert len(payload.workouts) >= 1
+    assert len(payload.workout_sets) >= 2
+
+    # Verify ADR-026 dual-weight persistence in the exported fixture
+    bench_set = payload.workout_sets[0]
+    assert bench_set.weight == 100.0
+    assert bench_set.raw_input_weight == 100.0
+    assert bench_set.reps == 8
+
+    # Verify user profile goals & equipment access
+    user_prof = payload.user_profiles[0]
+    assert user_prof.gender == "male"
+    assert user_prof.equipment_access == "commercial_gym"
+    assert user_prof.secondary_goals == ["strength", "powerbuilding"]
+
+    # Verify user settings dictionary
+    assert payload.user_settings["unit_system"] == "kg"
+    assert payload.user_settings["intensity_metric"] == "RPE"
+

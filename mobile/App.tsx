@@ -1,13 +1,17 @@
 /**
  * Workout Suite — Mobile Application Entry & Root Navigation
  *
- * Implements Step 1.6: Bottom Tab Navigation (Logger, Calendar, Settings)
+ * Implements Section 4: Main Navigation Overhaul (HOME, WORKOUT, PROFILE, SETTINGS)
+ * Implements Section 4.1: Tab 1: HOME (Dashboard, Calendar & Analytics Hub)
+ * Implements Section 4.2: Tab 2: WORKOUT (Smart Session Router: State A/B/C)
+ * Implements Section 4.3: Tab 3: PROFILE (Demographics, Mentality, Generator, Program Overview)
+ * Implements Section 4.4: Tab 4: SETTINGS (Gym Mechanics, Equipment & Utilities)
  * Implements ADR-001: Local-First Architecture with SQLite
  * Implements ADR-010: Write-Through Crash Recovery for Active Sessions
  * Implements ADR-024: Pure Utility Mode (OLED-friendly high-contrast styling)
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -25,6 +29,7 @@ import {
   IUserSettingsRepository,
   IProgramRepository,
   IUserProfileRepository,
+  IBodyMetricsRepository,
 } from './src/domain/repositories';
 import {
   getDatabase,
@@ -35,14 +40,16 @@ import {
   SQLiteUserSettingsRepository,
   SQLiteProgramRepository,
   SQLiteUserProfileRepository,
+  SQLiteBodyMetricsRepository,
 } from './src/database';
 import { ProgramBlockService } from './src/services/programBlockService';
-import { ActiveLoggerScreen } from './src/features/logger';
-import { CalendarScreen } from './src/features/calendar';
+import { WorkoutTabRouter } from './src/features/logger';
+import { HomeScreen } from './src/features/home';
+import { UserProfileScreen } from './src/features/profile';
 import { SettingsScreen } from './src/features/settings';
 import { Workout } from './src/core/types';
 
-export type RootTab = 'logger' | 'calendar' | 'settings';
+export type RootTab = 'home' | 'workout' | 'profile' | 'settings' | 'logger' | 'calendar';
 
 export interface AppProps {
   initialTab?: RootTab;
@@ -53,13 +60,14 @@ export interface AppProps {
   userSettingsRepo?: IUserSettingsRepository;
   programRepo?: IProgramRepository;
   userProfileRepo?: IUserProfileRepository;
+  bodyMetricsRepo?: IBodyMetricsRepository;
   programBlockService?: ProgramBlockService;
   db?: ISQLiteDatabase;
   [key: string]: unknown;
 }
 
 export default function App({
-  initialTab = 'logger',
+  initialTab = 'home',
   initialWorkoutId,
   workoutRepo: propWorkoutRepo,
   exerciseRepo: propExerciseRepo,
@@ -67,6 +75,7 @@ export default function App({
   userSettingsRepo: propUserSettingsRepo,
   programRepo: propProgramRepo,
   userProfileRepo: propUserProfileRepo,
+  bodyMetricsRepo: propBodyMetricsRepo,
   programBlockService: propProgramBlockService,
   db: propDb,
 }: AppProps = {}) {
@@ -79,6 +88,13 @@ export default function App({
     initialWorkoutId
   );
 
+  // Normalize legacy tab names
+  const currentTab = ((): 'home' | 'workout' | 'profile' | 'settings' => {
+    if (activeTab === 'logger') return 'workout';
+    if (activeTab === 'calendar') return 'home';
+    return activeTab as 'home' | 'workout' | 'profile' | 'settings';
+  })();
+
   // Concrete repositories (fallback to SQLite if props omitted)
   const [repos, setRepos] = useState<{
     workoutRepo: IWorkoutRepository;
@@ -87,11 +103,13 @@ export default function App({
     userSettingsRepo: IUserSettingsRepository;
     programRepo: IProgramRepository;
     userProfileRepo: IUserProfileRepository;
+    bodyMetricsRepo: IBodyMetricsRepository;
     programBlockService: ProgramBlockService;
   } | null>(() => {
     if (propWorkoutRepo && propExerciseRepo && propUserSettingsRepo) {
       const pRepo = propProgramRepo || ({} as IProgramRepository);
       const upRepo = propUserProfileRepo || ({} as IUserProfileRepository);
+      const bmRepo = propBodyMetricsRepo || ({} as IBodyMetricsRepository);
       const pbService =
         propProgramBlockService ||
         (propProgramRepo ? new ProgramBlockService(propProgramRepo) : ({} as ProgramBlockService));
@@ -102,6 +120,7 @@ export default function App({
         userSettingsRepo: propUserSettingsRepo,
         programRepo: pRepo,
         userProfileRepo: upRepo,
+        bodyMetricsRepo: bmRepo,
         programBlockService: pbService,
       };
     }
@@ -129,6 +148,7 @@ export default function App({
         const uRepo = new SQLiteUserSettingsRepository(db);
         const pRepo = new SQLiteProgramRepository(db);
         const upRepo = new SQLiteUserProfileRepository(db);
+        const bmRepo = new SQLiteBodyMetricsRepository(db);
         const pbService = new ProgramBlockService(pRepo);
 
         setRepos({
@@ -138,6 +158,7 @@ export default function App({
           userSettingsRepo: uRepo,
           programRepo: pRepo,
           userProfileRepo: upRepo,
+          bodyMetricsRepo: bmRepo,
           programBlockService: pbService,
         });
 
@@ -185,22 +206,24 @@ export default function App({
     }
   }, [dbReady, checkActiveWorkout, activeTab]);
 
-  // Handle starting a workout from Calendar
-  const handleStartWorkoutFromCalendar = (dateIso?: string) => {
-    setActiveTab('logger');
+  // Handle starting a workout from router or home
+  const handleStartSession = (workoutId: string) => {
+    setCurrentWorkoutId(workoutId);
+    setHasActiveWorkout(true);
+    setActiveTab('workout');
   };
 
-  // Handle session finished in logger -> switch to calendar to view it
+  // Handle session finished in logger -> switch to home tab to view metrics/calendar
   const handleFinishSession = (completedWorkout: Workout) => {
     setHasActiveWorkout(false);
     setCurrentWorkoutId(undefined);
-    setActiveTab('calendar');
+    setActiveTab('home');
   };
 
   const handleDiscardSession = () => {
     setHasActiveWorkout(false);
     setCurrentWorkoutId(undefined);
-    setActiveTab('calendar');
+    setActiveTab('home');
   };
 
   if (!dbReady || !repos) {
@@ -223,143 +246,206 @@ export default function App({
       <SafeAreaView style={styles.rootContainer} edges={['top', 'bottom', 'left', 'right']}>
         <StatusBar style="light" />
 
-      {/* Screen Body Container */}
-      <View style={styles.bodyContainer}>
-        {/* We keep Logger rendered so in-progress session state is not lost on tab switch */}
-        <View
-          style={[
-            styles.tabContentContainer,
-            activeTab === 'logger' ? styles.visibleContent : styles.hiddenContent,
-          ]}
-        >
-          <ActiveLoggerScreen
-            initialWorkoutId={currentWorkoutId}
-            workoutRepo={repos.workoutRepo}
-            exerciseRepo={repos.exerciseRepo}
-            gearRepo={repos.gearRepo}
-            userSettingsRepo={repos.userSettingsRepo}
-            programRepo={repos.programRepo}
-            onFinishSession={handleFinishSession}
-            onDiscardSession={handleDiscardSession}
-          />
+        {/* Screen Body Container */}
+        <View style={styles.bodyContainer}>
+          {/* TAB 1: HOME (Dashboard, Calendar & Analytics Hub) */}
+          {currentTab === 'home' && (
+            <View style={[styles.tabContentContainer, styles.visibleContent]}>
+              <HomeScreen
+                workoutRepo={repos.workoutRepo}
+                exerciseRepo={repos.exerciseRepo}
+                gearRepo={repos.gearRepo}
+                userSettingsRepo={repos.userSettingsRepo}
+                programRepo={repos.programRepo}
+                programBlockService={repos.programBlockService}
+                bodyMetricsRepo={repos.bodyMetricsRepo}
+                userProfileRepo={repos.userProfileRepo}
+                onNavigateToWorkout={() => setActiveTab('workout')}
+                onNavigateToProfile={() => setActiveTab('profile')}
+              />
+            </View>
+          )}
+
+          {/* TAB 2: WORKOUT (Smart Session Router & Active Logger) */}
+          {/* Keep mounted so in-progress session state is never discarded on tab switch */}
+          <View
+            style={[
+              styles.tabContentContainer,
+              currentTab === 'workout' ? styles.visibleContent : styles.hiddenContent,
+            ]}
+          >
+            <WorkoutTabRouter
+              workoutRepo={repos.workoutRepo}
+              exerciseRepo={repos.exerciseRepo}
+              gearRepo={repos.gearRepo}
+              userSettingsRepo={repos.userSettingsRepo}
+              programRepo={repos.programRepo}
+              programBlockService={repos.programBlockService}
+              hasActiveWorkout={hasActiveWorkout}
+              currentWorkoutId={currentWorkoutId}
+              onStartSession={handleStartSession}
+              onFinishSession={handleFinishSession}
+              onDiscardSession={handleDiscardSession}
+              onOpenProgramPlanner={() => setActiveTab('profile')}
+            />
+          </View>
+
+          {/* TAB 3: PROFILE (Training Psychology & Program Planner) */}
+          {currentTab === 'profile' && (
+            <View style={[styles.tabContentContainer, styles.visibleContent]}>
+              <UserProfileScreen
+                userProfileRepo={repos.userProfileRepo}
+                programRepo={repos.programRepo}
+                programBlockService={repos.programBlockService}
+                exerciseRepo={repos.exerciseRepo}
+                gearRepo={repos.gearRepo}
+                userSettingsRepo={repos.userSettingsRepo}
+                bodyMetricsRepo={repos.bodyMetricsRepo}
+                onProgramGenerated={(progId) => {
+                  checkActiveWorkout();
+                  setActiveTab('workout');
+                }}
+              />
+            </View>
+          )}
+
+          {/* TAB 4: SETTINGS (Gym Mechanics, Equipment & Utilities) */}
+          {currentTab === 'settings' && (
+            <View style={[styles.tabContentContainer, styles.visibleContent]}>
+              <SettingsScreen
+                userSettingsRepo={repos.userSettingsRepo}
+                exerciseRepo={repos.exerciseRepo}
+                gearRepo={repos.gearRepo}
+                workoutRepo={repos.workoutRepo}
+                programRepo={repos.programRepo}
+                userProfileRepo={repos.userProfileRepo}
+                programBlockService={repos.programBlockService}
+                db={database}
+                onSettingsChange={checkActiveWorkout}
+              />
+            </View>
+          )}
         </View>
 
-        {activeTab === 'calendar' && (
-          <View style={[styles.tabContentContainer, styles.visibleContent]}>
-            <CalendarScreen
-              workoutRepo={repos.workoutRepo}
-              exerciseRepo={repos.exerciseRepo}
-              gearRepo={repos.gearRepo}
-              userSettingsRepo={repos.userSettingsRepo}
-              programBlockService={repos.programBlockService}
-              onStartWorkout={handleStartWorkoutFromCalendar}
-            />
-          </View>
-        )}
-
-        {activeTab === 'settings' && (
-          <View style={[styles.tabContentContainer, styles.visibleContent]}>
-            <SettingsScreen
-              userSettingsRepo={repos.userSettingsRepo}
-              exerciseRepo={repos.exerciseRepo}
-              gearRepo={repos.gearRepo}
-              workoutRepo={repos.workoutRepo}
-              programRepo={repos.programRepo}
-              userProfileRepo={repos.userProfileRepo}
-              programBlockService={repos.programBlockService}
-              db={database}
-              onSettingsChange={checkActiveWorkout}
-            />
-          </View>
-        )}
-      </View>
-
-      {/* High-Contrast Bottom Tab Navigation Bar */}
-      <View style={styles.bottomTabBar}>
-        {/* Logger Tab */}
-        <TouchableOpacity
-          style={styles.tabButton}
-          onPress={() => setActiveTab('logger')}
-          activeOpacity={0.7}
-          accessibilityLabel="Active Logger Tab"
-        >
-          <View style={styles.iconContainer}>
+        {/* High-Contrast 4-Hub Bottom Tab Navigation Bar */}
+        <View testID="root-bottom-tab-bar" style={styles.bottomTabBar}>
+          {/* 1. Home Tab */}
+          <TouchableOpacity
+            testID="tab-btn-home"
+            style={styles.tabButton}
+            onPress={() => setActiveTab('home')}
+            activeOpacity={0.7}
+            accessibilityLabel="Home Tab"
+          >
+            <View style={styles.iconContainer}>
+              <Text
+                style={[
+                  styles.tabIconText,
+                  currentTab === 'home' && styles.tabIconTextActive,
+                ]}
+              >
+                🏠
+              </Text>
+            </View>
             <Text
               style={[
-                styles.tabIconText,
-                activeTab === 'logger' && styles.tabIconTextActive,
+                styles.tabLabelText,
+                currentTab === 'home' && styles.tabLabelTextActive,
               ]}
             >
-              ⚡
+              Home
             </Text>
-            {hasActiveWorkout && <View style={styles.activeWorkoutIndicatorDot} />}
-          </View>
-          <Text
-            style={[
-              styles.tabLabelText,
-              activeTab === 'logger' && styles.tabLabelTextActive,
-            ]}
-          >
-            Logger
-          </Text>
-        </TouchableOpacity>
+          </TouchableOpacity>
 
-        {/* Calendar Tab */}
-        <TouchableOpacity
-          style={styles.tabButton}
-          onPress={() => setActiveTab('calendar')}
-          activeOpacity={0.7}
-          accessibilityLabel="Calendar Tab"
-        >
-          <View style={styles.iconContainer}>
+          {/* 2. Workout Tab */}
+          <TouchableOpacity
+            testID="tab-btn-workout"
+            style={styles.tabButton}
+            onPress={() => setActiveTab('workout')}
+            activeOpacity={0.7}
+            accessibilityLabel="Workout Tab"
+          >
+            <View style={styles.iconContainer}>
+              <Text
+                style={[
+                  styles.tabIconText,
+                  currentTab === 'workout' && styles.tabIconTextActive,
+                ]}
+              >
+                ⚡
+              </Text>
+              {hasActiveWorkout && (
+                <View testID="active-workout-tab-dot" style={styles.activeWorkoutIndicatorDot} />
+              )}
+            </View>
             <Text
               style={[
-                styles.tabIconText,
-                activeTab === 'calendar' && styles.tabIconTextActive,
+                styles.tabLabelText,
+                currentTab === 'workout' && styles.tabLabelTextActive,
               ]}
             >
-              📅
+              Workout
             </Text>
-          </View>
-          <Text
-            style={[
-              styles.tabLabelText,
-              activeTab === 'calendar' && styles.tabLabelTextActive,
-            ]}
-          >
-            Calendar
-          </Text>
-        </TouchableOpacity>
+          </TouchableOpacity>
 
-        {/* Settings Tab */}
-        <TouchableOpacity
-          style={styles.tabButton}
-          onPress={() => setActiveTab('settings')}
-          activeOpacity={0.7}
-          accessibilityLabel="Settings Tab"
-        >
-          <View style={styles.iconContainer}>
+          {/* 3. Profile Tab */}
+          <TouchableOpacity
+            testID="tab-btn-profile"
+            style={styles.tabButton}
+            onPress={() => setActiveTab('profile')}
+            activeOpacity={0.7}
+            accessibilityLabel="Profile Tab"
+          >
+            <View style={styles.iconContainer}>
+              <Text
+                style={[
+                  styles.tabIconText,
+                  currentTab === 'profile' && styles.tabIconTextActive,
+                ]}
+              >
+                👤
+              </Text>
+            </View>
             <Text
               style={[
-                styles.tabIconText,
-                activeTab === 'settings' && styles.tabIconTextActive,
+                styles.tabLabelText,
+                currentTab === 'profile' && styles.tabLabelTextActive,
               ]}
             >
-              ⚙️
+              Profile
             </Text>
-          </View>
-          <Text
-            style={[
-              styles.tabLabelText,
-              activeTab === 'settings' && styles.tabLabelTextActive,
-            ]}
+          </TouchableOpacity>
+
+          {/* 4. Settings Tab */}
+          <TouchableOpacity
+            testID="tab-btn-settings"
+            style={styles.tabButton}
+            onPress={() => setActiveTab('settings')}
+            activeOpacity={0.7}
+            accessibilityLabel="Settings Tab"
           >
-            Settings
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
-  </SafeAreaProvider>
+            <View style={styles.iconContainer}>
+              <Text
+                style={[
+                  styles.tabIconText,
+                  currentTab === 'settings' && styles.tabIconTextActive,
+                ]}
+              >
+                ⚙️
+              </Text>
+            </View>
+            <Text
+              style={[
+                styles.tabLabelText,
+                currentTab === 'settings' && styles.tabLabelTextActive,
+              ]}
+            >
+              Settings
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
@@ -439,7 +525,7 @@ const styles = StyleSheet.create({
     borderColor: '#09090B',
   },
   tabLabelText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: '#71717A',
     marginTop: 3,

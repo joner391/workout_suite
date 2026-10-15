@@ -413,7 +413,7 @@
         },
         "set_type": {
           "type": "string",
-          "enum": ["warmup", "working", "drop", "myorep", "failure"],
+          "enum": ["warmup", "working", "drop", "myorep", "dc"],
           "description": "Classification tag for the set."
         },
         "set_notes": {
@@ -640,8 +640,7 @@
       "required": [
         "id",
         "gender",
-        "training_enjoyment",
-        "intensity_style",
+        "training_mentality",
         "primary_goal",
         "preferred_days_per_week",
         "preferred_session_duration_mins",
@@ -671,19 +670,10 @@
           "maximum": 260.0,
           "description": "Height in centimeters."
         },
-        "training_enjoyment": {
+        "training_mentality": {
           "type": "string",
-          "enum": ["enthusiast", "neutral", "minimalist"],
-          "description": "Psychological motivation and volume affinity index."
-        },
-        "intensity_style": {
-          "type": "string",
-          "enum": [
-            "high_intensity_low_volume",
-            "volume_accumulation",
-            "balanced"
-          ],
-          "description": "Preferred exertion and volume distribution strategy."
+          "enum": ["fury", "precision", "get_out"],
+          "description": "Athlete training mentality and volume/intensity profile."
         },
         "primary_goal": {
           "type": "string",
@@ -719,6 +709,9 @@
           "type": "string",
           "enum": [
             "commercial_gym",
+            "garage_gym",
+            "dumbbells_only",
+            "bodyweight_only",
             "home_barbell",
             "dumbbells",
             "bodyweight"
