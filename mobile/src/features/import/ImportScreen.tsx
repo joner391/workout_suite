@@ -248,7 +248,7 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
         <View>
           <Text style={styles.headerTitle}>Import History</Text>
           <Text style={styles.headerSubtitle}>
-            Liftosaur, StrengthLog, Strong & Hevy CSV
+            CSV & Spreadsheet Import
           </Text>
         </View>
         <TouchableOpacity
@@ -357,7 +357,7 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
           <View style={styles.actionCard}>
             <Text style={styles.cardHeading}>Select Export File</Text>
             <Text style={styles.cardDescription}>
-              Choose a `.csv` file exported from Strong, Hevy, or your custom spreadsheet.
+              Choose a `.csv` file exported from your workout tracker or custom spreadsheet.
               Weights in lbs are automatically converted to canonical kilograms.
             </Text>
 
@@ -408,10 +408,10 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
           )}
 
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>💡 How to export your data:</Text>
+            <Text style={styles.infoTitle}>💡 CSV Import Guide:</Text>
             <Text style={styles.infoText}>
-              • Strong App: Settings ➔ Export Data ➔ CSV format.{'\n'}
-              • Hevy App: Profile ➔ Settings ➔ Export & Import ➔ Export Workouts.{'\n'}
+              • Export your workout history to a CSV file from your workout tracker or spreadsheet.{'\n'}
+              • Both comma (,) and semicolon (;) formats with date, exercise, reps, and weight are supported.{'\n'}
               • All workouts are stored in local SQLite with 'completed' status and provenance tags.
             </Text>
           </View>

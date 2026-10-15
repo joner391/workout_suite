@@ -302,8 +302,78 @@ describe('ExerciseInspectionService', () => {
       });
       expect(withVariants.records.some((r) => r.reps === 6)).toBe(true);
       const pr6 = withVariants.records.find((r) => r.reps === 6);
-      expect(pr6?.weightKg).toBe(95.0);
+      // Monotonic envelope applies: 8 reps was 100kg, so 6RM is enveloped to 100kg with original 95kg
+      expect(pr6?.weightKg).toBe(100.0);
+      expect(pr6?.originalWeightKg).toBe(95.0);
+      expect(pr6?.isEnveloped).toBe(true);
+      expect(pr6?.derivedFromReps).toBe(8);
       expect(pr6?.exerciseId).toBe('incline_barbell_bench');
+    });
+
+    it('enforces monotonic upper envelope when a higher-rep set exceeds a lower-rep PR (Option A)', async () => {
+      // Add a 20RM set @ 40kg and a 21RM set @ 62.5kg
+      const customSets: WorkoutSet[] = [
+        {
+          id: 'set_bench_20',
+          workout_id: 'workout_block1',
+          exercise_id: 'barbell_bench_press',
+          gear_id: null,
+          set_number: 10,
+          weight: 40.0,
+          raw_input_weight: 40.0,
+          added_weight: null,
+          reps: 20,
+          reps_right: null,
+          rpe: 8.0,
+          rir: 2.0,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: '2026-08-15T10:45:00Z',
+        },
+        {
+          id: 'set_bench_21',
+          workout_id: 'workout_block2',
+          exercise_id: 'barbell_bench_press',
+          gear_id: null,
+          set_number: 11,
+          weight: 62.5,
+          raw_input_weight: 62.5,
+          added_weight: null,
+          reps: 21,
+          reps_right: null,
+          rpe: 9.5,
+          rir: 0.5,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: '2026-10-01T10:45:00Z',
+        },
+      ];
+
+      const customWorkoutRepo = new MockWorkoutRepository(
+        [workoutBlock1, workoutBlock2],
+        [...sets, ...customSets]
+      );
+      const customService = new ExerciseInspectionService(customWorkoutRepo, exerciseRepo);
+
+      const prBoard = await customService.getPRBoard({
+        exerciseId: 'barbell_bench_press',
+        scope: 'all_time',
+      });
+
+      const pr20 = prBoard.records.find((r) => r.reps === 20);
+      const pr21 = prBoard.records.find((r) => r.reps === 21);
+
+      expect(pr21?.weightKg).toBe(62.5);
+      expect(pr21?.isEnveloped).toBeFalsy();
+
+      // 20RM should be dynamically enveloped to at least 62.5kg
+      expect(pr20).toBeDefined();
+      expect(pr20?.weightKg).toBe(62.5);
+      expect(pr20?.isEnveloped).toBe(true);
+      expect(pr20?.derivedFromReps).toBe(21);
+      expect(pr20?.originalWeightKg).toBe(40.0);
     });
   });
 

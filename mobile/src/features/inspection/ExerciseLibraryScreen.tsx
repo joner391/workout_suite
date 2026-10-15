@@ -484,7 +484,7 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
               onPress={() => setViewMode('tree')}
             >
               <Text style={[styles.modeBtnText, viewMode === 'tree' && styles.modeBtnTextActive]}>
-                Variant Tree (ADR-012)
+                Variant Tree
               </Text>
             </TouchableOpacity>
           </View>

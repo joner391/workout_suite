@@ -112,6 +112,7 @@ export interface Exercise {
   parent_exercise_id: string | null;
   standard_lift_type: StandardLiftType | null;
   default_rest_seconds: number;
+  secondary_muscles?: (MuscleGroup | string)[];
 }
 
 /**
@@ -447,6 +448,12 @@ export interface RepMaxRecord {
   rir?: number | null;
   rawInputWeight?: number;
   exerciseId?: string;
+  isEnveloped?: boolean;
+  derivedFromReps?: number;
+  originalWeightKg?: number;
+  originalSetDate?: string;
+  originalWorkoutId?: string;
+  originalSetId?: string;
 }
 
 export interface RepMaxQueryOptions {

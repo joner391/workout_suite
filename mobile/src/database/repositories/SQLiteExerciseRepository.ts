@@ -23,9 +23,19 @@ interface ExerciseRow {
   parent_exercise_id: string | null;
   standard_lift_type: StandardLiftType | null;
   default_rest_seconds: number;
+  secondary_muscles?: string | null;
 }
 
 function mapRowToExercise(row: ExerciseRow): Exercise {
+  let secondaryMuscles: string[] | undefined = undefined;
+  if (row.secondary_muscles) {
+    try {
+      secondaryMuscles = JSON.parse(row.secondary_muscles);
+    } catch {
+      secondaryMuscles = row.secondary_muscles.split(',').map((s) => s.trim());
+    }
+  }
+
   return {
     id: row.id,
     name: row.name,
@@ -41,6 +51,7 @@ function mapRowToExercise(row: ExerciseRow): Exercise {
     parent_exercise_id: row.parent_exercise_id,
     standard_lift_type: row.standard_lift_type,
     default_rest_seconds: row.default_rest_seconds,
+    secondary_muscles: secondaryMuscles,
   };
 }
 

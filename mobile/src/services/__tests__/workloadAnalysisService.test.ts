@@ -220,8 +220,8 @@ describe('Workload Analysis Service Suite', () => {
       expect(tuesday!.hasWorkout).toBe(false);
       expect(tuesday!.tonnageKg).toBe(0);
 
-      // Muscle group volumes
-      expect(result.muscleGroupVolumes).toHaveLength(2);
+      // Muscle group volumes (includes primary and assisting synergists at 0.5 set credit)
+      expect(result.muscleGroupVolumes).toHaveLength(5);
       const chest = result.muscleGroupVolumes.find((m) => m.muscleGroup === 'Chest');
       expect(chest).toBeDefined();
       expect(chest!.workingSets).toBe(2);
@@ -231,6 +231,23 @@ describe('Workload Analysis Service Suite', () => {
       expect(quads).toBeDefined();
       expect(quads!.workingSets).toBe(1);
       expect(quads!.totalTonnageKg).toBe(700);
+
+      // Assisting muscles from 2 sets of bench (0.5 set each -> 1.0 set total)
+      const triceps = result.muscleGroupVolumes.find((m) => m.muscleGroup === 'Triceps');
+      expect(triceps).toBeDefined();
+      expect(triceps!.workingSets).toBe(1);
+      expect(triceps!.totalTonnageKg).toBe(500);
+
+      const shoulders = result.muscleGroupVolumes.find((m) => m.muscleGroup === 'Shoulders');
+      expect(shoulders).toBeDefined();
+      expect(shoulders!.workingSets).toBe(1);
+      expect(shoulders!.totalTonnageKg).toBe(500);
+
+      // Assisting muscle from 1 set of squat (0.5 set)
+      const glutes = result.muscleGroupVolumes.find((m) => m.muscleGroup === 'Glutes');
+      expect(glutes).toBeDefined();
+      expect(glutes!.workingSets).toBe(0.5);
+      expect(glutes!.totalTonnageKg).toBe(350);
 
       // Dual intensity metrics
       // Effort: 3 sets (RPE 8, 9, 8.5) -> Avg RPE = (8 + 9 + 8.5) / 3 = 8.5
@@ -242,6 +259,273 @@ describe('Workload Analysis Service Suite', () => {
       // Sets were at or near session top loads, so avg % 1RM should be evaluated
       expect(result.intensity.avgRelativeIntensityPercent).toBeGreaterThan(70);
       expect(result.intensity.loadZoneBuckets).toBeDefined();
+    });
+
+    test('credits 0.5 sets for assisting muscles: 2 sets bench + 2 sets direct triceps = 3 sets triceps', async () => {
+      const benchPress: Exercise = {
+        id: 'bench_press_custom',
+        name: 'Bench Press',
+        muscle_group: 'Chest',
+        category: 'Barbell',
+        is_compound: true,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'total',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 20,
+        is_custom: false,
+        parent_exercise_id: null,
+        standard_lift_type: 'bench',
+        default_rest_seconds: 180,
+        secondary_muscles: ['Triceps', 'Shoulders'],
+      };
+
+      const tricepPushdown: Exercise = {
+        id: 'tricep_pushdown_custom',
+        name: 'Triceps Pushdown',
+        muscle_group: 'Triceps',
+        category: 'Cable',
+        is_compound: false,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'total',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 0,
+        is_custom: false,
+        parent_exercise_id: null,
+        standard_lift_type: null,
+        default_rest_seconds: 90,
+      };
+
+      await exerciseRepo.create(benchPress);
+      await exerciseRepo.create(tricepPushdown);
+
+      const workout: Workout = {
+        id: 'w_push_volume',
+        template_id: null,
+        date: '2026-10-14',
+        name: 'Push Hypertrophy',
+        notes: null,
+        started_at: '2026-10-14T10:00:00Z',
+        duration_seconds: 3600,
+        status: 'completed',
+        completed_at: '2026-10-14T11:00:00Z',
+        imported_from: null,
+      };
+
+      const sets: WorkoutSet[] = [
+        // 2 sets of bench press (Chest + assisting Triceps, Shoulders)
+        {
+          id: 's_b1',
+          workout_id: 'w_push_volume',
+          exercise_id: 'bench_press_custom',
+          gear_id: null,
+          set_number: 1,
+          weight: 100,
+          raw_input_weight: 100,
+          added_weight: null,
+          reps: 8,
+          reps_right: null,
+          rpe: 8.0,
+          rir: 2.0,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: 's_b2',
+          workout_id: 'w_push_volume',
+          exercise_id: 'bench_press_custom',
+          gear_id: null,
+          set_number: 2,
+          weight: 100,
+          raw_input_weight: 100,
+          added_weight: null,
+          reps: 8,
+          reps_right: null,
+          rpe: 8.5,
+          rir: 1.5,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+        // 2 sets of direct triceps work
+        {
+          id: 's_t1',
+          workout_id: 'w_push_volume',
+          exercise_id: 'tricep_pushdown_custom',
+          gear_id: null,
+          set_number: 3,
+          weight: 35,
+          raw_input_weight: 35,
+          added_weight: null,
+          reps: 12,
+          reps_right: null,
+          rpe: 8.5,
+          rir: 1.5,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: 's_t2',
+          workout_id: 'w_push_volume',
+          exercise_id: 'tricep_pushdown_custom',
+          gear_id: null,
+          set_number: 4,
+          weight: 35,
+          raw_input_weight: 35,
+          added_weight: null,
+          reps: 10,
+          reps_right: null,
+          rpe: 9.0,
+          rir: 1.0,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+      ];
+
+      workoutRepo.seed([workout], sets);
+
+      const result = await computeWeeklyWorkloadDeepDive(workoutRepo, exerciseRepo, {
+        refDate: new Date('2026-10-14T12:00:00Z'),
+        weekOffset: 0,
+      });
+
+      const tricepsReport = result.muscleGroupVolumes.find((m) => m.muscleGroup === 'Triceps');
+      expect(tricepsReport).toBeDefined();
+      // 2 direct sets + 2 * 0.5 assisting sets = 3.0 sets!
+      expect(tricepsReport!.workingSets).toBe(3);
+
+      const chestReport = result.muscleGroupVolumes.find((m) => m.muscleGroup === 'Chest');
+      expect(chestReport).toBeDefined();
+      expect(chestReport!.workingSets).toBe(2);
+
+      const shouldersReport = result.muscleGroupVolumes.find((m) => m.muscleGroup === 'Shoulders');
+      expect(shouldersReport).toBeDefined();
+      expect(shouldersReport!.workingSets).toBe(1); // 2 * 0.5 from bench
+    });
+
+    test('accurately tracks unrated sets in the Unrated (No RPE) histogram bucket and coverage stats', async () => {
+      const exercise: Exercise = {
+        id: 'ex_curl',
+        name: 'Bicep Curl',
+        muscle_group: 'Biceps',
+        category: 'Dumbbell',
+        is_compound: false,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'per_hand',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 0,
+        is_custom: false,
+        parent_exercise_id: null,
+        standard_lift_type: null,
+        default_rest_seconds: 90,
+      };
+
+      await exerciseRepo.create(exercise);
+
+      const workout: Workout = {
+        id: 'w_arm_day',
+        template_id: null,
+        date: '2026-10-15',
+        name: 'Arm Day',
+        notes: null,
+        started_at: '2026-10-15T14:00:00Z',
+        duration_seconds: 1800,
+        status: 'completed',
+        completed_at: '2026-10-15T14:30:00Z',
+        imported_from: null,
+      };
+
+      const sets: WorkoutSet[] = [
+        // Set 1: Rated RPE 8.5
+        {
+          id: 's_rated_1',
+          workout_id: 'w_arm_day',
+          exercise_id: 'ex_curl',
+          gear_id: null,
+          set_number: 1,
+          weight: 15,
+          raw_input_weight: 15,
+          added_weight: null,
+          reps: 10,
+          reps_right: null,
+          rpe: 8.5,
+          rir: null,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+        // Set 2: Unrated (no RPE/RIR)
+        {
+          id: 's_unrated_1',
+          workout_id: 'w_arm_day',
+          exercise_id: 'ex_curl',
+          gear_id: null,
+          set_number: 2,
+          weight: 15,
+          raw_input_weight: 15,
+          added_weight: null,
+          reps: 10,
+          reps_right: null,
+          rpe: null,
+          rir: null,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+        // Set 3: Unrated (no RPE/RIR)
+        {
+          id: 's_unrated_2',
+          workout_id: 'w_arm_day',
+          exercise_id: 'ex_curl',
+          gear_id: null,
+          set_number: 3,
+          weight: 15,
+          raw_input_weight: 15,
+          added_weight: null,
+          reps: 8,
+          reps_right: null,
+          rpe: null,
+          rir: null,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+      ];
+
+      workoutRepo.seed([workout], sets);
+
+      const result = await computeWeeklyWorkloadDeepDive(workoutRepo, exerciseRepo, {
+        refDate: new Date('2026-10-15T12:00:00Z'),
+        weekOffset: 0,
+      });
+
+      expect(result.totalWorkingSets).toBe(3);
+      expect(result.intensity.totalRatedSets).toBe(1);
+      expect(result.intensity.totalUnratedSets).toBe(2);
+      expect(result.intensity.avgRpe).toBe(8.5); // Derived exclusively from the 1 rated set
+
+      const unratedBucket = result.intensity.rpeBuckets.find((b) => b.label.includes('Unrated'));
+      expect(unratedBucket).toBeDefined();
+      expect(unratedBucket!.count).toBe(2);
+      // 2 unrated out of 3 total working sets = ~67%
+      expect(unratedBucket!.percentage).toBe(67);
+
+      const stimulatingBucket = result.intensity.rpeBuckets.find((b) => b.label.includes('8.0–8.5'));
+      expect(stimulatingBucket).toBeDefined();
+      expect(stimulatingBucket!.count).toBe(1);
+      expect(stimulatingBucket!.percentage).toBe(33);
     });
   });
 });

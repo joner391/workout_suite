@@ -307,9 +307,9 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
               </View>
             </View>
 
-            {/* Variant Hierarchy (ADR-012) */}
+            {/* Variant Hierarchy */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>ROOT MOVEMENT VARIANT HIERARCHY (ADR-012)</Text>
+              <Text style={styles.fieldLabel}>ROOT MOVEMENT VARIANT HIERARCHY</Text>
               <Text style={styles.fieldHelpText}>
                 Link this movement to a root parent exercise (e.g. Incline Bench ➔ Bench Press) for cross-variant PR aggregation and smart substitution.
               </Text>
@@ -407,7 +407,7 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
               {/* Unilateral Toggle */}
               <View style={styles.toggleRow}>
                 <View style={styles.toggleLabelCol}>
-                  <Text style={styles.toggleLabel}>Unilateral Movement (ADR-021)</Text>
+                  <Text style={styles.toggleLabel}>Unilateral Movement</Text>
                   <Text style={styles.toggleDesc}>Enables independent Left / Right rep inputs in logger</Text>
                 </View>
                 <Switch
@@ -422,7 +422,7 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
               {/* Bodyweight Toggle */}
               <View style={styles.toggleRow}>
                 <View style={styles.toggleLabelCol}>
-                  <Text style={styles.toggleLabel}>Bodyweight / Assisted (ADR-018)</Text>
+                  <Text style={styles.toggleLabel}>Bodyweight / Assisted</Text>
                   <Text style={styles.toggleDesc}>Total mechanical load includes athlete bodyweight</Text>
                 </View>
                 <Switch
@@ -505,7 +505,7 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
 
             {category === 'Cable' && (
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>DEFAULT CABLE PULLEY RATIO (ADR-025)</Text>
+                <Text style={styles.fieldLabel}>DEFAULT CABLE PULLEY RATIO</Text>
                 <Text style={styles.fieldHelpText}>
                   1.0 = Direct 1:1 stack (Lat Pulldown/Row), 0.5 = 2:1 Functional Trainer (50kg pin = 25kg effective).
                 </Text>

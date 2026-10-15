@@ -204,7 +204,9 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                   {deepDive.intensity.avgRpe ? `${deepDive.intensity.avgRpe}` : '—'}
                 </Text>
                 <Text style={styles.kpiSub}>
-                  {deepDive.intensity.highIntensityRatioPercent}% at RPE 8+
+                  {deepDive.intensity.totalUnratedSets > 0
+                    ? `${deepDive.intensity.totalRatedSets}/${deepDive.intensity.totalRatedSets + deepDive.intensity.totalUnratedSets} sets logged`
+                    : `${deepDive.intensity.highIntensityRatioPercent}% at RPE 8+`}
                 </Text>
               </View>
 
@@ -244,7 +246,9 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                         <View style={styles.muscleInfoRow}>
                           <Text style={styles.muscleName}>{m.muscleGroup}</Text>
                           <View style={styles.muscleStatsRight}>
-                            <Text style={styles.muscleSetsText}>{m.workingSets} sets</Text>
+                            <Text style={styles.muscleSetsText}>
+                              {m.workingSets % 1 === 0 ? m.workingSets : m.workingSets.toFixed(1)} sets
+                            </Text>
                             <Text style={styles.muscleTonnageText}>
                               ({formatWeight(m.totalTonnageKg, unitSystem)})
                             </Text>
@@ -337,7 +341,11 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                     <Text style={styles.intensityStatVal}>
                       {deepDive.intensity.avgRpe ? `${deepDive.intensity.avgRpe}` : '—'}
                     </Text>
-                    <Text style={styles.intensityStatLabel}>Average RPE</Text>
+                    <Text style={styles.intensityStatLabel}>
+                      {deepDive.intensity.totalUnratedSets > 0
+                        ? `Average RPE (${deepDive.intensity.totalRatedSets}/${deepDive.intensity.totalRatedSets + deepDive.intensity.totalUnratedSets} rated)`
+                        : 'Average RPE'}
+                    </Text>
                   </View>
                   <View style={styles.intensityStatBox}>
                     <Text style={styles.intensityStatVal}>
@@ -350,15 +358,19 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                 {/* RPE Distribution Bar */}
                 <Text style={styles.distributionTitle}>RPE Distribution (% of Working Sets)</Text>
                 <View style={styles.bucketList}>
-                  {deepDive.intensity.rpeBuckets.map((b) => (
-                    <View key={b.label} style={styles.bucketRow}>
-                      <Text style={styles.bucketLabel}>{b.label}</Text>
-                      <View style={styles.bucketTrack}>
-                        <View style={[styles.bucketFill, { width: `${b.percentage}%`, backgroundColor: '#38BDF8' }]} />
+                  {deepDive.intensity.rpeBuckets.map((b) => {
+                    const isUnrated = b.label.includes('Unrated');
+                    const color = isUnrated ? '#71717A' : '#38BDF8';
+                    return (
+                      <View key={b.label} style={styles.bucketRow}>
+                        <Text style={[styles.bucketLabel, isUnrated && { color: '#A1A1AA' }]}>{b.label}</Text>
+                        <View style={styles.bucketTrack}>
+                          <View style={[styles.bucketFill, { width: `${b.percentage}%`, backgroundColor: color }]} />
+                        </View>
+                        <Text style={styles.bucketPercentText}>{b.count} ({b.percentage}%)</Text>
                       </View>
-                      <Text style={styles.bucketPercentText}>{b.count} ({b.percentage}%)</Text>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               </View>
 

@@ -308,6 +308,41 @@ describe('Exercise Inspection UI, SBD Tier Widget & Symmetry Radar (Step 3.3)', 
       expect(serialized).not.toContain('kg kg');
       expect(serialized).not.toContain('lbs lbs');
     });
+
+    it('renders enveloped badge and educational footer when enveloped record is present', () => {
+      const recordsWithEnvelope: RepMaxRecord[] = [
+        {
+          reps: 20,
+          weightKg: 62.5,
+          effectiveReps: 20,
+          e1rmKg: 84.3,
+          setDate: '2026-10-10',
+          workoutId: 'w_new',
+          isEnveloped: true,
+          derivedFromReps: 21,
+          originalWeightKg: 40.0,
+        },
+        {
+          reps: 21,
+          weightKg: 62.5,
+          effectiveReps: 21,
+          e1rmKg: 84.7,
+          setDate: '2026-10-10',
+          workoutId: 'w_new',
+        },
+      ];
+
+      const tree = PRBoardTable({
+        records: recordsWithEnvelope,
+        peakRecord: recordsWithEnvelope[1],
+        scope: 'all_time',
+        includeVariants: false,
+        unitSystem: 'kg',
+      });
+      const serialized = JSON.stringify(tree);
+      expect(serialized).toContain('↑ 21RM');
+      expect(serialized).toContain('Monotonic envelope');
+    });
   });
 
   describe('SBDStandardsCard Component', () => {

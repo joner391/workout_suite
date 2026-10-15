@@ -523,7 +523,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
               {/* Cable Pulley Ratio */}
               {type === 'cable_machine' && (
                 <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>MECHANICAL ADVANTAGE RATIO (ADR-025)</Text>
+                  <Text style={styles.formLabel}>MECHANICAL ADVANTAGE RATIO</Text>
                   <Text style={styles.helpText}>
                     1.0 = Direct 1:1 stack weight. 0.5 = 2:1 Functional Trainer (weight felt is half the pin load).
                   </Text>

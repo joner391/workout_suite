@@ -210,6 +210,13 @@ export const PRBoardTable: React.FC<PRBoardTableProps> = ({
                   <Text style={styles.weightValueText}>
                     {displayLoad(rec.weightKg)}
                   </Text>
+                  {rec.isEnveloped && (
+                    <View style={styles.envelopedBadge}>
+                      <Text style={styles.envelopedBadgeText}>
+                        {`↑ ${rec.derivedFromReps}RM`}
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 {/* Set e1RM Column */}
@@ -247,9 +254,16 @@ export const PRBoardTable: React.FC<PRBoardTableProps> = ({
 
       {/* Subtext info */}
       {records.length > 0 && (
-        <Text style={styles.footerInfoText}>
-          💡 Tap any row to inspect the full historical workout session.
-        </Text>
+        <View style={styles.footerContainer}>
+          <Text style={styles.footerInfoText}>
+            💡 Tap any row to inspect the full historical workout session.
+          </Text>
+          {records.some((r) => r.isEnveloped) && (
+            <Text style={styles.envelopeInfoText}>
+              ↑ Monotonic envelope: records dominated by higher-repetition achievements reflect your minimum proven capacity.
+            </Text>
+          )}
+        </View>
       )}
     </View>
   );
@@ -470,7 +484,31 @@ const styles = StyleSheet.create({
   footerInfoText: {
     fontSize: 11,
     color: '#71717A',
+  },
+  envelopedBadge: {
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    borderRadius: 4,
+    paddingVertical: 1,
+    paddingHorizontal: 4,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+    borderWidth: 0.5,
+    borderColor: '#38BDF8',
+  },
+  envelopedBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#38BDF8',
+    letterSpacing: 0.2,
+  },
+  footerContainer: {
     marginTop: 6,
     paddingHorizontal: 4,
+    gap: 4,
+  },
+  envelopeInfoText: {
+    fontSize: 11,
+    color: '#38BDF8',
+    lineHeight: 15,
   },
 });

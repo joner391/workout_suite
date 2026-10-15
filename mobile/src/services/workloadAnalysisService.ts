@@ -46,6 +46,8 @@ export interface IntensityAnalysis {
   rpeBuckets: IntensityDistributionBucket[];
   avgRelativeIntensityPercent: number | null; // Volume-weighted % of e1RM
   loadZoneBuckets: IntensityDistributionBucket[];
+  totalRatedSets: number;
+  totalUnratedSets: number;
 }
 
 export interface WeeklyWorkloadDeepDive {
@@ -115,6 +117,90 @@ export function classifyVolumeTier(sets: number): {
   if (sets <= 18) return { tier: 'optimal', targetMinSets, targetMaxSets };
   if (sets <= 24) return { tier: 'high', targetMinSets, targetMaxSets };
   return { tier: 'peak', targetMinSets, targetMaxSets };
+}
+
+/**
+ * Canonical synergist / assisting muscle mappings for compound movements.
+ * Assisting muscles receive 0.5 set volume credit in weekly hypertrophy landmarks.
+ */
+export const CANONICAL_ASSISTING_MUSCLES: Record<string, string[]> = {
+  // Chest compounds -> Triceps, Shoulders
+  barbell_bench_press: ['Triceps', 'Shoulders'],
+  barbell_incline_bench_press: ['Triceps', 'Shoulders'],
+  dumbbell_bench_press: ['Triceps', 'Shoulders'],
+  dumbbell_incline_bench_press: ['Triceps', 'Shoulders'],
+  push_up: ['Triceps', 'Shoulders'],
+  chest_dip: ['Triceps', 'Shoulders'],
+  parallel_bar_dip: ['Triceps', 'Shoulders'],
+  machine_chest_press: ['Triceps', 'Shoulders'],
+
+  // Triceps compounds -> Chest, Shoulders
+  barbell_close_grip_bench_press: ['Chest', 'Shoulders'],
+
+  // Shoulders compounds -> Triceps, Traps
+  barbell_ohp: ['Triceps', 'Traps'],
+  dumbbell_shoulder_press: ['Triceps'],
+  arnold_press: ['Triceps'],
+  machine_shoulder_press: ['Triceps'],
+
+  // Back compounds (horizontal/vertical pulls) -> Biceps, Forearms
+  barbell_bent_over_row: ['Biceps', 'Forearms'],
+  dumbbell_single_arm_row: ['Biceps', 'Forearms'],
+  cable_seated_row: ['Biceps', 'Forearms'],
+  cable_lat_pulldown: ['Biceps', 'Forearms'],
+  pull_up: ['Biceps', 'Forearms'],
+  chin_up: ['Biceps', 'Forearms'],
+  t_bar_row: ['Biceps', 'Forearms'],
+
+  // Quads compounds -> Glutes
+  barbell_squat: ['Glutes'],
+  barbell_front_squat: ['Glutes'],
+  leg_press: ['Glutes'],
+  hack_squat: ['Glutes'],
+  bulgarian_split_squat: ['Glutes'],
+  goblet_squat: ['Glutes'],
+  walking_lunge: ['Glutes'],
+
+  // Posterior chain & Deadlifts
+  barbell_deadlift: ['Glutes', 'Hamstrings', 'Traps', 'Forearms'],
+  barbell_sumo_deadlift: ['Quads', 'Glutes', 'Traps', 'Forearms'],
+  barbell_romanian_deadlift: ['Glutes', 'Back'],
+  dumbbell_romanian_deadlift: ['Glutes', 'Back'],
+  good_morning: ['Glutes', 'Back'],
+  hip_thrust: ['Hamstrings'],
+  glute_bridge: ['Hamstrings'],
+};
+
+/**
+ * Resolves assisting / secondary muscles for an exercise.
+ * Prioritizes the exercise entity's explicit `secondary_muscles` field,
+ * falling back to the canonical movement map and standard lift category.
+ */
+export function resolveAssistingMuscles(exercise: Exercise): (MuscleGroup | string)[] {
+  if (exercise.secondary_muscles && exercise.secondary_muscles.length > 0) {
+    return exercise.secondary_muscles;
+  }
+
+  const byId = CANONICAL_ASSISTING_MUSCLES[exercise.id];
+  if (byId) return byId;
+
+  // Standard lift type fallback
+  if (exercise.standard_lift_type === 'bench') return ['Triceps', 'Shoulders'];
+  if (exercise.standard_lift_type === 'ohp') return ['Triceps', 'Traps'];
+  if (exercise.standard_lift_type === 'row') return ['Biceps', 'Forearms'];
+  if (exercise.standard_lift_type === 'squat') return ['Glutes'];
+  if (exercise.standard_lift_type === 'deadlift') return ['Glutes', 'Hamstrings', 'Traps', 'Forearms'];
+
+  // Compound heuristic fallback based on primary muscle group
+  if (exercise.is_compound) {
+    const primary = (exercise.muscle_group || '').toLowerCase();
+    if (primary === 'chest') return ['Triceps', 'Shoulders'];
+    if (primary === 'back') return ['Biceps', 'Forearms'];
+    if (primary === 'quads') return ['Glutes'];
+    if (primary === 'shoulders') return ['Triceps'];
+  }
+
+  return [];
 }
 
 /**
@@ -234,19 +320,34 @@ export async function computeWeeklyWorkloadDeepDive(
   }
 
   // 5. Aggregate Muscle Group Volumes (Working Sets & Tonnage)
+  // Primary muscle gets 1.0 set volume; assisting / secondary muscles get 0.5 set volume credit
   const muscleSetCounts = new Map<string, { sets: number; tonnage: number }>();
   for (const sessionGroup of workoutsByDate.values()) {
     for (const session of sessionGroup) {
       for (const s of session.sets) {
         if (s.set_type !== 'warmup') {
           const ex = exerciseMap.get(s.exercise_id);
-          const group = ex?.muscle_group || 'Other';
-          const prev = muscleSetCounts.get(group) || { sets: 0, tonnage: 0 };
-          prev.sets += 1;
-          if (s.weight != null && s.reps != null) {
-            prev.tonnage += s.weight * s.reps;
+          const primaryGroup = ex?.muscle_group || 'Other';
+          const setTonnage = s.weight != null && s.reps != null ? s.weight * s.reps : 0;
+
+          // 1.0 set credit to primary muscle group
+          const prevPrimary = muscleSetCounts.get(primaryGroup) || { sets: 0, tonnage: 0 };
+          prevPrimary.sets += 1;
+          prevPrimary.tonnage += setTonnage;
+          muscleSetCounts.set(primaryGroup, prevPrimary);
+
+          // 0.5 set credit to assisting / secondary muscle groups
+          if (ex) {
+            const assisting = resolveAssistingMuscles(ex);
+            for (const sec of assisting) {
+              if (sec && sec.toLowerCase() !== primaryGroup.toLowerCase()) {
+                const prevSec = muscleSetCounts.get(sec) || { sets: 0, tonnage: 0 };
+                prevSec.sets += 0.5;
+                prevSec.tonnage += Math.round(setTonnage * 0.5);
+                muscleSetCounts.set(sec, prevSec);
+              }
+            }
           }
-          muscleSetCounts.set(group, prev);
         }
       }
     }
@@ -272,6 +373,7 @@ export async function computeWeeklyWorkloadDeepDive(
   // 6A. Effort Intensity (RPE & Proximity to Failure)
   let totalRpeSum = 0;
   let totalRpeSets = 0;
+  let totalUnratedSets = 0;
   let highIntensitySets = 0; // RPE >= 8.0 or RIR <= 2
 
   let rpeSubmaximal = 0; // < 7.0
@@ -303,6 +405,8 @@ export async function computeWeeklyWorkloadDeepDive(
             else if (effRpe <= 7.5) rpeModerate++;
             else if (effRpe <= 8.5) rpeHard++;
             else rpeMaximal++;
+          } else {
+            totalUnratedSets++;
           }
 
           // Relative Intensity (% 1RM)
@@ -328,6 +432,7 @@ export async function computeWeeklyWorkloadDeepDive(
   const highIntensityRatioPercent =
     totalRpeSets > 0 ? Math.round((highIntensitySets / totalRpeSets) * 100) : 0;
 
+  const totalEffortSets = totalRpeSets + totalUnratedSets;
   const toBucketPercent = (count: number, total: number) =>
     total > 0 ? Math.round((count / total) * 100) : 0;
 
@@ -335,22 +440,27 @@ export async function computeWeeklyWorkloadDeepDive(
     {
       label: '< 7.0 (Submaximal)',
       count: rpeSubmaximal,
-      percentage: toBucketPercent(rpeSubmaximal, totalRpeSets),
+      percentage: toBucketPercent(rpeSubmaximal, totalEffortSets),
     },
     {
       label: '7.0–7.5 (Moderate)',
       count: rpeModerate,
-      percentage: toBucketPercent(rpeModerate, totalRpeSets),
+      percentage: toBucketPercent(rpeModerate, totalEffortSets),
     },
     {
       label: '8.0–8.5 (Stimulating)',
       count: rpeHard,
-      percentage: toBucketPercent(rpeHard, totalRpeSets),
+      percentage: toBucketPercent(rpeHard, totalEffortSets),
     },
     {
       label: '9.0–10.0 (Maximal)',
       count: rpeMaximal,
-      percentage: toBucketPercent(rpeMaximal, totalRpeSets),
+      percentage: toBucketPercent(rpeMaximal, totalEffortSets),
+    },
+    {
+      label: 'Unrated (No RPE)',
+      count: totalUnratedSets,
+      percentage: toBucketPercent(totalUnratedSets, totalEffortSets),
     },
   ];
 
@@ -392,6 +502,8 @@ export async function computeWeeklyWorkloadDeepDive(
       rpeBuckets,
       avgRelativeIntensityPercent,
       loadZoneBuckets,
+      totalRatedSets: totalRpeSets,
+      totalUnratedSets,
     },
   };
 }

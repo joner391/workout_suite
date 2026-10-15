@@ -358,7 +358,6 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             <View style={styles.questionnaireHeaderLeft}>
               <View style={styles.questionnaireTitleRow}>
                 <Text style={styles.questionnaireTitle}>Athlete Questionnaire</Text>
-                <Text style={styles.questionnaireBadge}>ADR-038</Text>
               </View>
               <Text style={styles.questionnaireSubtitle}>
                 {gender.charAt(0).toUpperCase() + gender.slice(1)} • {trainingMentality.toUpperCase()} • {primaryGoal.toUpperCase()} • {preferredDays}d/wk • {preferredDurationMins}m
@@ -633,7 +632,6 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           <View style={styles.gearCard}>
             <View style={styles.gearCardHeader}>
               <Text style={styles.gearCardTitle}>Gear & Equipment Inventory</Text>
-              <Text style={styles.gearBadge}>ADR-025</Text>
             </View>
             <Text style={styles.gearCardDesc}>
               Configure your gym's specific barbells (Olympic, Safety Squat Bar, Trap Bar) and cable machines. Equipment saved here is available for selection across exercises, workout sessions, and program templates.

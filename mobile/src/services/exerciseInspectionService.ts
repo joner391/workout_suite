@@ -35,6 +35,7 @@ import {
   calculateSBDBalanceProfile,
   evaluateStrengthStandard,
 } from '../core/math/strengthStandards';
+import { applyMonotonicUpperEnvelope } from '../core/math/repMaxEnvelope';
 
 export class ExerciseInspectionService {
   constructor(
@@ -75,7 +76,7 @@ export class ExerciseInspectionService {
     });
 
     // 3. Compute effective reps and set e1RM benchmark (w * r_eff^k)
-    const records: RepMaxRecord[] = rawRows.map((row) => {
+    const rawRecords: RepMaxRecord[] = rawRows.map((row) => {
       const effectiveReps = calculateEffectiveReps(row.reps, {
         rpe: row.rpe,
         rir: row.rir,
@@ -101,7 +102,11 @@ export class ExerciseInspectionService {
       };
     });
 
-    // 4. Identify peak record (highest e1RM across all unique rep counts)
+    // 4. Apply Option A: Dynamic Upper Monotonic Envelope
+    // Ensures for any repetition counts r_a <= r_b that M(r_a) >= M(r_b)
+    const records = applyMonotonicUpperEnvelope(rawRecords, DEFAULTLombardiK());
+
+    // 5. Identify peak record (highest e1RM across all unique rep counts)
     let peakRecord: RepMaxRecord | null = null;
     let maxE1rm = -1;
     for (const rec of records) {
@@ -111,7 +116,7 @@ export class ExerciseInspectionService {
       }
     }
 
-    // 5. Identify 1RM record if logged
+    // 6. Identify 1RM record if logged
     const allTimeBest1RM = records.find((r) => r.reps === 1) || null;
 
     return {

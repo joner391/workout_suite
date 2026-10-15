@@ -186,7 +186,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </Text>
             </View>
             <Text style={styles.settingDescription}>
-              All weights are stored canonically in kilograms (ADR-008). Values
+              All weights are stored canonically in kilograms. Values
               are dynamically converted to {unitSystem} in all logger inputs,
               plate solvers, and charts.
             </Text>
@@ -297,7 +297,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <View style={styles.toggleLabelContainer}>
                 <Text style={styles.settingLabel}>Pure Utility Mode</Text>
                 <Text style={styles.toggleSubtext}>
-                  ADR-024: Strips gamification, social leaderboards, animations, and non-essential
+                  Strips gamification, social leaderboards, animations, and non-essential
                   elements for maximum cognitive focus and battery savings in the gym.
                 </Text>
               </View>
@@ -318,7 +318,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.settingCard}>
             <View style={styles.settingHeader}>
               <Text style={styles.settingLabel}>Exercise Library & Variant Tree</Text>
-              <Text style={styles.settingValueBadge}>ADR-012</Text>
             </View>
             <Text style={styles.settingDescription}>
               Browse the catalog of movements, create custom exercises, and link variants to root movements for cross-variant strength tracking and PR benchmarking.
@@ -343,7 +342,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.settingCard}>
             <View style={styles.settingHeader}>
               <Text style={styles.settingLabel}>Program Builder & Progression Rules</Text>
-              <Text style={styles.settingValueBadge}>ADR-039</Text>
             </View>
             <Text style={styles.settingDescription}>
               Manage active programs, multi-day training splits, prescribed exercises and set schemes, or launch the visual IF/THEN progression rule builder.
@@ -410,10 +408,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.settingCard}>
             <View style={styles.settingHeader}>
               <Text style={styles.settingLabel}>Import Training History (CSV)</Text>
-              <Text style={styles.settingValueBadge}>STRONG / HEVY / CSV</Text>
             </View>
             <Text style={styles.settingDescription}>
-              Import workout logs from Strong App, Hevy App, or custom CSV spreadsheets.
+              Import workout logs from CSV spreadsheets or workout tracker exports.
               Includes automatic movement matching against library and duplicate session detection.
             </Text>
 
@@ -454,7 +451,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
             <View style={styles.diagRow}>
               <Text style={styles.diagLabel}>Crash Recovery Protocol</Text>
-              <Text style={styles.diagValueAccent}>Write-Through (ADR-010)</Text>
+              <Text style={styles.diagValueAccent}>Write-Through</Text>
             </View>
             <View style={[styles.diagRow, styles.diagRowLast]}>
               <Text style={styles.diagLabel}>Suite Version</Text>
