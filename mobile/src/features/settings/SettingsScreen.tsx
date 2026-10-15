@@ -30,6 +30,7 @@ import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
 import { IProgramRepository } from '../../domain/repositories/IProgramRepository';
 import { IUserProfileRepository } from '../../domain/repositories/IUserProfileRepository';
+import { IBodyMetricsRepository } from '../../domain/repositories/IBodyMetricsRepository';
 import { ISQLiteDatabase } from '../../database/schema';
 import { ExportService } from '../../services/exportService';
 import { ImportService } from '../../services/importService';
@@ -45,6 +46,7 @@ export interface SettingsScreenProps {
   workoutRepo?: IWorkoutRepository;
   programRepo?: IProgramRepository;
   userProfileRepo?: IUserProfileRepository;
+  bodyMetricsRepo?: IBodyMetricsRepository;
   programBlockService?: ProgramBlockService;
   db?: ISQLiteDatabase;
   exportService?: ExportService;
@@ -59,6 +61,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   workoutRepo,
   programRepo,
   userProfileRepo,
+  bodyMetricsRepo,
   programBlockService,
   db,
   exportService,
@@ -515,7 +518,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               importService ??
               new ImportService(
                 workoutRepo!,
-                exerciseRepo!
+                exerciseRepo!,
+                bodyMetricsRepo
               )
             }
             onClose={() => setShowImportScreen(false)}

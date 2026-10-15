@@ -7,6 +7,7 @@
 import {
   parseRawCsv,
   detectCsvFormat,
+  isStrengthLogBodyCompCsv,
   normalizeHeader,
   parseDateString,
   parseDurationSeconds,
@@ -15,6 +16,9 @@ import {
   parseHevyCsv,
   parseGenericCsv,
   parseWorkoutCsv,
+  parseLiftosaurCsv,
+  parseStrengthLogTrainingCsv,
+  parseStrengthLogBodyCompCsv,
 } from '../csvImportParser';
 
 describe('CSV Import Parser', () => {
@@ -300,6 +304,158 @@ Upper,"15 Jul 2026, 09:30","15 Jul 2026, 10:30",,Barbell Bench Press,,1,normal,1
 
       const headerOnly = parseWorkoutCsv('Date,Workout Name,Exercise Name');
       expect(headerOnly.workouts).toHaveLength(0);
+    });
+
+    it('auto-dispatches to Liftosaur parser when Liftosaur headers are provided', () => {
+      const liftosaurCsv = `Workout DateTime,Program,Day Name,Exercise,Is Warmup Set?,Required Reps,Completed Reps,Completed Weight Value,Completed Weight Unit
+2026-10-13T09:18:42.935Z,Bullmastiff,Bench Day,Bench Press,0,5,5,62.5,kg`;
+
+      const result = parseWorkoutCsv(liftosaurCsv);
+      expect(result.source).toBe('liftosaur');
+      expect(result.workouts).toHaveLength(1);
+      expect(result.workouts[0].name).toBe('Bullmastiff - Bench Day');
+    });
+
+    it('auto-dispatches to StrengthLog parser when StrengthLog headers are provided', () => {
+      const strengthlogCsv = `workout,start,end,exercise,weight,reps,warmup,fail,checked
+Upper A,1775031006719,1775034205476,Bench Press,70,5,false,false,1775031975149`;
+
+      const result = parseWorkoutCsv(strengthlogCsv);
+      expect(result.source).toBe('strengthlog');
+      expect(result.workouts).toHaveLength(1);
+      expect(result.workouts[0].name).toBe('Upper A');
+    });
+  });
+
+  describe('Liftosaur CSV Parser', () => {
+    it('parses multi-exercise workouts, RPE, and skips unperformed template rows', () => {
+      const csv = `Workout DateTime,Program,Day Name,Exercise,Is Warmup Set?,Required Reps,Completed Reps,Is AMRAP?,Required RPE,Completed RPE,Log RPE?,Required Weight Value,Required Weight Unit,Completed Weight Value,Completed Weight Unit,Ask Weight?,Completed Reps Time,Notes
+2026-10-13T09:18:42.935Z,Bullmastiff,Bench Day,Bench Press,1,5,5,0,,,0,20,kg,20,kg,0,2026-10-13T09:18:49.634Z,Warmup note
+2026-10-13T09:18:42.935Z,Bullmastiff,Bench Day,Bench Press,0,5,8,1,8,8.5,0,62.5,kg,62.5,kg,0,2026-10-13T09:33:53.294Z,Working AMRAP
+2026-10-13T09:18:42.935Z,Bullmastiff,Bench Day,Bench Press,0,6,,0,8,,0,80,kg,,,0,,Unperformed template row
+2026-10-13T09:18:42.935Z,Bullmastiff,Bench Day,Face Pull,0,12,12,0,6,7,0,8,kg,15,kg,0,2026-10-13T10:01:39.146Z,`;
+
+      const result = parseLiftosaurCsv(csv);
+      expect(result.source).toBe('liftosaur');
+      expect(result.workouts).toHaveLength(1);
+
+      const w = result.workouts[0];
+      expect(w.name).toBe('Bullmastiff - Bench Day');
+      expect(w.date).toBe('2026-10-13');
+      expect(w.exercises).toHaveLength(2); // Bench Press and Face Pull
+
+      // Bench Press should have 2 completed sets (1 warmup, 1 working), unperformed set skipped
+      const bench = w.exercises.find((e) => e.rawExerciseName === 'Bench Press')!;
+      expect(bench.sets).toHaveLength(2);
+      expect(bench.sets[0].setType).toBe('warmup');
+      expect(bench.sets[0].weightKg).toBe(20);
+      expect(bench.sets[0].reps).toBe(5);
+
+      expect(bench.sets[1].setType).toBe('working');
+      expect(bench.sets[1].weightKg).toBe(62.5);
+      expect(bench.sets[1].reps).toBe(8);
+      expect(bench.sets[1].rpe).toBe(8.5);
+      expect(bench.sets[1].rir).toBe(1.5);
+      expect(bench.sets[1].notes).toBe('Working AMRAP');
+
+      // Duration should be computed between first and last completed reps time
+      expect(w.durationSeconds).toBeGreaterThan(0);
+    });
+
+    it('respects startDate and endDate options', () => {
+      const csv = `Workout DateTime,Program,Day Name,Exercise,Is Warmup Set?,Required Reps,Completed Reps,Completed Weight Value,Completed Weight Unit,Completed Reps Time
+2026-05-01T09:00:00.000Z,ProgA,Day 1,Squat,0,5,5,100,kg,2026-05-01T09:10:00.000Z
+2026-08-01T09:00:00.000Z,ProgB,Day 2,Bench Press,0,5,5,80,kg,2026-08-01T09:10:00.000Z
+2026-10-01T09:00:00.000Z,ProgC,Day 3,Deadlift,0,5,5,140,kg,2026-10-01T09:10:00.000Z`;
+
+      const result = parseLiftosaurCsv(csv, { startDate: '2026-07-01', endDate: '2026-09-01' });
+      expect(result.workouts).toHaveLength(1);
+      expect(result.workouts[0].date).toBe('2026-08-01');
+      expect(result.workouts[0].exercises[0].rawExerciseName).toBe('Bench Press');
+    });
+  });
+
+  describe('StrengthLog Training CSV Parser', () => {
+    it('parses timestamps, weights, extraWeight, fail sets, and notes', () => {
+      const csv = `workout,start,end,exercise,weight,bodyweight,extraWeight,reps,warmup,fail,checked,setComment,workoutComment
+Upper A,1775031006719,1775034205476,Bench Press,70,,0,5,false,false,1775031975149,Good pause,Felt strong
+Upper A,1775031006719,1775034205476,Bench Press,80,,0,0,false,true,1775033014967,Failed at chest,Felt strong
+Upper A,1775031006719,1775034205476,Bench Press,90,,0,0,false,false,,Planned set not done,Felt strong
+Upper A,1775031006719,1775034205476,Pull-Up,,85.2,5,5,false,false,1775031243545,Weighted,Felt strong`;
+
+      const result = parseStrengthLogTrainingCsv(csv);
+      expect(result.source).toBe('strengthlog');
+      expect(result.workouts).toHaveLength(1);
+
+      const w = result.workouts[0];
+      expect(w.name).toBe('Upper A');
+      expect(w.notes).toBe('Felt strong');
+      expect(w.durationSeconds).toBe(Math.round((1775034205476 - 1775031006719) / 1000));
+      expect(w.exercises).toHaveLength(2); // Bench Press & Pull-Up
+
+      const bench = w.exercises.find((e) => e.rawExerciseName === 'Bench Press')!;
+      // 3 sets: 1 successful, 1 fail set, 1 unperformed skipped
+      expect(bench.sets).toHaveLength(2);
+      expect(bench.sets[0].weightKg).toBe(70);
+      expect(bench.sets[0].reps).toBe(5);
+      expect(bench.sets[0].notes).toBe('Good pause');
+
+      // Fail set
+      expect(bench.sets[1].weightKg).toBe(80);
+      expect(bench.sets[1].reps).toBe(0);
+      expect(bench.sets[1].rpe).toBe(10);
+      expect(bench.sets[1].rir).toBe(0);
+
+      // Pull-Up with extraWeight
+      const pullUp = w.exercises.find((e) => e.rawExerciseName === 'Pull-Up')!;
+      expect(pullUp.sets).toHaveLength(1);
+      expect(pullUp.sets[0].weightKg).toBe(5);
+      expect(pullUp.sets[0].reps).toBe(5);
+    });
+
+    it('respects startDate and endDate options', () => {
+      // 1711033200000 = 2024-03-21, 1775031006719 = 2026-04-01
+      const csv = `workout,start,end,exercise,weight,reps,warmup,fail,checked
+Old Workout,1711033200000,1711036800000,Squat,80,5,false,false,1711034000000
+New Workout,1775031006719,1775034205476,Squat,100,5,false,false,1775032000000`;
+
+      const result = parseStrengthLogTrainingCsv(csv, { startDate: '2026-01-01' });
+      expect(result.workouts).toHaveLength(1);
+      expect(result.workouts[0].name).toBe('New Workout');
+    });
+  });
+
+  describe('StrengthLog Body Composition CSV Parser', () => {
+    it('parses bodyweight, body fat %, and circumference measurements grouped by date', () => {
+      const csv = `type,timestamp,value,unit
+bodyweight,1767171881662,83,kg
+body-comp,1767172155336,22.6,%
+waist,1767172155336,87,cm
+neck,1767172155336,39.5,cm
+hips,1767172155336,102,cm
+right-upperarm,1767172155336,37,cm
+right-thigh,1767172155336,60,cm
+right-calf,1767172155336,38,cm`;
+
+      const result = parseStrengthLogBodyCompCsv(csv);
+      expect(result.errors).toHaveLength(0);
+      expect(result.metrics).toHaveLength(1);
+
+      const m = result.metrics[0];
+      expect(m.date).toBe('2025-12-31');
+      expect(m.bodyweight).toBe(83);
+      expect(m.body_fat_manual).toBe(22.6);
+      expect(m.waist_cm).toBe(87);
+      expect(m.neck_cm).toBe(39.5);
+      expect(m.hip_cm).toBe(102);
+      expect(m.bicep_cm).toBe(37);
+      expect(m.thigh_cm).toBe(60);
+      expect(m.calf_cm).toBe(38);
+    });
+
+    it('identifies body comp header with isStrengthLogBodyCompCsv', () => {
+      expect(isStrengthLogBodyCompCsv(['type', 'timestamp', 'value', 'unit'])).toBe(true);
+      expect(isStrengthLogBodyCompCsv(['workout', 'start', 'end', 'exercise'])).toBe(false);
     });
   });
 });

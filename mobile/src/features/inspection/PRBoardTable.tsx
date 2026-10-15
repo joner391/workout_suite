@@ -27,7 +27,7 @@ import {
   WeightUnit,
   IntensityMetric,
 } from '../../core/types';
-import { formatWeight, kgToLbs } from '../../core/math/unitConversion';
+import { formatWeight } from '../../core/math/unitConversion';
 
 export interface PRBoardTableProps {
   records: RepMaxRecord[];
@@ -57,8 +57,7 @@ export const PRBoardTable: React.FC<PRBoardTableProps> = ({
   loading = false,
 }) => {
   const displayLoad = (weightKg: number) => {
-    const val = unitSystem === 'lbs' ? kgToLbs(weightKg) : weightKg;
-    return `${formatWeight(val)} ${unitSystem}`;
+    return formatWeight(weightKg, unitSystem);
   };
 
   const displayEffort = (rec: RepMaxRecord) => {

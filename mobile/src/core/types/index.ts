@@ -51,7 +51,13 @@ export type WorkoutStatus = 'in_progress' | 'completed' | 'discarded';
 
 export type SetType = 'warmup' | 'working' | 'drop' | 'myorep' | 'dc';
 
-export type ImportSource = 'strong' | 'hevy' | 'csv' | 'fitnotes';
+export type ImportSource =
+  | 'strong'
+  | 'hevy'
+  | 'csv'
+  | 'fitnotes'
+  | 'strengthlog'
+  | 'liftosaur';
 
 export type Gender = 'male' | 'female';
 

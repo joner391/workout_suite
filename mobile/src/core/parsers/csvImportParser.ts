@@ -12,7 +12,7 @@
  * - Workout grouping by date/session and exercise hierarchy
  */
 
-import { ImportSource, SetType, WeightUnit } from '../types';
+import { BodyMetric, ImportSource, SetType, WeightUnit } from '../types';
 import { lbsToKg } from '../math/unitConversion';
 
 // ============================================================================
@@ -73,6 +73,11 @@ export interface CsvColumnMapping {
   workoutNotesColumn?: string;
   durationColumn?: string;
   supersetIdColumn?: string;
+}
+
+export interface CsvParseOptions {
+  startDate?: string; // YYYY-MM-DD (inclusive)
+  endDate?: string;   // YYYY-MM-DD (inclusive)
 }
 
 // ============================================================================
@@ -199,8 +204,9 @@ export function normalizeHeader(header: string): string {
   return header
     .toLowerCase()
     .trim()
-    .replace(/[\s\-_]+/g, '_')
-    .replace(/[^\w]/g, '');
+    .replace(/[\s\-_?]+/g, '_')
+    .replace(/[^\w]/g, '')
+    .replace(/^_+|_+$/g, '');
 }
 
 // ============================================================================
@@ -208,11 +214,39 @@ export function normalizeHeader(header: string): string {
 // ============================================================================
 
 /**
+ * Checks whether the CSV header corresponds to StrengthLog body composition export.
+ */
+export function isStrengthLogBodyCompCsv(headerRow: string[]): boolean {
+  const normalized = headerRow.map(normalizeHeader);
+  const set = new Set(normalized);
+  return set.has('type') && set.has('timestamp') && set.has('value') && set.has('unit');
+}
+
+/**
  * Automatically inspects the CSV header row to identify the export origin.
  */
 export function detectCsvFormat(headerRow: string[]): ImportSource {
   const normalized = headerRow.map(normalizeHeader);
   const set = new Set(normalized);
+
+  // Liftosaur detection:
+  // Usually has: 'workout_datetime', 'program', 'day_name', 'exercise', 'is_warmup_set', 'completed_reps'
+  if (
+    set.has('workout_datetime') ||
+    (set.has('day_name') && (set.has('is_warmup_set') || set.has('completed_reps') || set.has('required_reps')))
+  ) {
+    return 'liftosaur';
+  }
+
+  // StrengthLog training detection:
+  // Usually has: 'workout', 'start', 'end', 'exercise', 'specialset', 'warmup', 'checked'
+  if (
+    set.has('workout') &&
+    (set.has('start') || set.has('exercise')) &&
+    (set.has('specialset') || set.has('workoutcomment') || set.has('checked') || set.has('distancekm') || set.has('bodyweight'))
+  ) {
+    return 'strengthlog';
+  }
 
   // Strong app detection:
   // Usually has: 'date', 'workout_name', 'exercise_name', 'set_order', 'weight_unit', 'workout_notes'
@@ -853,6 +887,392 @@ export function parseGenericCsv(
 }
 
 // ============================================================================
+// Liftosaur CSV Parser
+// ============================================================================
+
+/**
+ * Parses Liftosaur CSV exports.
+ * Typical headers: Workout DateTime,Program,Day Name,Exercise,Is Warmup Set?,Required Reps,Completed Reps,
+ * Is AMRAP?,Required RPE,Completed RPE,Log RPE?,Required Weight Value,Required Weight Unit,
+ * Completed Weight Value,Completed Weight Unit,Completed Reps Time,Notes...
+ */
+export function parseLiftosaurCsv(text: string, options?: CsvParseOptions): CsvParseResult {
+  const rows = parseRawCsv(text);
+  if (rows.length < 2) {
+    return {
+      source: 'liftosaur',
+      workouts: [],
+      totalSets: 0,
+      totalExercisesCount: 0,
+      errors: ['File is empty or contains no data rows.'],
+    };
+  }
+
+  const headerRow = rows[0];
+  const colIndex: Record<string, number> = {};
+  headerRow.forEach((col, idx) => {
+    colIndex[normalizeHeader(col)] = idx;
+  });
+
+  const getCol = (row: string[], colName: string): string => {
+    const idx = colIndex[colName];
+    return idx !== undefined && idx < row.length ? row[idx].trim() : '';
+  };
+
+  const workoutsMap = new Map<string, ParsedCsvWorkout>();
+  const workoutSetTimes = new Map<string, number[]>();
+  const errors: string[] = [];
+  let totalSets = 0;
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (row.length === 0 || !row.some((c) => c.length > 0)) continue;
+
+    const rawDateTime = getCol(row, 'workout_datetime');
+    const exerciseName = getCol(row, 'exercise');
+    if (!exerciseName) continue;
+
+    const compRepsStr = getCol(row, 'completed_reps');
+    const compWeightStr = getCol(row, 'completed_weight_value');
+    const compTimeStr = getCol(row, 'completed_reps_time');
+
+    // Rule: Skip unperformed planned template sets (where completed reps is empty and completion time or weight is empty)
+    if (!compRepsStr && (!compTimeStr || !compWeightStr)) {
+      continue;
+    }
+
+    const { date, startedAt } = parseDateString(rawDateTime);
+
+    if (options?.startDate && date < options.startDate) continue;
+    if (options?.endDate && date > options.endDate) continue;
+
+    const program = getCol(row, 'program');
+    const dayName = getCol(row, 'day_name');
+    let workoutName = 'Workout';
+    if (program && dayName) {
+      workoutName = `${program} - ${dayName}`;
+    } else if (dayName) {
+      workoutName = dayName;
+    } else if (program) {
+      workoutName = program;
+    }
+
+    const workoutKey = `${date}_${workoutName}_${startedAt}`;
+
+    if (!workoutsMap.has(workoutKey)) {
+      workoutsMap.set(workoutKey, {
+        source: 'liftosaur',
+        name: workoutName,
+        date,
+        startedAt,
+        durationSeconds: null,
+        notes: null,
+        exercises: [],
+      });
+      workoutSetTimes.set(workoutKey, []);
+    }
+
+    const workout = workoutsMap.get(workoutKey)!;
+    const times = workoutSetTimes.get(workoutKey)!;
+
+    if (compTimeStr) {
+      const parsedTime = new Date(compTimeStr).getTime();
+      if (!isNaN(parsedTime)) times.push(parsedTime);
+    }
+
+    let exercise = workout.exercises.find((e) => e.rawExerciseName === exerciseName);
+    if (!exercise) {
+      exercise = {
+        rawExerciseName: exerciseName,
+        sets: [],
+      };
+      workout.exercises.push(exercise);
+    }
+
+    const rawWeightVal = compWeightStr || getCol(row, 'required_weight_value');
+    const rawWeight = parseFloat(rawWeightVal) || 0;
+    const rawUnit = (getCol(row, 'completed_weight_unit') || getCol(row, 'required_weight_unit')).toLowerCase();
+    const weightUnit: WeightUnit = rawUnit.includes('lb') ? 'lbs' : 'kg';
+
+    const weightKg = weightUnit === 'lbs' ? lbsToKg(rawWeight) : rawWeight;
+    const rawInputWeightKg = weightKg;
+
+    const repsVal = compRepsStr || getCol(row, 'required_reps');
+    const reps = parseInt(repsVal, 10) || 0;
+
+    const rawRpe = getCol(row, 'completed_rpe') || getCol(row, 'required_rpe');
+    const rpe = rawRpe ? parseFloat(rawRpe) : null;
+    const rir = rpe != null ? Math.max(0, 10 - rpe) : null;
+
+    const isWarmup = getCol(row, 'is_warmup_set') === '1';
+    const setType: SetType = isWarmup ? 'warmup' : 'working';
+
+    const setNotes = getCol(row, 'notes');
+    const setNumber = exercise.sets.length + 1;
+
+    exercise.sets.push({
+      setNumber,
+      weight: rawWeight,
+      weightUnit,
+      weightKg,
+      rawInputWeightKg,
+      reps,
+      repsRight: null,
+      rpe,
+      rir,
+      setType,
+      notes: setNotes || null,
+      exerciseGroupId: null,
+    });
+
+    totalSets++;
+  }
+
+  // Calculate duration if timestamps exist
+  for (const [key, times] of workoutSetTimes.entries()) {
+    if (times.length >= 2) {
+      const minT = Math.min(...times);
+      const maxT = Math.max(...times);
+      if (maxT > minT) {
+        const w = workoutsMap.get(key);
+        if (w) {
+          w.durationSeconds = Math.round((maxT - minT) / 1000);
+        }
+      }
+    }
+  }
+
+  const workouts = Array.from(workoutsMap.values());
+  const uniqueExercises = new Set<string>();
+  workouts.forEach((w) => w.exercises.forEach((e) => uniqueExercises.add(e.rawExerciseName)));
+
+  return {
+    source: 'liftosaur',
+    workouts,
+    totalSets,
+    totalExercisesCount: uniqueExercises.size,
+    errors,
+  };
+}
+
+// ============================================================================
+// StrengthLog Training CSV Parser
+// ============================================================================
+
+/**
+ * Parses StrengthLog training CSV exports.
+ * Typical headers: workout,start,end,exercise,specialset,weight,bodyweight,extraWeight,distanceKM,reps,warmup,max,fail,checked,setComment,workoutComment...
+ */
+export function parseStrengthLogTrainingCsv(text: string, options?: CsvParseOptions): CsvParseResult {
+  const rows = parseRawCsv(text);
+  if (rows.length < 2) {
+    return {
+      source: 'strengthlog',
+      workouts: [],
+      totalSets: 0,
+      totalExercisesCount: 0,
+      errors: ['File is empty or contains no data rows.'],
+    };
+  }
+
+  const headerRow = rows[0];
+  const colIndex: Record<string, number> = {};
+  headerRow.forEach((col, idx) => {
+    colIndex[normalizeHeader(col)] = idx;
+  });
+
+  const getCol = (row: string[], colName: string): string => {
+    const idx = colIndex[colName];
+    return idx !== undefined && idx < row.length ? row[idx].trim() : '';
+  };
+
+  const workoutsMap = new Map<string, ParsedCsvWorkout>();
+  const errors: string[] = [];
+  let totalSets = 0;
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (row.length === 0 || !row.some((c) => c.length > 0)) continue;
+
+    const exerciseName = getCol(row, 'exercise');
+    if (!exerciseName) continue;
+
+    const repsRaw = getCol(row, 'reps');
+    const checked = getCol(row, 'checked');
+    const isFail = getCol(row, 'fail') === 'true';
+
+    const reps = parseInt(repsRaw, 10);
+    // Rule: Skip unperformed planned sets (empty reps or 0 reps without checkmark and not failed)
+    if (isNaN(reps) || (reps === 0 && !checked && !isFail)) {
+      continue;
+    }
+
+    const startMs = parseInt(getCol(row, 'start'), 10);
+    const endMs = parseInt(getCol(row, 'end'), 10);
+    const startedAt = !isNaN(startMs)
+      ? new Date(startMs).toISOString()
+      : new Date().toISOString();
+    const date = startedAt.split('T')[0];
+
+    if (options?.startDate && date < options.startDate) continue;
+    if (options?.endDate && date > options.endDate) continue;
+
+    const workoutName = getCol(row, 'workout') || 'Workout';
+    const workoutKey = `${date}_${workoutName}_${startedAt}`;
+
+    if (!workoutsMap.has(workoutKey)) {
+      const workoutNotes = getCol(row, 'workoutcomment');
+      let durationSeconds: number | null = null;
+      if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+        durationSeconds = Math.round((endMs - startMs) / 1000);
+      }
+
+      workoutsMap.set(workoutKey, {
+        source: 'strengthlog',
+        name: workoutName,
+        date,
+        startedAt,
+        durationSeconds,
+        notes: workoutNotes || null,
+        exercises: [],
+      });
+    }
+
+    const workout = workoutsMap.get(workoutKey)!;
+
+    let exercise = workout.exercises.find((e) => e.rawExerciseName === exerciseName);
+    if (!exercise) {
+      exercise = {
+        rawExerciseName: exerciseName,
+        sets: [],
+      };
+      workout.exercises.push(exercise);
+    }
+
+    const weightVal = parseFloat(getCol(row, 'weight'));
+    const extraVal = parseFloat(getCol(row, 'extraweight'));
+    // StrengthLog canonical weights are in kg
+    const weightKg = !isNaN(weightVal) ? weightVal : (!isNaN(extraVal) ? extraVal : 0);
+    const rawInputWeightKg = weightKg;
+
+    const isWarmup = getCol(row, 'warmup') === 'true';
+    const setType: SetType = isWarmup ? 'warmup' : 'working';
+
+    const rpe = isFail ? 10.0 : null;
+    const rir = isFail ? 0.0 : null;
+    const setNotes = getCol(row, 'setcomment');
+    const setNumber = exercise.sets.length + 1;
+
+    exercise.sets.push({
+      setNumber,
+      weight: weightKg,
+      weightUnit: 'kg',
+      weightKg,
+      rawInputWeightKg,
+      reps,
+      repsRight: null,
+      rpe,
+      rir,
+      setType,
+      notes: setNotes || null,
+      exerciseGroupId: null,
+    });
+
+    totalSets++;
+  }
+
+  const workouts = Array.from(workoutsMap.values());
+  const uniqueExercises = new Set<string>();
+  workouts.forEach((w) => w.exercises.forEach((e) => uniqueExercises.add(e.rawExerciseName)));
+
+  return {
+    source: 'strengthlog',
+    workouts,
+    totalSets,
+    totalExercisesCount: uniqueExercises.size,
+    errors,
+  };
+}
+
+// ============================================================================
+// StrengthLog Body Composition CSV Parser
+// ============================================================================
+
+/**
+ * Parses StrengthLog body composition CSV exports into BodyMetric records.
+ * Headers: type,timestamp,value,unit
+ */
+export function parseStrengthLogBodyCompCsv(
+  text: string,
+  options?: CsvParseOptions
+): { metrics: BodyMetric[]; errors: string[] } {
+  const rows = parseRawCsv(text);
+  if (rows.length < 2) {
+    return { metrics: [], errors: ['File is empty or contains no data rows.'] };
+  }
+
+  const byDate = new Map<string, BodyMetric>();
+  const errors: string[] = [];
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (row.length < 3) continue;
+
+    const type = row[0].trim().toLowerCase();
+    const ts = parseInt(row[1].trim(), 10);
+    const val = parseFloat(row[2].trim());
+
+    if (isNaN(ts) || isNaN(val)) continue;
+
+    const date = new Date(ts).toISOString().split('T')[0];
+    if (options?.startDate && date < options.startDate) continue;
+    if (options?.endDate && date > options.endDate) continue;
+
+    if (!byDate.has(date)) {
+      byDate.set(date, {
+        id: `bm_imp_${date}`,
+        date,
+        bodyweight: 0,
+        body_fat_manual: null,
+        waist_cm: null,
+        neck_cm: null,
+        hip_cm: null,
+        bicep_cm: null,
+        chest_cm: null,
+        thigh_cm: null,
+        calf_cm: null,
+        navy_body_fat: null,
+      });
+    }
+
+    const m = byDate.get(date)!;
+    if (type === 'bodyweight') {
+      m.bodyweight = val;
+    } else if (type === 'body-comp') {
+      m.body_fat_manual = val;
+    } else if (type === 'waist') {
+      m.waist_cm = val;
+    } else if (type === 'neck') {
+      m.neck_cm = val;
+    } else if (type === 'hips') {
+      m.hip_cm = val;
+    } else if (type === 'chest') {
+      m.chest_cm = val;
+    } else if (type === 'right-upperarm' || type === 'left-upperarm') {
+      m.bicep_cm = val;
+    } else if (type === 'right-thigh') {
+      m.thigh_cm = val;
+    } else if (type === 'right-calf') {
+      m.calf_cm = val;
+    }
+  }
+
+  // Sort chronologically ascending
+  const metrics = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  return { metrics, errors };
+}
+
+// ============================================================================
 // Main Dispatcher
 // ============================================================================
 
@@ -863,7 +1283,8 @@ export function parseGenericCsv(
 export function parseWorkoutCsv(
   text: string,
   formatHint?: ImportSource,
-  customMapping?: Partial<CsvColumnMapping>
+  customMapping?: Partial<CsvColumnMapping>,
+  options?: CsvParseOptions
 ): CsvParseResult {
   const rows = parseRawCsv(text);
   if (rows.length < 2) {
@@ -879,6 +1300,10 @@ export function parseWorkoutCsv(
   const detected = formatHint || detectCsvFormat(rows[0]);
 
   switch (detected) {
+    case 'liftosaur':
+      return parseLiftosaurCsv(text, options);
+    case 'strengthlog':
+      return parseStrengthLogTrainingCsv(text, options);
     case 'strong':
       return parseStrongCsv(text);
     case 'hevy':

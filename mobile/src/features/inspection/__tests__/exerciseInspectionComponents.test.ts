@@ -294,6 +294,20 @@ describe('Exercise Inspection UI, SBD Tier Widget & Symmetry Radar (Step 3.3)', 
       expect(element).toBeDefined();
       expect(element.props.records).toHaveLength(0);
     });
+
+    it('formats display weights with single unit string (no "kg kg")', () => {
+      const tree = PRBoardTable({
+        records: mockRecords,
+        peakRecord: mockRecords[0],
+        scope: 'all_time',
+        includeVariants: false,
+        unitSystem: 'kg',
+      });
+      const serialized = JSON.stringify(tree);
+      expect(serialized).toContain('100 kg');
+      expect(serialized).not.toContain('kg kg');
+      expect(serialized).not.toContain('lbs lbs');
+    });
   });
 
   describe('SBDStandardsCard Component', () => {

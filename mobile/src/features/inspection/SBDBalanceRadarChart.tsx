@@ -27,7 +27,7 @@ import {
   SBDBalanceProfile,
   WeightUnit,
 } from '../../core/types';
-import { formatWeight, kgToLbs } from '../../core/math/unitConversion';
+import { formatWeight } from '../../core/math/unitConversion';
 
 export interface SBDBalanceRadarChartProps {
   balanceProfile: SBDBalanceProfile | null;
@@ -106,10 +106,7 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
 
   // SBD Total in user unit
   const totalKg = balanceProfile?.totalKg ?? 0;
-  const displayTotal =
-    unitSystem === 'lbs'
-      ? `${formatWeight(kgToLbs(totalKg))} lbs`
-      : `${formatWeight(totalKg)} kg`;
+  const displayTotal = formatWeight(totalKg, unitSystem);
 
   return (
     <View style={styles.container} testID="sbd-balance-radar-chart">
@@ -272,7 +269,7 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
                 <View>
                   <Text style={styles.dotsCardTitle}>Composite SBD DOTS Score</Text>
                   <Text style={styles.dotsCardSubtext}>
-                    Official powerlifting bodyweight-scaled score ({gender}, {formatWeight(bodyweightKg)} kg)
+                    Official powerlifting bodyweight-scaled score ({gender}, {formatWeight(bodyweightKg, unitSystem)})
                   </Text>
                 </View>
               </View>

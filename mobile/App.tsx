@@ -319,6 +319,7 @@ export default function App({
                 workoutRepo={repos.workoutRepo}
                 programRepo={repos.programRepo}
                 userProfileRepo={repos.userProfileRepo}
+                bodyMetricsRepo={repos.bodyMetricsRepo}
                 programBlockService={repos.programBlockService}
                 db={database}
                 onSettingsChange={checkActiveWorkout}

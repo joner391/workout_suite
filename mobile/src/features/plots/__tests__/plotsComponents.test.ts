@@ -31,6 +31,12 @@ import {
   formatWeight,
   formatLength,
 } from '../../../core/math/unitConversion';
+import React from 'react';
+import {
+  PlotsScreen,
+  PERFORMANCE_CHARTS,
+  BODY_COMPOSITION_CHARTS,
+} from '../PlotsScreen';
 import {
   Workout,
   WorkoutSet,
@@ -548,6 +554,41 @@ describe('Longitudinal Plots & Era Shading Suite (Step 5.2)', () => {
       expect(ul!.program_name).toBe('Upper Lower Strength');
       expect(ul!.color_hex).toBe('#FF6D00');
       expect(ul!.end_date).toBeNull(); // Active era
+    });
+  });
+
+  describe('7. Plot Group Partitioning (Performance vs Body Composition)', () => {
+    test('defines correct chart types in performance and body composition groups', () => {
+      expect(PERFORMANCE_CHARTS).toEqual(['e1rm', 'volume']);
+      expect(BODY_COMPOSITION_CHARTS).toEqual([
+        'bodyweight',
+        'body_fat',
+        'circumferences',
+      ]);
+      // Verify mutually exclusive and collectively exhaustive across the 5 charts
+      const allGrouped = [...PERFORMANCE_CHARTS, ...BODY_COMPOSITION_CHARTS];
+      expect(allGrouped).toHaveLength(5);
+      expect(new Set(allGrouped).size).toBe(5);
+    });
+
+    test('initializes PlotsScreen with targetGroup performance', () => {
+      const element = React.createElement(PlotsScreen, {
+        workoutRepo,
+        exerciseRepo,
+        targetGroup: 'performance',
+      });
+      expect(element).toBeDefined();
+      expect(element.props.targetGroup).toBe('performance');
+    });
+
+    test('initializes PlotsScreen with targetGroup body_composition', () => {
+      const element = React.createElement(PlotsScreen, {
+        workoutRepo,
+        exerciseRepo,
+        targetGroup: 'body_composition',
+      });
+      expect(element).toBeDefined();
+      expect(element.props.targetGroup).toBe('body_composition');
     });
   });
 });

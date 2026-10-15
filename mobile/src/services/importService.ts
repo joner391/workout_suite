@@ -10,6 +10,7 @@
  */
 
 import {
+  BodyMetric,
   Exercise,
   ImportSource,
   Workout,
@@ -20,12 +21,23 @@ import {
 } from '../core/types';
 import { IWorkoutRepository } from '../domain/repositories/IWorkoutRepository';
 import { IExerciseRepository } from '../domain/repositories/IExerciseRepository';
+import { IBodyMetricsRepository } from '../domain/repositories/IBodyMetricsRepository';
 import {
   ParsedCsvWorkout,
   CsvParseResult,
   parseWorkoutCsv,
   CsvColumnMapping,
+  CsvParseOptions,
+  parseStrengthLogBodyCompCsv,
+  isStrengthLogBodyCompCsv,
 } from '../core/parsers/csvImportParser';
+import {
+  LIFTOSAUR_DUMMY_CSV,
+  STRENGTHLOG_TRAINING_DUMMY_CSV,
+  STRENGTHLOG_BODY_COMP_DUMMY_CSV,
+  EvaluationPresetType,
+  EVALUATION_PRESETS,
+} from '../features/import/dummyDataPresets';
 
 // ============================================================================
 // Service Contracts
@@ -81,6 +93,44 @@ export interface ImportExecutionResult {
  * mapped to standard defaultExercise IDs.
  */
 const COMMON_EXERCISE_ALIASES: Record<string, string> = {
+  // Direct common names (Liftosaur, StrengthLog, FitNotes)
+  'bench press': 'barbell_bench_press',
+  'bench press wide grip': 'barbell_bench_press',
+  'wide grip bench press': 'barbell_bench_press',
+  'bench press close grip': 'barbell_close_grip_bench_press',
+  'close grip bench press': 'barbell_close_grip_bench_press',
+  'close-grip bench press': 'barbell_close_grip_bench_press',
+  'incline bench press': 'barbell_incline_bench_press',
+  'overhead press': 'barbell_overhead_press',
+  'deadlift': 'barbell_deadlift',
+  'sumo deadlift': 'barbell_sumo_deadlift',
+  'stiff leg deadlift': 'barbell_rdl',
+  'stiff-leg deadlift': 'barbell_rdl',
+  'romanian deadlift': 'barbell_rdl',
+  'squat': 'barbell_back_squat',
+  'high-bar ssb squat': 'barbell_back_squat',
+  'low bar ssb squat': 'barbell_back_squat',
+  'ssb squat': 'barbell_back_squat',
+  'front squat': 'barbell_front_squat',
+  'bicep curl': 'barbell_bicep_curl',
+  'bicep curl, ez bar': 'barbell_bicep_curl',
+  'ez bar curl': 'barbell_bicep_curl',
+  'bicep curl, dumbbell': 'dumbbell_bicep_curl',
+  'preacher curl': 'barbell_bicep_curl',
+  'dumbbell preacher curl': 'dumbbell_bicep_curl',
+  'skullcrusher': 'barbell_skull_crusher',
+  'skull crusher': 'barbell_skull_crusher',
+  'lateral raise, cable': 'cable_lateral_raise',
+  'lateral raise, dumbbell': 'dumbbell_lateral_raise',
+  'lateral raise': 'dumbbell_lateral_raise',
+  'triceps extension, cable': 'cable_tricep_pushdown',
+  'triceps pushdown': 'cable_tricep_pushdown',
+  'triceps pushdown with bar': 'cable_tricep_pushdown',
+  'triceps pushdown with rope': 'cable_tricep_pushdown',
+  'bent over tricep pushdown': 'cable_tricep_pushdown',
+  'high row, cable': 'cable_seated_row',
+  'crunch': 'bodyweight_hanging_knee_raise',
+
   // Barbell Squat variants
   'bench press (barbell)': 'barbell_bench_press',
   'flat barbell bench press': 'barbell_bench_press',
@@ -211,7 +261,8 @@ const COMMON_EXERCISE_ALIASES: Record<string, string> = {
 export class ImportService {
   constructor(
     private readonly workoutRepo: IWorkoutRepository,
-    private readonly exerciseRepo: IExerciseRepository
+    private readonly exerciseRepo: IExerciseRepository,
+    private readonly bodyMetricsRepo?: IBodyMetricsRepository
   ) {}
 
   /**
@@ -220,9 +271,129 @@ export class ImportService {
   parseCsv(
     csvText: string,
     formatHint?: ImportSource,
-    columnMapping?: Partial<CsvColumnMapping>
+    columnMapping?: Partial<CsvColumnMapping>,
+    options?: CsvParseOptions
   ): CsvParseResult {
-    return parseWorkoutCsv(csvText, formatHint, columnMapping);
+    return parseWorkoutCsv(csvText, formatHint, columnMapping, options);
+  }
+
+  /**
+   * Imports anthropometry & body composition measurements into Body Metrics repository.
+   */
+  async importBodyMetrics(
+    csvText: string,
+    options?: CsvParseOptions
+  ): Promise<{ importedCount: number; errors: string[] }> {
+    if (!this.bodyMetricsRepo) {
+      return { importedCount: 0, errors: ['Body metrics repository is not connected.'] };
+    }
+    const parsed = parseStrengthLogBodyCompCsv(csvText, options);
+    const errors: string[] = [...parsed.errors];
+    let importedCount = 0;
+
+    for (const metric of parsed.metrics) {
+      try {
+        await this.bodyMetricsRepo.save(metric);
+        importedCount++;
+      } catch (err: any) {
+        errors.push(`Failed to save body metric for ${metric.date}: ${err?.message}`);
+      }
+    }
+
+    return { importedCount, errors };
+  }
+
+  /**
+   * Filters an existing WorkoutImportPreview by an inclusive date range without re-parsing CSV.
+   */
+  filterPreviewByDateRange(
+    preview: WorkoutImportPreview,
+    startDate?: string,
+    endDate?: string
+  ): WorkoutImportPreview {
+    if (!startDate && !endDate) return preview;
+
+    const filteredWorkouts = preview.workouts.filter((w) => {
+      const d = w.workout.date;
+      if (startDate && d < startDate) return false;
+      if (endDate && d > endDate) return false;
+      return true;
+    });
+
+    const totalSets = filteredWorkouts.reduce(
+      (acc, w) => acc + w.workout.exercises.reduce((eAcc, e) => eAcc + e.sets.length, 0),
+      0
+    );
+    const duplicateCount = filteredWorkouts.filter((w) => w.isDuplicate).length;
+
+    return {
+      ...preview,
+      totalWorkouts: filteredWorkouts.length,
+      totalSets,
+      duplicateWorkoutsCount: duplicateCount,
+      workouts: filteredWorkouts,
+    };
+  }
+
+  /**
+   * 1-Tap Evaluation Data Loader for Expo Go:
+   * Imports either the last 3 months of training + body metrics, or the full historical archive.
+   */
+  async importEvaluationData(
+    preset: EvaluationPresetType = 'last_3_months'
+  ): Promise<{
+    workoutsResult: ImportExecutionResult;
+    bodyMetricsResult: { importedCount: number; errors: string[] };
+  }> {
+    const presetConfig = EVALUATION_PRESETS.find((p) => p.id === preset);
+    const startDate = presetConfig?.startDate;
+    const parseOptions: CsvParseOptions = startDate ? { startDate } : {};
+
+    // 1. Parse Liftosaur (recent blocks)
+    const liftosaurParsed = this.parseCsv(
+      LIFTOSAUR_DUMMY_CSV,
+      'liftosaur',
+      undefined,
+      parseOptions
+    );
+
+    // 2. Parse StrengthLog (historical blocks if preset is 'all' or covers prior years)
+    const strengthlogParsed =
+      preset === 'all'
+        ? this.parseCsv(STRENGTHLOG_TRAINING_DUMMY_CSV, 'strengthlog', undefined, parseOptions)
+        : {
+            source: 'strengthlog' as ImportSource,
+            workouts: [],
+            totalSets: 0,
+            totalExercisesCount: 0,
+            errors: [],
+          };
+
+    const combinedWorkouts = [...liftosaurParsed.workouts, ...strengthlogParsed.workouts];
+    const combinedTotalSets = liftosaurParsed.totalSets + strengthlogParsed.totalSets;
+
+    const combinedParsed: CsvParseResult = {
+      source: 'csv',
+      workouts: combinedWorkouts,
+      totalSets: combinedTotalSets,
+      totalExercisesCount:
+        liftosaurParsed.totalExercisesCount + strengthlogParsed.totalExercisesCount,
+      errors: [...liftosaurParsed.errors, ...strengthlogParsed.errors],
+    };
+
+    const preview = await this.generatePreview(combinedParsed);
+    const workoutsResult = await this.executeImport(preview, { skipDuplicates: true });
+
+    // 3. Import Body Composition
+    const bodyMetricsResult = await this.importBodyMetrics(
+      STRENGTHLOG_BODY_COMP_DUMMY_CSV,
+      parseOptions
+    );
+
+    return {
+      workoutsResult,
+      bodyMetricsResult,
+    };
   }
 
   /**

@@ -49,6 +49,15 @@ export type PlotChartType =
   | 'circumferences'
   | 'volume';
 
+export type PlotGroup = 'performance' | 'body_composition';
+
+export const PERFORMANCE_CHARTS: PlotChartType[] = ['e1rm', 'volume'];
+export const BODY_COMPOSITION_CHARTS: PlotChartType[] = [
+  'bodyweight',
+  'body_fat',
+  'circumferences',
+];
+
 export type CircumferenceType =
   | 'waist_cm'
   | 'neck_cm'
@@ -76,6 +85,7 @@ export interface PlotsScreenProps {
   programBlockService?: ProgramBlockService;
   userSettingsRepo?: IUserSettingsRepository;
   initialChartType?: PlotChartType;
+  targetGroup?: PlotGroup;
   onNavigateToBodyMetrics?: () => void;
   onClose?: () => void;
   isInline?: boolean;
@@ -88,12 +98,41 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
   programRepo,
   programBlockService,
   userSettingsRepo,
-  initialChartType = 'bodyweight',
+  initialChartType,
+  targetGroup,
   onNavigateToBodyMetrics,
   onClose,
   isInline = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<PlotChartType>(initialChartType);
+  const initialGroup: PlotGroup =
+    targetGroup ??
+    (initialChartType && PERFORMANCE_CHARTS.includes(initialChartType)
+      ? 'performance'
+      : 'body_composition');
+
+  const [activeGroup, setActiveGroup] = useState<PlotGroup>(initialGroup);
+  const effectiveGroup: PlotGroup = targetGroup ?? activeGroup;
+
+  const defaultTab: PlotChartType =
+    initialChartType ??
+    (effectiveGroup === 'performance' ? 'e1rm' : 'bodyweight');
+
+  const [activeTab, setActiveTab] = useState<PlotChartType>(defaultTab);
+
+  useEffect(() => {
+    if (targetGroup) {
+      setActiveGroup(targetGroup);
+      if (targetGroup === 'performance' && !PERFORMANCE_CHARTS.includes(activeTab)) {
+        setActiveTab('e1rm');
+      } else if (
+        targetGroup === 'body_composition' &&
+        !BODY_COMPOSITION_CHARTS.includes(activeTab)
+      ) {
+        setActiveTab('bodyweight');
+      }
+    }
+  }, [targetGroup]);
+
   const [loading, setLoading] = useState<boolean>(true);
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
 
@@ -550,92 +589,151 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
         </View>
       )}
 
-      {/* Segment / Pill Selector (5 Chart Types) */}
+      {/* Group Selector Switcher (when targetGroup is not locked) */}
+      {!targetGroup && (
+        <View style={styles.groupSwitchRow}>
+          <TouchableOpacity
+            testID="plot-group-performance-btn"
+            style={[
+              styles.groupSwitchBtn,
+              effectiveGroup === 'performance' && styles.groupSwitchBtnActive,
+            ]}
+            onPress={() => {
+              setActiveGroup('performance');
+              if (!PERFORMANCE_CHARTS.includes(activeTab)) {
+                setActiveTab('e1rm');
+              }
+            }}
+          >
+            <Text
+              style={[
+                styles.groupSwitchText,
+                effectiveGroup === 'performance' && styles.groupSwitchTextActive,
+              ]}
+            >
+              ⚡ Strength & Performance
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            testID="plot-group-body-btn"
+            style={[
+              styles.groupSwitchBtn,
+              effectiveGroup === 'body_composition' && styles.groupSwitchBtnActive,
+            ]}
+            onPress={() => {
+              setActiveGroup('body_composition');
+              if (!BODY_COMPOSITION_CHARTS.includes(activeTab)) {
+                setActiveTab('bodyweight');
+              }
+            }}
+          >
+            <Text
+              style={[
+                styles.groupSwitchText,
+                effectiveGroup === 'body_composition' && styles.groupSwitchTextActive,
+              ]}
+            >
+              ⚖️ Body Composition
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Segment / Pill Selector (Filtered by active group) */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.pillsContainer}
       >
-        <TouchableOpacity
-          testID="plot-pill-bodyweight"
-          style={[
-            styles.pill,
-            activeTab === 'bodyweight' && styles.pillActive,
-          ]}
-          onPress={() => setActiveTab('bodyweight')}
-        >
-          <Text
-            style={[
-              styles.pillText,
-              activeTab === 'bodyweight' && styles.pillTextActive,
-            ]}
-          >
-            ⚖️ Bodyweight
-          </Text>
-        </TouchableOpacity>
+        {effectiveGroup === 'body_composition' && (
+          <>
+            <TouchableOpacity
+              testID="plot-pill-bodyweight"
+              style={[
+                styles.pill,
+                activeTab === 'bodyweight' && styles.pillActive,
+              ]}
+              onPress={() => setActiveTab('bodyweight')}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  activeTab === 'bodyweight' && styles.pillTextActive,
+                ]}
+              >
+                ⚖️ Bodyweight
+              </Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          testID="plot-pill-e1rm"
-          style={[styles.pill, activeTab === 'e1rm' && styles.pillActive]}
-          onPress={() => setActiveTab('e1rm')}
-        >
-          <Text
-            style={[
-              styles.pillText,
-              activeTab === 'e1rm' && styles.pillTextActive,
-            ]}
-          >
-            📈 e1RM Trends
-          </Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              testID="plot-pill-body_fat"
+              style={[styles.pill, activeTab === 'body_fat' && styles.pillActive]}
+              onPress={() => setActiveTab('body_fat')}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  activeTab === 'body_fat' && styles.pillTextActive,
+                ]}
+              >
+                🔬 Body Fat %
+              </Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          testID="plot-pill-body_fat"
-          style={[styles.pill, activeTab === 'body_fat' && styles.pillActive]}
-          onPress={() => setActiveTab('body_fat')}
-        >
-          <Text
-            style={[
-              styles.pillText,
-              activeTab === 'body_fat' && styles.pillTextActive,
-            ]}
-          >
-            🔬 Body Fat %
-          </Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              testID="plot-pill-circumferences"
+              style={[
+                styles.pill,
+                activeTab === 'circumferences' && styles.pillActive,
+              ]}
+              onPress={() => setActiveTab('circumferences')}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  activeTab === 'circumferences' && styles.pillTextActive,
+                ]}
+              >
+                📏 Tape Measurements
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
 
-        <TouchableOpacity
-          testID="plot-pill-circumferences"
-          style={[
-            styles.pill,
-            activeTab === 'circumferences' && styles.pillActive,
-          ]}
-          onPress={() => setActiveTab('circumferences')}
-        >
-          <Text
-            style={[
-              styles.pillText,
-              activeTab === 'circumferences' && styles.pillTextActive,
-            ]}
-          >
-            📏 Tape Measurements
-          </Text>
-        </TouchableOpacity>
+        {effectiveGroup === 'performance' && (
+          <>
+            <TouchableOpacity
+              testID="plot-pill-e1rm"
+              style={[styles.pill, activeTab === 'e1rm' && styles.pillActive]}
+              onPress={() => setActiveTab('e1rm')}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  activeTab === 'e1rm' && styles.pillTextActive,
+                ]}
+              >
+                📈 e1RM Trends
+              </Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          testID="plot-pill-volume"
-          style={[styles.pill, activeTab === 'volume' && styles.pillActive]}
-          onPress={() => setActiveTab('volume')}
-        >
-          <Text
-            style={[
-              styles.pillText,
-              activeTab === 'volume' && styles.pillTextActive,
-            ]}
-          >
-            📊 Volume Tonnage
-          </Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              testID="plot-pill-volume"
+              style={[styles.pill, activeTab === 'volume' && styles.pillActive]}
+              onPress={() => setActiveTab('volume')}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  activeTab === 'volume' && styles.pillTextActive,
+                ]}
+              >
+                📊 Volume Tonnage
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
       </ScrollView>
 
       {/* Sub-selectors (e.g. Exercise Picker or Circumference Picker) */}
@@ -1066,5 +1164,35 @@ const styles = StyleSheet.create({
   loadingText: {
     color: '#888888',
     fontSize: 12,
+  },
+  groupSwitchRow: {
+    flexDirection: 'row',
+    backgroundColor: '#181818',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  groupSwitchBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 7,
+  },
+  groupSwitchBtnActive: {
+    backgroundColor: '#262626',
+    borderWidth: 1,
+    borderColor: '#00E676',
+  },
+  groupSwitchText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#888888',
+  },
+  groupSwitchTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
 });

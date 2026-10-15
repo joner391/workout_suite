@@ -1,0 +1,397 @@
+/**
+ * Workout Suite — Workload Analysis Service
+ *
+ * Implements Weekly Workload, Volume Landmarks, Daily Tonnage Distribution,
+ * and Dual-Faceted Intensity Analysis (Effort-based RPE proximity to failure
+ * and relative load-based % of 1RM).
+ */
+
+import { IWorkoutRepository } from '../domain/repositories/IWorkoutRepository';
+import { IExerciseRepository } from '../domain/repositories/IExerciseRepository';
+import { Exercise, MuscleGroup, Workout, WorkoutSet } from '../core/types';
+import { calculateHeuristic1RM } from '../core/math/heuristic1rm';
+
+export type VolumeLandmarkTier = 'low' | 'optimal' | 'high' | 'peak';
+
+export interface MuscleGroupVolumeReport {
+  muscleGroup: MuscleGroup | string;
+  workingSets: number;
+  totalTonnageKg: number;
+  tier: VolumeLandmarkTier;
+  targetMinSets: number;
+  targetMaxSets: number;
+}
+
+export interface DailyWorkloadSummary {
+  date: string; // YYYY-MM-DD
+  dayName: string; // 'Mon', 'Tue', etc.
+  hasWorkout: boolean;
+  workoutName: string | null;
+  workoutId: string | null;
+  tonnageKg: number;
+  workingSets: number;
+  avgRpe: number | null;
+}
+
+export interface IntensityDistributionBucket {
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface IntensityAnalysis {
+  avgRpe: number | null;
+  highIntensitySetCount: number; // RPE >= 8.0 or RIR <= 2
+  highIntensityRatioPercent: number;
+  rpeBuckets: IntensityDistributionBucket[];
+  avgRelativeIntensityPercent: number | null; // Volume-weighted % of e1RM
+  loadZoneBuckets: IntensityDistributionBucket[];
+}
+
+export interface WeeklyWorkloadDeepDive {
+  weekStartDate: string; // YYYY-MM-DD (Monday)
+  weekEndDate: string; // YYYY-MM-DD (Sunday)
+  totalTonnageKg: number;
+  totalWorkingSets: number;
+  completedWorkoutsCount: number;
+  dailyWorkloads: DailyWorkloadSummary[];
+  muscleGroupVolumes: MuscleGroupVolumeReport[];
+  intensity: IntensityAnalysis;
+}
+
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/**
+ * Resolves Monday to Sunday calendar boundaries for a given week offset.
+ * weekOffset = 0 -> current week
+ * weekOffset = -1 -> previous week
+ */
+export function getWeekBoundaries(
+  refDate: Date = new Date(),
+  weekOffset: number = 0
+): { mondayIso: string; sundayIso: string; mondayDate: Date } {
+  const d = new Date(refDate);
+  d.setDate(d.getDate() + weekOffset * 7);
+
+  const dayOfWeek = (d.getDay() + 6) % 7; // 0 = Mon, 6 = Sun
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - dayOfWeek);
+  monday.setHours(0, 0, 0, 0);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  const toIsoDateString = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  return {
+    mondayIso: toIsoDateString(monday),
+    sundayIso: toIsoDateString(sunday),
+    mondayDate: monday,
+  };
+}
+
+/**
+ * Classifies weekly muscle group set volume against hypertrophy landmarks:
+ * - Low / Maintenance: < 8 sets
+ * - Optimal Growth (MAV): 8 - 18 sets
+ * - High Volume: 19 - 24 sets
+ * - Peak / Overreaching: > 24 sets
+ */
+export function classifyVolumeTier(sets: number): {
+  tier: VolumeLandmarkTier;
+  targetMinSets: number;
+  targetMaxSets: number;
+} {
+  const targetMinSets = 8;
+  const targetMaxSets = 18;
+
+  if (sets < 8) return { tier: 'low', targetMinSets, targetMaxSets };
+  if (sets <= 18) return { tier: 'optimal', targetMinSets, targetMaxSets };
+  if (sets <= 24) return { tier: 'high', targetMinSets, targetMaxSets };
+  return { tier: 'peak', targetMinSets, targetMaxSets };
+}
+
+/**
+ * Computes comprehensive workload, volume landmarks, and dual intensity intelligence.
+ */
+export async function computeWeeklyWorkloadDeepDive(
+  workoutRepo: IWorkoutRepository,
+  exerciseRepo: IExerciseRepository,
+  options: {
+    refDate?: Date;
+    weekOffset?: number;
+  } = {}
+): Promise<WeeklyWorkloadDeepDive> {
+  const { refDate = new Date(), weekOffset = 0 } = options;
+  const { mondayIso, sundayIso, mondayDate } = getWeekBoundaries(refDate, weekOffset);
+
+  // 1. Fetch workouts and exercises
+  const allWorkouts = await workoutRepo.findAll();
+  const completedWorkouts = allWorkouts.filter((w) => w.status === 'completed');
+  const allExercises = await exerciseRepo.findAll();
+  const exerciseMap = new Map<string, Exercise>(allExercises.map((e) => [e.id, e]));
+
+  // 2. Pre-calculate best historical e1RM per exercise across all completed workouts
+  // for relative intensity benchmarking
+  const bestE1rmMap = new Map<string, number>();
+  for (const w of completedWorkouts) {
+    const sets = await workoutRepo.getSetsByWorkoutId(w.id);
+    for (const s of sets) {
+      if (s.weight && s.weight > 0 && s.reps && s.reps > 0) {
+        const est = calculateHeuristic1RM(s.weight, s.reps, {
+          rpe: s.rpe,
+          rir: s.rir,
+        });
+        const prev = bestE1rmMap.get(s.exercise_id) || 0;
+        if (est > prev) {
+          bestE1rmMap.set(s.exercise_id, est);
+        }
+      }
+    }
+  }
+
+  // 3. Filter workouts in the target week
+  const weekWorkouts = completedWorkouts.filter(
+    (w) => w.date >= mondayIso && w.date <= sundayIso
+  );
+
+  // Map workouts by date
+  const workoutsByDate = new Map<string, { workout: Workout; sets: WorkoutSet[] }[]>();
+  for (const w of weekWorkouts) {
+    const sets = await workoutRepo.getSetsByWorkoutId(w.id);
+    const existing = workoutsByDate.get(w.date) || [];
+    existing.push({ workout: w, sets });
+    workoutsByDate.set(w.date, existing);
+  }
+
+  // 4. Generate 7-day daily workload summary (Mon -> Sun)
+  const dailyWorkloads: DailyWorkloadSummary[] = [];
+  let totalWeekTonnage = 0;
+  let totalWeekWorkingSets = 0;
+
+  for (let i = 0; i < 7; i++) {
+    const currentDay = new Date(mondayDate);
+    currentDay.setDate(mondayDate.getDate() + i);
+    const year = currentDay.getFullYear();
+    const month = String(currentDay.getMonth() + 1).padStart(2, '0');
+    const day = String(currentDay.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    const daySessions = workoutsByDate.get(dateStr);
+
+    if (daySessions && daySessions.length > 0) {
+      let dayTonnage = 0;
+      let dayWorkingSets = 0;
+      let dayRpeSum = 0;
+      let dayRpeCount = 0;
+
+      for (const session of daySessions) {
+        for (const s of session.sets) {
+          if (s.set_type !== 'warmup') {
+            dayWorkingSets++;
+            if (s.weight != null && s.reps != null) {
+              dayTonnage += s.weight * s.reps;
+            }
+            if (s.rpe != null && s.rpe > 0) {
+              dayRpeSum += s.rpe;
+              dayRpeCount++;
+            }
+          }
+        }
+      }
+
+      totalWeekTonnage += dayTonnage;
+      totalWeekWorkingSets += dayWorkingSets;
+
+      dailyWorkloads.push({
+        date: dateStr,
+        dayName: DAY_NAMES[i],
+        hasWorkout: true,
+        workoutName: daySessions.map((s) => s.workout.name).join(' & '),
+        workoutId: daySessions[0].workout.id,
+        tonnageKg: Math.round(dayTonnage),
+        workingSets: dayWorkingSets,
+        avgRpe: dayRpeCount > 0 ? Number((dayRpeSum / dayRpeCount).toFixed(1)) : null,
+      });
+    } else {
+      dailyWorkloads.push({
+        date: dateStr,
+        dayName: DAY_NAMES[i],
+        hasWorkout: false,
+        workoutName: null,
+        workoutId: null,
+        tonnageKg: 0,
+        workingSets: 0,
+        avgRpe: null,
+      });
+    }
+  }
+
+  // 5. Aggregate Muscle Group Volumes (Working Sets & Tonnage)
+  const muscleSetCounts = new Map<string, { sets: number; tonnage: number }>();
+  for (const sessionGroup of workoutsByDate.values()) {
+    for (const session of sessionGroup) {
+      for (const s of session.sets) {
+        if (s.set_type !== 'warmup') {
+          const ex = exerciseMap.get(s.exercise_id);
+          const group = ex?.muscle_group || 'Other';
+          const prev = muscleSetCounts.get(group) || { sets: 0, tonnage: 0 };
+          prev.sets += 1;
+          if (s.weight != null && s.reps != null) {
+            prev.tonnage += s.weight * s.reps;
+          }
+          muscleSetCounts.set(group, prev);
+        }
+      }
+    }
+  }
+
+  const muscleGroupVolumes: MuscleGroupVolumeReport[] = Array.from(
+    muscleSetCounts.entries()
+  )
+    .map(([group, data]) => {
+      const { tier, targetMinSets, targetMaxSets } = classifyVolumeTier(data.sets);
+      return {
+        muscleGroup: group,
+        workingSets: data.sets,
+        totalTonnageKg: Math.round(data.tonnage),
+        tier,
+        targetMinSets,
+        targetMaxSets,
+      };
+    })
+    .sort((a, b) => b.workingSets - a.workingSets || a.muscleGroup.localeCompare(b.muscleGroup));
+
+  // 6. Dual Intensity Analysis
+  // 6A. Effort Intensity (RPE & Proximity to Failure)
+  let totalRpeSum = 0;
+  let totalRpeSets = 0;
+  let highIntensitySets = 0; // RPE >= 8.0 or RIR <= 2
+
+  let rpeSubmaximal = 0; // < 7.0
+  let rpeModerate = 0; // 7.0 - 7.5
+  let rpeHard = 0; // 8.0 - 8.5
+  let rpeMaximal = 0; // 9.0 - 10.0
+
+  // 6B. Relative Load Intensity (% 1RM)
+  let weightedRelIntensitySum = 0;
+  let totalRelIntensityTonnage = 0;
+  let zoneHeavy = 0; // > 85%
+  let zoneModerate = 0; // 70% - 85%
+  let zoneLight = 0; // < 70%
+  let totalRelSetsCount = 0;
+
+  for (const sessionGroup of workoutsByDate.values()) {
+    for (const session of sessionGroup) {
+      for (const s of session.sets) {
+        if (s.set_type !== 'warmup') {
+          // Effort (RPE)
+          const effRpe = s.rpe != null ? s.rpe : s.rir != null ? 10 - s.rir : null;
+          if (effRpe != null && effRpe > 0) {
+            totalRpeSum += effRpe;
+            totalRpeSets++;
+            if (effRpe >= 8.0) {
+              highIntensitySets++;
+            }
+            if (effRpe < 7.0) rpeSubmaximal++;
+            else if (effRpe <= 7.5) rpeModerate++;
+            else if (effRpe <= 8.5) rpeHard++;
+            else rpeMaximal++;
+          }
+
+          // Relative Intensity (% 1RM)
+          const bestE1rm = bestE1rmMap.get(s.exercise_id);
+          if (bestE1rm && bestE1rm > 0 && s.weight && s.weight > 0 && s.reps && s.reps > 0) {
+            const relIntensityFraction = Math.min(1.2, s.weight / bestE1rm);
+            const setTonnage = s.weight * s.reps;
+            weightedRelIntensitySum += setTonnage * relIntensityFraction;
+            totalRelIntensityTonnage += setTonnage;
+            totalRelSetsCount++;
+
+            if (relIntensityFraction > 0.85) zoneHeavy++;
+            else if (relIntensityFraction >= 0.70) zoneModerate++;
+            else zoneLight++;
+          }
+        }
+      }
+    }
+  }
+
+  const avgRpe =
+    totalRpeSets > 0 ? Number((totalRpeSum / totalRpeSets).toFixed(1)) : null;
+  const highIntensityRatioPercent =
+    totalRpeSets > 0 ? Math.round((highIntensitySets / totalRpeSets) * 100) : 0;
+
+  const toBucketPercent = (count: number, total: number) =>
+    total > 0 ? Math.round((count / total) * 100) : 0;
+
+  const rpeBuckets: IntensityDistributionBucket[] = [
+    {
+      label: '< 7.0 (Submaximal)',
+      count: rpeSubmaximal,
+      percentage: toBucketPercent(rpeSubmaximal, totalRpeSets),
+    },
+    {
+      label: '7.0–7.5 (Moderate)',
+      count: rpeModerate,
+      percentage: toBucketPercent(rpeModerate, totalRpeSets),
+    },
+    {
+      label: '8.0–8.5 (Stimulating)',
+      count: rpeHard,
+      percentage: toBucketPercent(rpeHard, totalRpeSets),
+    },
+    {
+      label: '9.0–10.0 (Maximal)',
+      count: rpeMaximal,
+      percentage: toBucketPercent(rpeMaximal, totalRpeSets),
+    },
+  ];
+
+  const avgRelativeIntensityPercent =
+    totalRelIntensityTonnage > 0
+      ? Number(((weightedRelIntensitySum / totalRelIntensityTonnage) * 100).toFixed(1))
+      : null;
+
+  const loadZoneBuckets: IntensityDistributionBucket[] = [
+    {
+      label: 'Heavy (> 85% 1RM)',
+      count: zoneHeavy,
+      percentage: toBucketPercent(zoneHeavy, totalRelSetsCount),
+    },
+    {
+      label: 'Moderate (70–85% 1RM)',
+      count: zoneModerate,
+      percentage: toBucketPercent(zoneModerate, totalRelSetsCount),
+    },
+    {
+      label: 'Light (< 70% 1RM)',
+      count: zoneLight,
+      percentage: toBucketPercent(zoneLight, totalRelSetsCount),
+    },
+  ];
+
+  return {
+    weekStartDate: mondayIso,
+    weekEndDate: sundayIso,
+    totalTonnageKg: Math.round(totalWeekTonnage),
+    totalWorkingSets: totalWeekWorkingSets,
+    completedWorkoutsCount: weekWorkouts.length,
+    dailyWorkloads,
+    muscleGroupVolumes,
+    intensity: {
+      avgRpe,
+      highIntensitySetCount: highIntensitySets,
+      highIntensityRatioPercent,
+      rpeBuckets,
+      avgRelativeIntensityPercent,
+      loadZoneBuckets,
+    },
+  };
+}

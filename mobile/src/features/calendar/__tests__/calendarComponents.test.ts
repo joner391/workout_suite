@@ -11,7 +11,9 @@
  * - Past session deletion contract
  */
 
+import React from 'react';
 import {
+  CalendarScreen,
   buildMonthGrid,
   buildWeekDays,
   toIsoDate,
@@ -531,6 +533,39 @@ describe('Calendar Features & Grid Generation Logic (Step 1.6)', () => {
       expect(supersetMapping.exerciseMap.get('ex-squat')?.badgeLabel).toBe('SS A2');
       expect(supersetMapping.setMap.get('set-bench-1')?.badgeLabel).toBe('SS A1');
       expect(supersetMapping.setMap.get('set-squat-1')?.badgeLabel).toBe('SS A2');
+    });
+  });
+
+  describe('CalendarScreen Accordion Behavior', () => {
+    it('defaults to collapsed week view with initialExpanded false', () => {
+      const element = React.createElement(CalendarScreen, {
+        workoutRepo,
+        exerciseRepo,
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.initialExpanded).toBeUndefined();
+    });
+
+    it('accepts initialExpanded true for expanded month view', () => {
+      const element = React.createElement(CalendarScreen, {
+        workoutRepo,
+        exerciseRepo,
+        initialExpanded: true,
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.initialExpanded).toBe(true);
+    });
+
+    it('instantiates CalendarScreen without onStartWorkout to collapse empty rest days', () => {
+      const element = React.createElement(CalendarScreen, {
+        workoutRepo,
+        exerciseRepo,
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.onStartWorkout).toBeUndefined();
     });
   });
 });

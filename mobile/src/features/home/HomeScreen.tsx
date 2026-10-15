@@ -36,8 +36,17 @@ import {
 } from '../../services/dashboardMetricsService';
 import { CalendarScreen } from '../calendar/CalendarScreen';
 import { PlotsScreen } from '../plots/PlotsScreen';
+import { WorkloadDeepDiveModal } from '../plots/WorkloadDeepDiveModal';
 import { BodyMetricsScreen } from '../bodyMetrics/BodyMetricsScreen';
-import { WorkoutTemplate, Program } from '../../core/types';
+import { SBDBalanceRadarChart } from '../inspection/SBDBalanceRadarChart';
+import { ExerciseInspectionService } from '../../services/exerciseInspectionService';
+import {
+  WorkoutTemplate,
+  Program,
+  SBDBalanceProfile,
+  Gender,
+  WeightUnit,
+} from '../../core/types';
 
 export interface HomeScreenProps {
   workoutRepo: IWorkoutRepository;
@@ -48,7 +57,7 @@ export interface HomeScreenProps {
   programBlockService?: ProgramBlockService;
   bodyMetricsRepo?: IBodyMetricsRepository;
   userProfileRepo?: IUserProfileRepository;
-  onNavigateToWorkout: () => void;
+  onNavigateToWorkout?: () => void;
   onNavigateToProfile?: () => void;
 }
 
@@ -65,6 +74,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigateToProfile,
 }) => {
   const [showBodyMetricsModal, setShowBodyMetricsModal] = useState<boolean>(false);
+  const [showRadarModal, setShowRadarModal] = useState<boolean>(false);
+  const [showWorkloadModal, setShowWorkloadModal] = useState<boolean>(false);
+  const [sbdProfile, setSbdProfile] = useState<SBDBalanceProfile | null>(null);
+  const [userGender, setUserGender] = useState<Gender>('male');
+  const [userBodyweightKg, setUserBodyweightKg] = useState<number | null>(null);
+  const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
   const [loading, setLoading] = useState<boolean>(true);
   const [activeInfo, setActiveInfo] = useState<ActiveProgramInfo | null>(null);
   const [nextTemplate, setNextTemplate] = useState<WorkoutTemplate | null>(null);
@@ -75,6 +90,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       setLoading(true);
       const metrics = await computeDashboardMetrics(workoutRepo);
       setWeeklyMetrics(metrics);
+
+      if (userSettingsRepo) {
+        try {
+          const [gender, bw, unit] = await Promise.all([
+            userSettingsRepo.getUserGender(),
+            userSettingsRepo.getUserBodyweight(),
+            userSettingsRepo.getUnitSystem(),
+          ]);
+          setUserGender(gender);
+          setUserBodyweightKg(bw);
+          setUnitSystem(unit);
+
+          if (bw && bw > 0) {
+            const inspectionService = new ExerciseInspectionService(workoutRepo, exerciseRepo);
+            const profile = await inspectionService.getSBDBalanceProfile({
+              gender,
+              bodyweightKg: bw,
+            });
+            setSbdProfile(profile);
+          } else {
+            setSbdProfile(null);
+          }
+        } catch {
+          // Ignore
+        }
+      }
 
       if (programBlockService && programRepo) {
         try {
@@ -110,7 +151,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [workoutRepo, programRepo, programBlockService]);
+  }, [workoutRepo, exerciseRepo, userSettingsRepo, programRepo, programBlockService]);
 
   useEffect(() => {
     loadDashboardData();
@@ -173,28 +214,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </Text>
                 )}
               </View>
-
-              <TouchableOpacity
-                testID="home-start-next-workout-btn"
-                style={styles.startNowBtn}
-                onPress={onNavigateToWorkout}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.startNowBtnText}>Start Now ⚡</Text>
-              </TouchableOpacity>
             </View>
           ) : (
             <View testID="next-workout-empty-card" style={styles.noProgramCard}>
               <Text style={styles.noProgramCardText}>
                 No program active. Visit your profile to synthesize or pick a program.
               </Text>
-              <TouchableOpacity
-                testID="home-start-freestyle-btn"
-                style={styles.freestyleBtn}
-                onPress={onNavigateToWorkout}
-              >
-                <Text style={styles.freestyleBtnText}>Start Freestyle Workout ⚡</Text>
-              </TouchableOpacity>
             </View>
           )}
 
@@ -238,19 +263,78 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               gearRepo={gearRepo}
               userSettingsRepo={userSettingsRepo}
               programBlockService={programBlockService}
-              onStartWorkout={() => onNavigateToWorkout()}
             />
           </View>
         </View>
 
         {/* ==================================================================== */}
-        {/* 3. BOTTOM SECTION — LONGITUDINAL ANALYTICS & INSIGHTS (Phase 5)      */}
+        {/* 3. PERFORMANCE ANALYTICS (e1RM, Volume Tonnage & DOTS Progression)   */}
         {/* ==================================================================== */}
-        <View testID="home-analytics-mount-section" style={styles.analyticsSection}>
+        <View testID="home-performance-section" style={styles.analyticsSection}>
           <View style={styles.analyticsHeaderRow}>
             <View>
-              <Text style={styles.sectionSubtitle}>PERFORMANCE & PHYSIQUE</Text>
-              <Text style={styles.sectionTitle}>Longitudinal Analytics</Text>
+              <Text style={styles.sectionSubtitle}>STRENGTH & WORK CAPACITY</Text>
+              <Text style={styles.sectionTitle}>Performance Analytics</Text>
+            </View>
+
+            <TouchableOpacity
+              testID="home-workload-deep-dive-btn"
+              style={styles.deepDiveHeaderBtn}
+              onPress={() => setShowWorkloadModal(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.deepDiveHeaderBtnText}>Workload Deep Dive 🔍</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Allometric Strength & DOTS Intelligence Card (Always Displayed) */}
+          <TouchableOpacity
+            testID="home-dots-progression-btn"
+            style={styles.dotsCardFull}
+            onPress={() => setShowRadarModal(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.dotsCardHeader}>
+              <View style={styles.dotsBadgeRow}>
+                <Text style={styles.analyticsCardBadge}>ALLOMETRIC COEFFICIENT</Text>
+                {sbdProfile?.dotsScore ? (
+                  <Text style={styles.dotsScoreHighlight}>
+                    {sbdProfile.dotsScore.toFixed(1)} <Text style={styles.dotsScoreUnit}>pts</Text>
+                  </Text>
+                ) : null}
+              </View>
+              <Text style={styles.dotsCardActionHint}>Inspect ➔</Text>
+            </View>
+            <Text style={styles.analyticsCardTitle}>DOTS Progression & SBD Balance</Text>
+            <Text style={styles.analyticsCardDesc}>
+              {sbdProfile?.dotsScore
+                ? `Current score: ${sbdProfile.dotsScore.toFixed(1)} points across SBD relative to ${userBodyweightKg ? userBodyweightKg.toFixed(1) : ''} ${unitSystem}. Tap to inspect balance radar & strength standards.`
+                : 'Bodyweight-normalized coefficient tracking pure strength-to-mass ratio changes. Tap to inspect balance radar & strength standards.'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Performance Plots: e1RM Trends & Volume Tonnage */}
+          <PlotsScreen
+            workoutRepo={workoutRepo}
+            exerciseRepo={exerciseRepo}
+            bodyMetricsRepo={bodyMetricsRepo}
+            programRepo={programRepo}
+            programBlockService={programBlockService}
+            userSettingsRepo={userSettingsRepo}
+            targetGroup="performance"
+            initialChartType="e1rm"
+            isInline={true}
+          />
+        </View>
+
+        {/* ==================================================================== */}
+        {/* 4. BODY COMPOSITION (Bodyweight, Body Fat % & Circumferences)        */}
+        {/* ==================================================================== */}
+        <View testID="home-body-composition-section" style={styles.analyticsSection}>
+          <View style={styles.analyticsHeaderRow}>
+            <View>
+              <Text style={styles.sectionSubtitle}>PHYSIQUE & ANTHROPOMETRY</Text>
+              <Text style={styles.sectionTitle}>Body Composition</Text>
             </View>
 
             {bodyMetricsRepo && (
@@ -264,7 +348,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             )}
           </View>
 
-          {/* Interactive 5-Chart Time-Series with Program Era Shading */}
+          {/* Body Composition Plots: Bodyweight, Body Fat %, Circumferences */}
           <PlotsScreen
             workoutRepo={workoutRepo}
             exerciseRepo={exerciseRepo}
@@ -272,34 +356,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             programRepo={programRepo}
             programBlockService={programBlockService}
             userSettingsRepo={userSettingsRepo}
+            targetGroup="body_composition"
+            initialChartType="bodyweight"
             isInline={true}
             onNavigateToBodyMetrics={() => setShowBodyMetricsModal(true)}
           />
-
-          {/* Reserved Phase 6 Biomechanical Insights Cards */}
-          <View style={styles.analyticsGrid}>
-            <View style={styles.analyticsCard}>
-              <View style={styles.analyticsCardHeader}>
-                <Text style={styles.analyticsCardIcon}>⚡</Text>
-                <Text style={styles.analyticsCardBadge}>PHASE 6</Text>
-              </View>
-              <Text style={styles.analyticsCardTitle}>DOTS Progression</Text>
-              <Text style={styles.analyticsCardDesc}>
-                Bodyweight-normalized coefficient tracking pure strength-to-mass ratio changes.
-              </Text>
-            </View>
-
-            <View style={styles.analyticsCard}>
-              <View style={styles.analyticsCardHeader}>
-                <Text style={styles.analyticsCardIcon}>🕸️</Text>
-                <Text style={styles.analyticsCardBadge}>PHASE 6</Text>
-              </View>
-              <Text style={styles.analyticsCardTitle}>Symmetry Radar</Text>
-              <Text style={styles.analyticsCardDesc}>
-                Push vs Pull and Upper vs Lower volume ratios to identify structural imbalances.
-              </Text>
-            </View>
-          </View>
         </View>
       </ScrollView>
 
@@ -319,6 +380,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           />
         </Modal>
       )}
+
+      {/* SBD Symmetry Radar & DOTS Intelligence Modal */}
+      <Modal
+        visible={showRadarModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowRadarModal(false)}
+      >
+        <SBDBalanceRadarChart
+          balanceProfile={sbdProfile}
+          gender={userGender}
+          bodyweightKg={userBodyweightKg}
+          unitSystem={unitSystem}
+          onClose={() => setShowRadarModal(false)}
+          onOpenProfile={() => {
+            setShowRadarModal(false);
+            onNavigateToProfile?.();
+          }}
+        />
+      </Modal>
+
+      {/* Workload, Volume Landmarks & Intensity Deep Dive Modal */}
+      <WorkloadDeepDiveModal
+        visible={showWorkloadModal}
+        workoutRepo={workoutRepo}
+        exerciseRepo={exerciseRepo}
+        userSettingsRepo={userSettingsRepo}
+        onClose={() => setShowWorkloadModal(false)}
+      />
     </View>
   );
 };
@@ -499,7 +589,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   calendarWrapper: {
-    minHeight: 520,
+    minHeight: 180,
   },
   analyticsSection: {
     padding: 16,
@@ -573,5 +663,53 @@ const styles = StyleSheet.create({
     color: '#71717A',
     fontSize: 10,
     lineHeight: 14,
+  },
+  dotsCardFull: {
+    width: '100%',
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  dotsCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  dotsBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dotsScoreHighlight: {
+    color: '#00E676',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  dotsScoreUnit: {
+    color: '#71717A',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  dotsCardActionHint: {
+    color: '#00E676',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  deepDiveHeaderBtn: {
+    backgroundColor: '#1E293B',
+    borderColor: '#38BDF8',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  deepDiveHeaderBtnText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

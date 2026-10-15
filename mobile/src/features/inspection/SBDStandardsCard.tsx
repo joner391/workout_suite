@@ -85,10 +85,7 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
 
   // Convert kg needed to current display unit
   const kgNeeded = standardResult?.kgNeededForNextTier ?? 0;
-  const loadNeededDisplay =
-    unitSystem === 'lbs'
-      ? `${formatWeight(kgToLbs(kgNeeded))} lbs`
-      : `${formatWeight(kgNeeded)} kg`;
+  const loadNeededDisplay = formatWeight(kgNeeded, unitSystem);
 
   // Continuous score percentage through current tier (0 - 100%)
   const score = standardResult?.continuousScore ?? 0;
@@ -196,7 +193,7 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
           <Text style={styles.profileBadgeText}>
             {userGender === 'male' ? '♂ Male' : '♀ Female'} •{' '}
             {userBodyweightKg
-              ? `${formatWeight(unitSystem === 'lbs' ? kgToLbs(userBodyweightKg) : userBodyweightKg)} ${unitSystem}`
+              ? formatWeight(userBodyweightKg, unitSystem)
               : 'Set BW'}
           </Text>
           <Text style={styles.profileEditIcon}>✏️</Text>
@@ -380,7 +377,7 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
                   </Text>
                 </View>
                 <Text style={styles.dotsSubtext}>
-                  Non-linear 4th-order polynomial score for {userGender} ({formatWeight(userBodyweightKg)} kg).
+                  Non-linear 4th-order polynomial score for {userGender} ({formatWeight(userBodyweightKg, unitSystem)}).
                 </Text>
               </View>
             </View>

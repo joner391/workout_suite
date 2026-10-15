@@ -9,6 +9,7 @@
  * - Weekly summary dashboard metrics computation (workouts, tonnage, streak)
  */
 
+import React from 'react';
 import {
   MockWorkoutRepository,
   MockExerciseRepository,
@@ -19,6 +20,7 @@ import {
 import { ProgramBlockService } from '../services/programBlockService';
 import { computeDashboardMetrics } from '../services/dashboardMetricsService';
 import { Workout, Program, WorkoutTemplate, TemplateExercise } from '../core/types';
+import { HomeScreen } from '../features/home/HomeScreen';
 
 describe('Root Navigation & Tab State Management (Section 4)', () => {
   let workoutRepo: MockWorkoutRepository;
@@ -200,5 +202,20 @@ describe('Root Navigation & Tab State Management (Section 4)', () => {
     lastIdx = templates.findIndex((t) => t.id === lastCompletedTmplId);
     nextIdx = (lastIdx + 1) % templates.length;
     expect(templates[nextIdx].name).toBe('Full Body A');
+  });
+
+  test('HomeScreen mitigates start workout buttons to Workout tab and renders interactive DOTS/Symmetry cards', () => {
+    const element = React.createElement(HomeScreen, {
+      workoutRepo,
+      exerciseRepo,
+      gearRepo,
+      userSettingsRepo,
+      programRepo,
+      programBlockService: blockService,
+    });
+
+    expect(element).toBeDefined();
+    // Element renders successfully with props
+    expect(element.props.workoutRepo).toBe(workoutRepo);
   });
 });

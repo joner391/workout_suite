@@ -88,7 +88,8 @@ c:/Programmering/Eget/Workout_suite/
 │       │       ├── importService.test.ts
 │       │       ├── exerciseInspectionService.test.ts
 │       │       ├── programBlockService.test.ts
-│       │       └── programCloneService.test.ts
+│       │       ├── programCloneService.test.ts
+│       │       └── workloadAnalysisService.test.ts
 │       ├── features/
 │       │   ├── home/
 │       │   │   ├── index.ts
@@ -147,8 +148,10 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   ├── index.ts
 │       │   │   ├── PlotsScreen.tsx
 │       │   │   ├── ProgramEraShadedChart.tsx
+│       │   │   ├── WorkloadDeepDiveModal.tsx
 │       │   │   └── __tests__/
-│       │   │       └── plotsComponents.test.ts
+│       │   │       ├── plotsComponents.test.ts
+│       │   │       └── workloadDeepDiveComponents.test.ts
 │       │   ├── bodyMetrics/
 │       │   │   ├── index.ts
 │       │   │   ├── BodyMetricsScreen.tsx
@@ -156,6 +159,7 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │       └── bodyMetricsComponents.test.ts
 │       │   ├── import/
 │       │   │   ├── ImportScreen.tsx
+│       │   │   ├── dummyDataPresets.ts
 │       │   │   └── __tests__/
 │       │   │       └── importComponents.test.ts
 │       │   └── settings/
@@ -270,7 +274,19 @@ c:/Programmering/Eget/Workout_suite/
     - *15-Minute Target Duration*: Exactly 4 exercises in 2 antagonist pairs, 2 sets each (8 total working sets), 0s intra-pair rest, 90s inter-pair rest.
     - *4-Hub Navigation Overhaul*: Root navigation transitioned to `HOME (🏠)` (`HomeScreen.tsx` with status dashboard, calendar agenda, analytics mount point), `WORKOUT (⚡)` (`WorkoutTabRouter.tsx` resolving State A in-progress logger, State B pre-flight screen with circular template sequencing, and State C empty state), `PROFILE (👤)` (`UserProfileScreen.tsx`), and `SETTINGS (⚙️)` (`SettingsScreen.tsx`). (577 mobile tests passing total, 44 test suites, `npx tsc --noEmit` and `pytest` 9/9 passing verified).
   - **Step 4.6 (Phase 4 Refinements — Equipment Access & 3-Level Implement Assignment)**: `[x]` Completed — Implemented ADR-040: Relocated Equipment Inventory to `UserProfileScreen` under 'Equipment Access', removed misleading full-card green default highlights in `GearInventoryScreen`, restricted global 'Set Default' on specialty bars (SSB, Trap Bar) while preserving fallback on standard barbells, added 3-level gear selection (Exercise catalog presets in `ExerciseFormModal`, Program template prescriptions in `PrescriptionEditorModal`, and Active Logger 1-tap switcher `GearPickerModal` in `ActiveLoggerScreen`), and confirmed bar tare isolation preventing specialty bars from ever swapping onto Bench Press or Deadlift (582 mobile tests passing total, 44 test suites, `npx tsc --noEmit` and `pytest` 9/9 passing verified).
-  - **Step 4.7 (Phase 4 Refinements — Questionnaire Consolidation & Radar Formatting)**: `[x]` Completed — Consolidated Athlete Questionnaire exclusively into `UserProfileScreen` as an OLED accordion card (collapsed by default with preference summary chips, expandable on demand to prevent UI clutter) and removed redundant questionnaire access from `SettingsScreen`. Fixed LaTeX markup typo (`$\ge 8.0$` -> `≥ 8.0`) in `SBDBalanceRadarChart.tsx` educational copy (647 mobile tests passing total across 49 test suites, `npx tsc --noEmit` and `pytest companion/tests` 9/9 passing verified).
+  - **Step 4.8 (UI Refinements — Home Hub, Calendar Accordion & Inspection Unit Formatting)**: `[x]` Completed —
+    - *PR Board & Inspection Unit Formatting*: Resolved double-unit bug ("kg kg" / "kg lbs") across `PRBoardTable.tsx`, `ExerciseDetailScreen.tsx`, `SBDBalanceRadarChart.tsx`, and `SBDStandardsCard.tsx` by relying strictly on `formatWeight(kg, unitSystem)` without manual suffix concatenation or duplicate `kgToLbs` conversions.
+    - *Calendar Accordion Overhaul*: Re-architected `CalendarScreen.tsx` with `initialExpanded` prop (defaulting `false`), rendering only the active 7-day week row when collapsed and expanding on demand to the full 7-column monthly grid via header toggle buttons and an interactive accordion bar handle (`calendar-accordion-handle`).
+    - *Workout Start Mitigation*: Removed all 3 workout start trigger buttons from the Home screen (`home-start-next-workout-btn`, `home-start-freestyle-btn`, and Calendar embedded `addWorkoutButton`/`startSessionOutlineButton`) to strictly funnel session initialization into Tab 2 `WORKOUT` (`WorkoutTabRouter.tsx`).
+    - *Interactive DOTS & Symmetry Analytics*: Removed the lightning badge (`⚡`) from the DOTS Progression card and transformed both "DOTS Progression" and "Symmetry Radar" cards into touchable triggers opening the `SBDBalanceRadarChart` modal with live allometric multi-axis balance and composite DOTS powerlifting scores (665 mobile tests passing total across 49 test suites, `npx tsc --noEmit` verified).
+  - **Step 4.9 (UI Polish — Plot Partitioning, Calendar Rest Day Collapse & Persistent DOTS)**: `[x]` Completed —
+    - *Calendar Rest Day Collapse*: In `CalendarScreen.tsx`, suppressed `emptyAgendaContainer` and conditionalized `agendaHeaderRow` to collapse rest/recovery days into 0 vertical height when no workouts are logged, saving extensive scroll real estate.
+    - *Plot Group Partitioning*: In `PlotsScreen.tsx`, split 5 time-series charts into two distinct groups (`targetGroup?: 'performance' | 'body_composition'`) with `PERFORMANCE_CHARTS` (`e1rm`, `volume`) and `BODY_COMPOSITION_CHARTS` (`bodyweight`, `body_fat`, `circumferences`), plus an interactive group segment toggle when `targetGroup` is unset.
+    - *Home Dashboard Dual-Section Split*: In `HomeScreen.tsx`, partitioned the lower dashboard into **Performance Analytics** (with persistent, full-width `DOTS Progression` card showing live DOTS coefficient and tapping to inspect SBD Balance) and **Body Composition** (with `Log Body ⚖️` quick action and dedicated physique plots). Removed redundant half-width `Symmetry Radar` button. (669 mobile tests passing across 49 test suites, `npx tsc --noEmit` verified).
+  - **Step 4.10 (Workload, Volume Landmarks & Dual Intensity Intelligence Suite)**: `[x]` Completed —
+    - *Workload Analysis Engine (`workloadAnalysisService.ts`)*: Implemented calendar-aware Monday–Sunday weekly workload synthesizer calculating hypertrophy volume landmarks per muscle group (categorized into Low/Maintenance, Optimal MAV 8–18 sets, High, and Fatigue Risk), daily session tonnage and working set distributions across all 7 days, and dual intensity profiling.
+    - *Dual-Faceted Intensity Intelligence*: Developed simultaneous calculation of Effort Intensity (mean working RPE, stimulating set ratio for RPE $\ge 8.0$, and 4-tier distribution) alongside Relative Load Intensity (volume-load weighted % of e1RM via Lombardi power law, with Heavy $>85\%$, Moderate $70–85\%$, and Light $<70\%$ training load zones).
+    - *Workload Deep Dive Modal (`WorkloadDeepDiveModal.tsx`)*: Full-screen interactive inspection modal accessible via `home-workload-deep-dive-btn` in the Home screen's Performance Analytics header. Includes calendar week navigation (with "THIS WEEK" active indicator), 4-metric KPI summary strip, muscle group landmark progress tracks, daily session comparison cards, and dual intensity distribution charts. (674 mobile tests passing across 51 test suites, `npx tsc --noEmit` verified).
 - **Phase 5: Anthropometry, Body Composition & Longitudinal Plotting**
   - **Step 5.1: U.S. Navy Body Fat, Rolling Averages & Body Metrics Repository**: `[x]` Completed — Implemented ADR-041: Official DoD metric body density formula with Siri equation (`navyBodyFat.ts`) with male and female circumference equations in cm, strict anatomical guards, physiological bounds clamping, dual-curve bodyweight smoothing (calendar-aware 7-day SMA and exponential smoothing EMA $\alpha=0.25$), abstract repository interface (`IBodyMetricsRepository.ts`), in-memory mock (`MockBodyMetricsRepository.ts`), and concrete SQLite repository (`SQLiteBodyMetricsRepository.ts`) with automatic active `user_profiles` resolution and persistence (618 mobile tests passing total across 47 test suites, `npx tsc --noEmit` and `npm run lint` verified).
   - **Step 5.2: Body Metrics Screen & Longitudinal Plots with Program Era Shading**: `[x]` Completed — Implemented ADR-042: Reusable SVG time-series chart wrapper with meso-cycle program era shading (`ProgramEraShadedChart.tsx`), complete 5-chart longitudinal suite (`PlotsScreen.tsx` for e1RM progression, bodyweight with 7-day rolling SMA/EMA, body fat %, circumferences, and Monday-bucketed volume tonnage), anthropometry logger (`BodyMetricsScreen.tsx`), bidirectional metric/imperial unit conversion (`unitConversion.ts`), and HomeScreen inline integration (644 mobile tests passing total across 49 test suites, `npx tsc --noEmit` and `pytest companion/tests` 9/9 passing verified).
@@ -334,7 +350,7 @@ When code generation begins in subsequent phases, components must be placed into
   - `features/profile/` — `UserProfileScreen.tsx`, Training Mentality matrix (`fury`, `precision`, `get_out`), demographics, logistics (including 15m duration), Equipment Access hub (`GearInventoryScreen` modal integration), 1-tap generator, active program banner.
   - `features/bodyMetrics/` — `BodyMetricsScreen.tsx`, tape measurement inputs, body fat estimator, 7-day rolling average.
   - `features/plots/` — `PlotsScreen.tsx`, time-series charts with program era shaded bands, SBD Symmetry & Balance Radar chart, demographic cohort percentiles.
-  - `features/import/` — `ImportScreen.tsx`, Strong CSV / Hevy CSV / generic parsers, exercise mapping UI, duplicate detection.
+  - `features/import/` — `ImportScreen.tsx`, `dummyDataPresets.ts`, Strong CSV / Hevy CSV / Liftosaur CSV / StrengthLog Training & Body Comp CSV parsers, 1-tap Expo Go evaluation preset loaders, exercise mapping wizard UI, duplicate session detection, and date range filtering.
   - `features/settings/` — `SettingsScreen.tsx`, units, RPE/RIR preferences, `pure_utility_mode` toggle, export trigger, calibrated parameter import trigger.
 - `mobile/src/services/` — Application orchestration services.
   - `programCloneService.ts` — Deep cloning service protecting pre-built/synthesized templates by cloning to custom (`prog_custom_<ts>_<hash>`).
@@ -346,7 +362,7 @@ When code generation begins in subsequent phases, components must be placed into
   - `programRecommenderService.ts` — Profile-driven routine synthesizer mapping psychology and goals to template exercises and progression rules.
   - `cohortBenchmarkService.ts` — Local-first population percentile comparisons (Phase 3) and cloud social leaderboard synchronization (Phase 7).
   - `exportService.ts` — JSON serializer and OS Share Sheet integration (`expo-sharing`).
-  - `importService.ts` — External app CSV/JSON parser, exercise mapper, and provenance tagger.
+  - `importService.ts` — External app CSV/JSON parser, multi-source exercise catalog mapper, body metrics importer, duplicate session detector, and provenance tagger.
   - `calibratedParamService.ts` — Reads `calibrated_parameters.json` and writes to `calibrated_params` table.
   - `crashRecoveryService.ts` — Detects `status = 'in_progress'` sessions on startup and triggers Resume/Discard flow.
   - `restTimerService.ts` — Background timer triggers, superset group awareness, and audio/haptic cues.

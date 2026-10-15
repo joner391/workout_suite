@@ -11,18 +11,21 @@
 import { ImportService } from '../importService';
 import { MockWorkoutRepository } from '../../database/mocks/MockWorkoutRepository';
 import { MockExerciseRepository } from '../../database/mocks/MockExerciseRepository';
+import { MockBodyMetricsRepository } from '../../database/mocks/MockBodyMetricsRepository';
 import { DEFAULT_EXERCISES } from '../../database/seeds/defaultExercises';
 import { Workout, WorkoutSet } from '../../core/types';
 
 describe('ImportService', () => {
   let workoutRepo: MockWorkoutRepository;
   let exerciseRepo: MockExerciseRepository;
+  let bodyMetricsRepo: MockBodyMetricsRepository;
   let service: ImportService;
 
   beforeEach(() => {
     workoutRepo = new MockWorkoutRepository();
     exerciseRepo = new MockExerciseRepository(DEFAULT_EXERCISES);
-    service = new ImportService(workoutRepo, exerciseRepo);
+    bodyMetricsRepo = new MockBodyMetricsRepository();
+    service = new ImportService(workoutRepo, exerciseRepo, bodyMetricsRepo);
   });
 
   describe('Exercise Matching', () => {
@@ -226,6 +229,85 @@ describe('ImportService', () => {
       const createdWorkouts = await workoutRepo.findAll();
       const sets = await workoutRepo.getSetsByWorkoutId(createdWorkouts[0].id);
       expect(sets[0].exercise_id).toBe('dumbbell_bench_press');
+    });
+  });
+
+  describe('Liftosaur & StrengthLog Import Integration', () => {
+    it('matches common direct exercise names without parentheses', async () => {
+      const bench = await service.matchExercise('Bench Press');
+      expect(bench.matchedExercise?.id).toBe('barbell_bench_press');
+
+      const closeGrip = await service.matchExercise('Bench Press Close Grip');
+      expect(closeGrip.matchedExercise?.id).toBe('barbell_close_grip_bench_press');
+
+      const overhead = await service.matchExercise('Overhead Press');
+      expect(overhead.matchedExercise?.id).toBe('barbell_overhead_press');
+
+      const deadlift = await service.matchExercise('Deadlift');
+      expect(deadlift.matchedExercise?.id).toBe('barbell_deadlift');
+
+      const stiffLeg = await service.matchExercise('Stiff Leg Deadlift');
+      expect(stiffLeg.matchedExercise?.id).toBe('barbell_rdl');
+
+      const ssbSquat = await service.matchExercise('Low bar ssb squat');
+      expect(ssbSquat.matchedExercise?.id).toBe('barbell_back_squat');
+
+      const latPulldown = await service.matchExercise('Lat Pulldown');
+      expect(latPulldown.matchedExercise?.id).toBe('cable_lat_pulldown');
+
+      const tricepsPushdown = await service.matchExercise('Triceps Pushdown');
+      expect(tricepsPushdown.matchedExercise?.id).toBe('cable_tricep_pushdown');
+
+      const pullUp = await service.matchExercise('Pull-Up');
+      expect(pullUp.matchedExercise?.id).toBe('bodyweight_pull_up');
+    });
+
+    it('imports body composition data into body metrics repository', async () => {
+      const csv = `type,timestamp,value,unit
+bodyweight,1767171881662,83,kg
+body-comp,1767172155336,22.6,%
+waist,1767172155336,87,cm`;
+
+      const result = await service.importBodyMetrics(csv);
+      expect(result.importedCount).toBe(1);
+      expect(result.errors).toHaveLength(0);
+
+      const saved = await bodyMetricsRepo.getAll();
+      expect(saved).toHaveLength(1);
+      expect(saved[0].date).toBe('2025-12-31');
+      expect(saved[0].bodyweight).toBe(83);
+      expect(saved[0].body_fat_manual).toBe(22.6);
+      expect(saved[0].waist_cm).toBe(87);
+    });
+
+    it('filters preview by date range without re-parsing', async () => {
+      const csv = `Workout DateTime,Program,Day Name,Exercise,Completed Reps,Completed Weight Value,Completed Weight Unit
+2026-05-01T09:00:00.000Z,Prog,D1,Bench Press,5,80,kg
+2026-08-01T09:00:00.000Z,Prog,D2,Bench Press,5,85,kg
+2026-10-01T09:00:00.000Z,Prog,D3,Bench Press,5,90,kg`;
+
+      const parsed = service.parseCsv(csv, 'liftosaur');
+      const preview = await service.generatePreview(parsed);
+      expect(preview.totalWorkouts).toBe(3);
+
+      const filtered = service.filterPreviewByDateRange(preview, '2026-07-01', '2026-09-01');
+      expect(filtered.totalWorkouts).toBe(1);
+      expect(filtered.workouts[0].workout.date).toBe('2026-08-01');
+      expect(filtered.totalSets).toBe(1);
+    });
+
+    it('imports evaluation preset last_3_months smoothly', async () => {
+      const result = await service.importEvaluationData('last_3_months');
+      expect(result.workoutsResult.success).toBe(true);
+      expect(result.workoutsResult.importedWorkoutsCount).toBeGreaterThan(0);
+      expect(result.workoutsResult.importedSetsCount).toBeGreaterThan(0);
+      expect(result.bodyMetricsResult.importedCount).toBeGreaterThan(0);
+
+      const allWorkouts = await workoutRepo.findAll();
+      expect(allWorkouts.length).toBe(result.workoutsResult.importedWorkoutsCount);
+
+      const allMetrics = await bodyMetricsRepo.getAll();
+      expect(allMetrics.length).toBe(result.bodyMetricsResult.importedCount);
     });
   });
 });

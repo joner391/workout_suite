@@ -32,6 +32,14 @@ import {
   WorkoutImportPreview,
   ImportExecutionResult,
 } from '../../services/importService';
+import {
+  parseRawCsv,
+  isStrengthLogBodyCompCsv,
+} from '../../core/parsers/csvImportParser';
+import {
+  EvaluationPresetType,
+  EVALUATION_PRESETS,
+} from './dummyDataPresets';
 
 export interface DocumentAsset {
   name: string;
@@ -67,7 +75,11 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
   const [pastedText, setPastedText] = useState<string>('');
   const [showPasteBox, setShowPasteBox] = useState<boolean>(false);
 
+  const [basePreview, setBasePreview] = useState<WorkoutImportPreview | null>(null);
   const [preview, setPreview] = useState<WorkoutImportPreview | null>(null);
+  const [dateFilter, setDateFilter] = useState<'all' | '3m' | '6m'>('all');
+  const [bodyMetricsImportedCount, setBodyMetricsImportedCount] = useState<number>(0);
+
   const [skipDuplicates, setSkipDuplicates] = useState<boolean>(true);
   const [executionResult, setExecutionResult] = useState<ImportExecutionResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -109,6 +121,24 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
     }
   };
 
+  // 1-Tap Evaluation Data Loader for Expo Go
+  const handleLoadEvaluationPreset = async (preset: EvaluationPresetType) => {
+    try {
+      setStep('importing');
+      setErrorMessage(null);
+      const res = await importService.importEvaluationData(preset);
+      setExecutionResult(res.workoutsResult);
+      setBodyMetricsImportedCount(res.bodyMetricsResult.importedCount);
+      setStep('complete');
+      if (onImportComplete) {
+        onImportComplete(res.workoutsResult);
+      }
+    } catch (err: any) {
+      setErrorMessage(`Evaluation load error: ${err?.message || 'Unknown error'}`);
+      setStep('select');
+    }
+  };
+
   // Direct paste handler
   const handleAnalyzePasted = () => {
     if (!pastedText.trim()) {
@@ -123,6 +153,30 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
   const processCsvContent = async (rawCsv: string) => {
     try {
       setErrorMessage(null);
+
+      // Check if this is a body composition CSV export
+      const rawRows = parseRawCsv(rawCsv);
+      if (rawRows.length > 0 && isStrengthLogBodyCompCsv(rawRows[0])) {
+        setStep('importing');
+        const res = await importService.importBodyMetrics(rawCsv);
+        setBodyMetricsImportedCount(res.importedCount);
+        const result: ImportExecutionResult = {
+          success: res.errors.length === 0,
+          importedWorkoutsCount: 0,
+          importedSetsCount: 0,
+          skippedDuplicatesCount: 0,
+          createdExercisesCount: 0,
+          workoutIds: [],
+          errors: res.errors,
+        };
+        setExecutionResult(result);
+        setStep('complete');
+        if (onImportComplete) {
+          onImportComplete(result);
+        }
+        return;
+      }
+
       const formatHint = sourceFormat === 'auto' ? undefined : sourceFormat;
       const parsed = importService.parseCsv(rawCsv, formatHint);
 
@@ -137,11 +191,31 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
       }
 
       const importPreview = await importService.generatePreview(parsed);
+      setBasePreview(importPreview);
       setPreview(importPreview);
+      setDateFilter('all');
       setStep('preview');
     } catch (err: any) {
       setErrorMessage(`Parsing error: ${err?.message || 'Invalid format'}`);
       setStep('select');
+    }
+  };
+
+  // Date range filter handler on Preview screen
+  const handleDateFilterChange = (filter: 'all' | '3m' | '6m') => {
+    setDateFilter(filter);
+    if (!basePreview) return;
+    if (filter === 'all') {
+      setPreview(basePreview);
+    } else {
+      const dates = basePreview.workouts.map((w) => w.workout.date).sort();
+      const latestDateStr = dates.length > 0 ? dates[dates.length - 1] : new Date().toISOString().split('T')[0];
+      const latestDate = new Date(latestDateStr);
+      const months = filter === '3m' ? 3 : 6;
+      latestDate.setMonth(latestDate.getMonth() - months);
+      const startDateStr = latestDate.toISOString().split('T')[0];
+      const filtered = importService.filterPreviewByDateRange(basePreview, startDateStr);
+      setPreview(filtered);
     }
   };
 
@@ -174,7 +248,9 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Import History</Text>
-          <Text style={styles.headerSubtitle}>Strong, Hevy & Generic CSV</Text>
+          <Text style={styles.headerSubtitle}>
+            Liftosaur, StrengthLog, Strong & Hevy CSV
+          </Text>
         </View>
         <TouchableOpacity
           testID="import-close-btn"
@@ -196,10 +272,55 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
       {/* Step 1: File Selection & Options */}
       {step === 'select' && (
         <ScrollView style={styles.scrollContent} contentContainerStyle={styles.scrollContainer}>
-          <Text style={styles.sectionTitle}>SELECT SOURCE FORMAT</Text>
+          {/* Quick Expo Go Evaluation Section */}
+          <View style={styles.evaluationCard}>
+            <Text style={styles.evaluationBadge}>⚡ EXPO GO QUICK EVALUATION</Text>
+            <Text style={styles.evaluationTitle}>Load Evaluation Data</Text>
+            <Text style={styles.cardDescription}>
+              Instant 1-tap loader with your exported Liftosaur and StrengthLog history. Evaluate how the app looks with rich historical data without needing to transfer CSV files to your phone:
+            </Text>
+            <View style={styles.evalButtonRow}>
+              <TouchableOpacity
+                testID="eval-preset-3m-btn"
+                style={styles.evalPresetBtn}
+                onPress={() => handleLoadEvaluationPreset('last_3_months')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.evalPresetBtnTitle}>⚡ Quick Eval: Last 3 Months</Text>
+                <Text style={styles.evalPresetBtnSubtitle}>
+                  ~35 Liftosaur sessions + 10 body composition logs (July – Oct 2026)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="eval-preset-all-btn"
+                style={[styles.evalPresetBtn, styles.evalPresetBtnOutline]}
+                onPress={() => handleLoadEvaluationPreset('all')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.evalPresetBtnTitle, styles.evalPresetBtnTitleOutline]}>
+                  🏛️ Full History: All Time (2.5 Years)
+                </Text>
+                <Text style={[styles.evalPresetBtnSubtitle, styles.evalPresetBtnSubtitleOutline]}>
+                  357 sessions (Liftosaur + StrengthLog), 4,617 sets, 34 body logs
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <Text style={styles.sectionTitle}>OR IMPORT CUSTOM EXPORT FILE</Text>
 
           <View style={styles.formatRow}>
-            {(['auto', 'strong', 'hevy', 'csv'] as const).map((fmt) => (
+            {(
+              [
+                'auto',
+                'liftosaur',
+                'strengthlog',
+                'strong',
+                'hevy',
+                'csv',
+              ] as const
+            ).map((fmt) => (
               <TouchableOpacity
                 key={fmt}
                 testID={`format-btn-${fmt}`}
@@ -217,12 +338,16 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
                   ]}
                 >
                   {fmt === 'auto'
-                    ? '⚡ Auto-Detect'
+                    ? '⚡ Auto'
+                    : fmt === 'liftosaur'
+                    ? 'Liftosaur'
+                    : fmt === 'strengthlog'
+                    ? 'StrengthLog'
                     : fmt === 'strong'
-                    ? 'Strong CSV'
+                    ? 'Strong'
                     : fmt === 'hevy'
-                    ? 'Hevy CSV'
-                    : 'Generic CSV'}
+                    ? 'Hevy'
+                    : 'CSV'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -305,6 +430,38 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
       {step === 'preview' && preview && (
         <ScrollView style={styles.scrollContent} contentContainerStyle={styles.scrollContainer}>
           <Text style={styles.sectionTitle}>IMPORT PREVIEW SUMMARY</Text>
+
+          {/* Date Range Evaluation Filter */}
+          <Text style={styles.sectionSubtitleText}>EVALUATION DATE FILTER</Text>
+          <View style={styles.filterSegmentRow}>
+            {(
+              [
+                { id: 'all', label: 'All History' },
+                { id: '3m', label: 'Last 3 Months' },
+                { id: '6m', label: 'Last 6 Months' },
+              ] as const
+            ).map((f) => (
+              <TouchableOpacity
+                key={f.id}
+                testID={`date-filter-${f.id}`}
+                style={[
+                  styles.filterSegmentChip,
+                  dateFilter === f.id && styles.filterSegmentChipActive,
+                ]}
+                onPress={() => handleDateFilterChange(f.id)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.filterSegmentChipText,
+                    dateFilter === f.id && styles.filterSegmentChipTextActive,
+                  ]}
+                >
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
           {/* Metric cards */}
           <View style={styles.metricsRow}>
@@ -447,6 +604,12 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
               <Text style={styles.resultLabel}>Custom Movements Created</Text>
               <Text style={styles.resultVal}>{executionResult.createdExercisesCount}</Text>
             </View>
+            {bodyMetricsImportedCount > 0 && (
+              <View style={styles.resultRow}>
+                <Text style={styles.resultLabel}>Body Metrics Logged</Text>
+                <Text style={styles.resultVal}>{bodyMetricsImportedCount}</Text>
+              </View>
+            )}
             {executionResult.skippedDuplicatesCount > 0 && (
               <View style={[styles.resultRow, styles.resultRowLast]}>
                 <Text style={styles.resultLabel}>Duplicates Skipped</Text>
@@ -910,5 +1073,93 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 14,
     fontWeight: '900',
+  },
+  sectionSubtitleText: {
+    color: '#71717A',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  evaluationCard: {
+    backgroundColor: '#0F1710',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  evaluationBadge: {
+    color: '#00E676',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  evaluationTitle: {
+    color: '#FAFAFA',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  evalButtonRow: {
+    flexDirection: 'column',
+    gap: 8,
+    marginTop: 12,
+  },
+  evalPresetBtn: {
+    backgroundColor: '#00E676',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignItems: 'flex-start',
+  },
+  evalPresetBtnOutline: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#3F3F46',
+  },
+  evalPresetBtnTitle: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  evalPresetBtnTitleOutline: {
+    color: '#FAFAFA',
+  },
+  evalPresetBtnSubtitle: {
+    color: '#18181B',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  evalPresetBtnSubtitleOutline: {
+    color: '#A1A1AA',
+  },
+  filterSegmentRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  filterSegmentChip: {
+    flex: 1,
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  filterSegmentChipActive: {
+    borderColor: '#00E676',
+    backgroundColor: '#00331A',
+  },
+  filterSegmentChipText: {
+    color: '#A1A1AA',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  filterSegmentChipTextActive: {
+    color: '#00E676',
   },
 });

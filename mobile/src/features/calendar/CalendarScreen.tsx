@@ -49,6 +49,7 @@ export interface CalendarScreenProps {
   programBlockService?: ProgramBlockService;
   onStartWorkout?: (dateIso?: string) => void;
   onSelectWorkout?: (workoutId: string) => void;
+  initialExpanded?: boolean;
 }
 
 export interface CalendarDayItem {
@@ -247,6 +248,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   programBlockService,
   onStartWorkout,
   onSelectWorkout,
+  initialExpanded = false,
 }) => {
   const todayIso = useMemo(() => getTodayIso(), []);
   const initialParsed = useMemo(() => parseIsoDate(todayIso), [todayIso]);
@@ -254,7 +256,8 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   const [currentYear, setCurrentYear] = useState<number>(initialParsed.year);
   const [currentMonth, setCurrentMonth] = useState<number>(initialParsed.month);
   const [selectedDate, setSelectedDate] = useState<string>(todayIso);
-  const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
+  const [isExpanded, setIsExpanded] = useState<boolean>(initialExpanded);
+  const viewMode: CalendarViewMode = isExpanded ? 'month' : 'week';
 
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [programBlocks, setProgramBlocks] = useState<ProgramBlockWithProgram[]>([]);
@@ -420,41 +423,41 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
           </Text>
         </View>
 
-        {/* View Mode Toggle */}
+        {/* View Mode / Accordion Toggle */}
         <View style={styles.viewModeToggle}>
           <TouchableOpacity
             style={[
               styles.modeButton,
-              viewMode === 'month' && styles.modeButtonActive,
+              !isExpanded && styles.modeButtonActive,
             ]}
-            onPress={() => setViewMode('month')}
-            accessibilityLabel="Month View Mode"
+            onPress={() => setIsExpanded(false)}
+            accessibilityLabel="Week View Mode"
           >
             <Text
               style={[
                 styles.modeButtonText,
-                viewMode === 'month' && styles.modeButtonTextActive,
+                !isExpanded && styles.modeButtonTextActive,
               ]}
             >
-              Month
+              Week
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
               styles.modeButton,
-              viewMode === 'week' && styles.modeButtonActive,
+              isExpanded && styles.modeButtonActive,
             ]}
-            onPress={() => setViewMode('week')}
-            accessibilityLabel="Week View Mode"
+            onPress={() => setIsExpanded(true)}
+            accessibilityLabel="Month View Mode"
           >
             <Text
               style={[
                 styles.modeButtonText,
-                viewMode === 'week' && styles.modeButtonTextActive,
+                isExpanded && styles.modeButtonTextActive,
               ]}
             >
-              Week
+              Month
             </Text>
           </TouchableOpacity>
         </View>
@@ -610,6 +613,20 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
         </View>
       )}
 
+      {/* Accordion Expand / Collapse Handle */}
+      <TouchableOpacity
+        testID="calendar-accordion-handle"
+        style={styles.accordionHandleBar}
+        onPress={() => setIsExpanded((prev) => !prev)}
+        activeOpacity={0.7}
+        accessibilityLabel={isExpanded ? 'Collapse to Week View' : 'Expand to Month View'}
+      >
+        <View style={styles.accordionHandleIndicator} />
+        <Text style={styles.accordionHandleText}>
+          {isExpanded ? '▲ Collapse to Week' : '▼ Expand to Month'}
+        </Text>
+      </TouchableOpacity>
+
       {/* Meso-Cycle / Program Swap Banner for Selected Date */}
       {selectedDateProgramBlock && (
         <View
@@ -639,56 +656,40 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
         </View>
       )}
 
-      {/* Selected Date Agenda Header */}
-      <View style={styles.agendaHeaderRow}>
-        <View>
-          <Text style={styles.agendaDateTitle}>
-            {formatFriendlyDate(selectedDate)}
-          </Text>
-          <Text style={styles.agendaDateSubtitle}>
-            {selectedDateWorkouts.length === 0
-              ? 'No workouts logged'
-              : `${selectedDateWorkouts.length} workout${
-                  selectedDateWorkouts.length > 1 ? 's' : ''
-                } recorded`}
-          </Text>
+      {/* Selected Date Agenda Header — only visible when there are workouts to display or a manual session can be added */}
+      {(selectedDateWorkouts.length > 0 || onStartWorkout) && (
+        <View style={styles.agendaHeaderRow}>
+          <View>
+            <Text style={styles.agendaDateTitle}>
+              {formatFriendlyDate(selectedDate)}
+            </Text>
+            <Text style={styles.agendaDateSubtitle}>
+              {selectedDateWorkouts.length === 0
+                ? 'No workouts logged'
+                : `${selectedDateWorkouts.length} workout${
+                    selectedDateWorkouts.length > 1 ? 's' : ''
+                  } recorded`}
+            </Text>
+          </View>
+
+          {onStartWorkout && (
+            <TouchableOpacity
+              style={styles.addWorkoutButton}
+              onPress={() => onStartWorkout(selectedDate)}
+              accessibilityLabel="Start Workout for Date"
+            >
+              <Text style={styles.addWorkoutButtonText}>+ New Session</Text>
+            </TouchableOpacity>
+          )}
         </View>
+      )}
 
-        {onStartWorkout && (
-          <TouchableOpacity
-            style={styles.addWorkoutButton}
-            onPress={() => onStartWorkout(selectedDate)}
-            accessibilityLabel="Start Workout for Date"
-          >
-            <Text style={styles.addWorkoutButtonText}>+ New Session</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Workouts List for Selected Date */}
+      {/* Workouts List for Selected Date — collapsed to null when no workouts on this date to save screen space */}
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator color="#00E676" size="small" />
         </View>
-      ) : selectedDateWorkouts.length === 0 ? (
-        <View style={styles.emptyAgendaContainer}>
-          <Text style={styles.emptyAgendaIcon}>📅</Text>
-          <Text style={styles.emptyAgendaTitle}>Rest or Recovery Day</Text>
-          <Text style={styles.emptyAgendaSubtitle}>
-            No training sessions were logged on this date.
-          </Text>
-          {onStartWorkout && (
-            <TouchableOpacity
-              style={styles.startSessionOutlineButton}
-              onPress={() => onStartWorkout(selectedDate)}
-            >
-              <Text style={styles.startSessionOutlineButtonText}>
-                Log Workout on This Day
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : (
+      ) : selectedDateWorkouts.length === 0 ? null : (
         <ScrollView
           style={styles.workoutsList}
           contentContainerStyle={styles.workoutsListContent}
@@ -1161,5 +1162,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     flex: 1,
+  },
+  accordionHandleBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 8,
+    borderRadius: 8,
+    backgroundColor: '#121215',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    gap: 8,
+  },
+  accordionHandleIndicator: {
+    width: 24,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#3F3F46',
+  },
+  accordionHandleText: {
+    color: '#00E676',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

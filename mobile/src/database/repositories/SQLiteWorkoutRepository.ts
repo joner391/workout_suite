@@ -281,30 +281,42 @@ export class SQLiteWorkoutRepository implements IWorkoutRepository {
   }
 
   async saveSets(sets: WorkoutSet[]): Promise<WorkoutSet[]> {
-    for (const s of sets) {
-      await this.db.runAsync(
-        `INSERT OR REPLACE INTO workout_sets (
-          id, workout_id, exercise_id, gear_id, set_number, weight, raw_input_weight,
-          added_weight, reps, reps_right, rpe, rir, set_type, set_notes,
-          exercise_group_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-        s.id,
-        s.workout_id,
-        s.exercise_id,
-        s.gear_id,
-        s.set_number,
-        s.weight,
-        s.raw_input_weight,
-        s.added_weight,
-        s.reps,
-        s.reps_right,
-        s.rpe,
-        s.rir,
-        s.set_type,
-        s.set_notes,
-        s.exercise_group_id,
-        s.created_at
-      );
+    if (sets.length === 0) return [];
+    try {
+      await this.db.execAsync('BEGIN TRANSACTION;');
+      for (const s of sets) {
+        await this.db.runAsync(
+          `INSERT OR REPLACE INTO workout_sets (
+            id, workout_id, exercise_id, gear_id, set_number, weight, raw_input_weight,
+            added_weight, reps, reps_right, rpe, rir, set_type, set_notes,
+            exercise_group_id, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          s.id,
+          s.workout_id,
+          s.exercise_id,
+          s.gear_id,
+          s.set_number,
+          s.weight,
+          s.raw_input_weight,
+          s.added_weight,
+          s.reps,
+          s.reps_right,
+          s.rpe,
+          s.rir,
+          s.set_type,
+          s.set_notes,
+          s.exercise_group_id,
+          s.created_at
+        );
+      }
+      await this.db.execAsync('COMMIT;');
+    } catch (err) {
+      try {
+        await this.db.execAsync('ROLLBACK;');
+      } catch {
+        // ignore rollback failure
+      }
+      throw err;
     }
     return sets.map((s) => ({ ...s }));
   }

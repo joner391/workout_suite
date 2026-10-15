@@ -42,7 +42,7 @@ import { PRBoardTable } from './PRBoardTable';
 import { SBDStandardsCard } from './SBDStandardsCard';
 import { SBDBalanceRadarChart } from './SBDBalanceRadarChart';
 import { SessionDetailModal } from '../calendar/SessionDetailModal';
-import { formatWeight, kgToLbs } from '../../core/math/unitConversion';
+import { formatWeight } from '../../core/math/unitConversion';
 
 export interface ExerciseDetailScreenProps {
   exerciseId: string;
@@ -267,18 +267,13 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
   }
 
   // Display Total Volume in current units
-  const displayLifetimeVolume =
-    unitSystem === 'lbs'
-      ? `${formatWeight(kgToLbs(historyStats.totalVolumeKg))} lbs`
-      : `${formatWeight(historyStats.totalVolumeKg)} kg`;
+  const displayLifetimeVolume = formatWeight(historyStats.totalVolumeKg, unitSystem, {
+    precision: 0,
+  });
 
   // Display Peak e1RM
   const peakE1rmDisplay = prBoard?.peakRecord
-    ? `${formatWeight(
-        unitSystem === 'lbs'
-          ? kgToLbs(prBoard.peakRecord.e1rmKg)
-          : prBoard.peakRecord.e1rmKg
-      )} ${unitSystem}`
+    ? formatWeight(prBoard.peakRecord.e1rmKg, unitSystem)
     : '—';
 
   return (
