@@ -35,6 +35,9 @@ import { ISQLiteDatabase } from '../../database/schema';
 import { ExportService } from '../../services/exportService';
 import { ImportService } from '../../services/importService';
 import { ProgramBlockService } from '../../services/programBlockService';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import { CalibratedParamService } from '../../services/calibratedParamService';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
 import { ImportScreen } from '../import/ImportScreen';
 import { ProgramOverviewScreen } from '../progression';
@@ -51,6 +54,7 @@ export interface SettingsScreenProps {
   db?: ISQLiteDatabase;
   exportService?: ExportService;
   importService?: ImportService;
+  calibratedParamService?: CalibratedParamService;
   onSettingsChange?: () => void;
 }
 
@@ -66,6 +70,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   db,
   exportService,
   importService,
+  calibratedParamService,
   onSettingsChange,
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
@@ -80,6 +85,44 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [exporting, setExporting] = useState<boolean>(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+
+  const [calibratedStatus, setCalibratedStatus] = useState<string | null>(null);
+  const [importingCalib, setImportingCalib] = useState<boolean>(false);
+
+  const handleImportCalibratedParams = async () => {
+    try {
+      setImportingCalib(true);
+      setCalibratedStatus(null);
+      if (!db && !calibratedParamService) {
+        setCalibratedStatus('Database not connected.');
+        return;
+      }
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'text/plain', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+      const fileUri = result.assets[0].uri;
+      const fileContent = await FileSystem.readAsStringAsync(fileUri);
+      const service = calibratedParamService ?? (db ? new CalibratedParamService(db) : null);
+      if (!service) {
+        setCalibratedStatus('CalibratedParamService unavailable.');
+        return;
+      }
+      const importRes = await service.importParameters(fileContent);
+      if (importRes.success) {
+        setCalibratedStatus(`Successfully imported ${importRes.importedCount} calibrated parameters!`);
+      } else {
+        setCalibratedStatus(`Import failed: ${importRes.errors.join(', ')}`);
+      }
+    } catch (err: any) {
+      setCalibratedStatus(`Import error: ${err?.message ?? 'Unknown error'}`);
+    } finally {
+      setImportingCalib(false);
+    }
+  };
 
   const handleExportData = async () => {
     try {
@@ -429,6 +472,47 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Text style={styles.actionNavigateBtnText}>
                 Import Workouts (CSV Wizard) ➔
               </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Import Calibrated 1RM & k (JSON)</Text>
+              <Text style={styles.settingValueBadge}>TIER 2 KF</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              Import calibrated (1RM, k) parameters exported from the Companion Python Kalman Filter
+              to upgrade in-gym e1RM calculations with individualized endurance exponents.
+            </Text>
+
+            {calibratedStatus ? (
+              <View style={styles.exportStatusBanner}>
+                <Text style={styles.exportStatusText}>{calibratedStatus}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              testID="import-calibrated-params-btn"
+              style={[
+                styles.actionNavigateBtn,
+                importingCalib && styles.actionNavigateBtnDisabled,
+              ]}
+              onPress={handleImportCalibratedParams}
+              disabled={importingCalib}
+              activeOpacity={0.8}
+            >
+              {importingCalib ? (
+                <View style={styles.buttonInlineRow}>
+                  <ActivityIndicator size="small" color="#00E676" />
+                  <Text style={[styles.actionNavigateBtnText, { marginLeft: 8 }]}>
+                    Importing Parameters...
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.actionNavigateBtnText}>
+                  Import Calibrated Parameters (JSON) ➔
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 

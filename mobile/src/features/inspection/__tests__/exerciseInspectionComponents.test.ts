@@ -343,6 +343,62 @@ describe('Exercise Inspection UI, SBD Tier Widget & Symmetry Radar (Step 3.3)', 
       expect(serialized).toContain('↑ 21RM');
       expect(serialized).toContain('Monotonic envelope');
     });
+
+    it('does not apply peak highlight or peak badge to an enveloped record sharing setId with peakRecord', () => {
+      const recordsWithSharedPeakSetId: RepMaxRecord[] = [
+        {
+          reps: 20,
+          weightKg: 62.5,
+          effectiveReps: 20,
+          e1rmKg: 84.3,
+          setDate: '2026-10-10',
+          workoutId: 'w_peak',
+          setId: 'set_peak_21', // Inherited source setId
+          isEnveloped: true,
+          derivedFromReps: 21,
+          originalWeightKg: 40.0,
+        },
+        {
+          reps: 21,
+          weightKg: 62.5,
+          effectiveReps: 21,
+          e1rmKg: 84.7,
+          setDate: '2026-10-10',
+          workoutId: 'w_peak',
+          setId: 'set_peak_21',
+          isEnveloped: false,
+        },
+      ];
+
+      const tree = PRBoardTable({
+        records: recordsWithSharedPeakSetId,
+        peakRecord: recordsWithSharedPeakSetId[1], // 21RM is the true peak
+        scope: 'all_time',
+        includeVariants: false,
+        unitSystem: 'kg',
+      });
+
+      const serialized = JSON.stringify(tree);
+      // Exactly ONE occurrence of "★ PEAK" should exist in the tree (for 21RM, never 20RM)
+      const peakMatches = serialized.match(/★ PEAK/g);
+      expect(peakMatches).toHaveLength(1);
+
+      // Verify the 20RM row does not have peak background style
+      const treeAny = tree as any;
+      const tableCard = treeAny.props.children[1];
+      const dataRows = tableCard.props.children[1];
+      const row20 = dataRows[0];
+      const row21 = dataRows[1];
+
+      // Flatten styles if array
+      const row20Styles = Array.isArray(row20.props.style) ? row20.props.style.filter(Boolean) : [row20.props.style];
+      const row21Styles = Array.isArray(row21.props.style) ? row21.props.style.filter(Boolean) : [row21.props.style];
+
+      // row21 has peak highlight style (containing rgba(255, 215, 0, 0.05))
+      expect(JSON.stringify(row21Styles)).toContain('rgba(255, 215, 0, 0.05)');
+      // row20 does NOT have peak highlight style
+      expect(JSON.stringify(row20Styles)).not.toContain('rgba(255, 215, 0, 0.05)');
+    });
   });
 
   describe('SBDStandardsCard Component', () => {

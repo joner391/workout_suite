@@ -1113,6 +1113,35 @@
   - *Cons*:
     - Schema version bumped to 3; existing dev databases must execute migration v3 or reset.
 
+---
+
+## ADR-043: Dynamic Monotonic Upper Envelope for Rep-Max PR Records
+- **Context**:
+  - In longitudinal strength training, empirical PR boards occasionally exhibit non-monotonic artifacts where an older set at repetition count $r_a$ (e.g., 40 kg × 20 reps) remains logged, while subsequent progression establishes a higher load at a greater repetition count $r_b > r_a$ (e.g., 62.5 kg × 21 reps).
+  - From a physical and mathematical standpoint, lifting 62.5 kg for 21 reps proves the athlete possesses the capacity to lift at least 62.5 kg for 20 reps (as well as 1..19 reps).
+  - Two architectural options were evaluated to resolve this non-monotonicity:
+    1. **Option B (Hard Deletion/Pruning of Dominated Sets in SQLite)**: Permanently deleting the 40 kg × 20 set from `workout_sets`.
+       - *Companion Impact*: **Catastrophic model degradation**. Deleting historical sets erases past session volume and training impulse (TRIMP), corrupting Banister acute and chronic fatigue calculations ($P(t), F(t), \text{ACWR}$). It also removes valid observation points from the Kalman filter, artificially inflating error covariance $P_t$.
+    2. **Option A (Dynamic Monotonic Upper Envelope at Query/Display Layer)**: Preserving all raw database sets and computing the reverse running maximum at query time:
+       $$M(r) = \max_{k \ge r} W_k$$
+- **Decision**:
+  - Adopt **Option A**: Implement pure mathematical function `applyMonotonicUpperEnvelope` in `mobile/src/core/math/repMaxEnvelope.ts`, called within `ExerciseInspectionService.getPRBoard`.
+  - Raw SQLite tables and JSON export payloads remain 100% authentic and un-mutated.
+  - Enveloped records are enriched with metadata:
+    - `weightKg = M(r)` (e.g., 62.5 kg).
+    - `isEnveloped = true`.
+    - `derivedFromReps` identifies the source rep performance (e.g., 21).
+    - `originalWeightKg` preserves the direct empirical set load (e.g., 40 kg).
+    - `workoutId`, `setId`, `setDate` point to the session proving the capacity, ensuring tap-to-drilldown routes to the authentic performance.
+  - In `PRBoardTable.tsx`, enveloped records render a distinct sky-blue pill badge (`↑ 21RM`) and include educational subtext.
+- **Consequences**:
+  - *Pros*:
+    - Guarantees strict monotonicity: $r_a \le r_b \implies M(r_a) \ge M(r_b)$ across all exercises and variant families.
+    - Zero distortion or loss of training history for the Companion data science suite.
+    - Full transparency in the UI: lifters see their effective PR and can inspect both the deriving workout and original logged attempt.
+  - *Cons*:
+    - Requires a negligible $O(N)$ right-to-left sweep across PR rows ($N \le 30$, $<0.1\text{ ms}$).
+
 
 
 

@@ -174,7 +174,11 @@ export const PRBoardTable: React.FC<PRBoardTableProps> = ({
 
           {/* Table Data Rows */}
           {records.map((rec) => {
-            const isPeak = peakRecord?.setId === rec.setId;
+            const isPeak =
+              !rec.isEnveloped &&
+              peakRecord != null &&
+              peakRecord.reps === rec.reps &&
+              (!peakRecord.setId || peakRecord.setId === rec.setId);
             const isOneRepMax = rec.reps === 1;
 
             return (

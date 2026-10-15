@@ -30,6 +30,7 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   ├── index.ts
 │       │   │   ├── unitConversion.ts
 │       │   │   ├── heuristic1rm.ts
+│       │   │   ├── repMaxEnvelope.ts
 │       │   │   ├── loadNormalizer.ts
 │       │   │   ├── plateCalculator.ts
 │       │   │   ├── dotsCoefficients.ts
@@ -37,6 +38,7 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   └── __tests__/
 │       │   │       ├── unitConversion.test.ts
 │       │   │       ├── heuristic1rm.test.ts
+│       │   │       ├── repMaxEnvelope.test.ts
 │       │   │       ├── loadNormalizer.test.ts
 │       │   │       ├── plateCalculator.test.ts
 │       │   │       ├── dotsCoefficients.test.ts
@@ -78,6 +80,7 @@ c:/Programmering/Eget/Workout_suite/
 │       │   ├── programBlockService.ts
 │       │   ├── programCloneService.ts
 │       │   ├── dashboardMetricsService.ts
+│       │   ├── calibratedParamService.ts
 │       │   └── __tests__/
 │       │       ├── activeSessionService.test.ts
 │       │       ├── restTimerService.test.ts
@@ -89,7 +92,8 @@ c:/Programmering/Eget/Workout_suite/
 │       │       ├── exerciseInspectionService.test.ts
 │       │       ├── programBlockService.test.ts
 │       │       ├── programCloneService.test.ts
-│       │       └── workloadAnalysisService.test.ts
+│       │       ├── workloadAnalysisService.test.ts
+│       │       └── calibratedParamService.test.ts
 │       ├── features/
 │       │   ├── home/
 │       │   │   ├── index.ts
@@ -217,6 +221,13 @@ c:/Programmering/Eget/Workout_suite/
 │   │   ├── ingestion/
 │   │   │   ├── __init__.py
 │   │   │   └── schemas.py      # Pydantic v2 export & calibration models
+│   │   ├── export/
+│   │   │   ├── __init__.py
+│   │   │   └── param_exporter.py    # Serializes Kalman posteriors to calibrated_parameters.json
+│   │   ├── ui/
+│   │   │   ├── __init__.py
+│   │   │   ├── charts.py            # Interactive Plotly figures (1RM, k, Banister, BW)
+│   │   │   └── app.py               # Streamlit interactive desktop dashboard
 │   │   └── models/
 │   │       ├── __init__.py
 │   │       ├── kalman_1rm.py        # Tier 2 Adaptive Linear Kalman Filter
@@ -227,7 +238,9 @@ c:/Programmering/Eget/Workout_suite/
 │       ├── __init__.py
 │       ├── test_schemas.py          # Schema validation and boundary test suite
 │       ├── test_kalman_1rm.py       # 1RM Kalman filter mathematical tests
-│       └── test_banister.py         # Banister & recoverability test suite
+│       ├── test_banister.py         # Banister & recoverability test suite
+│       ├── test_exporter.py         # Calibrated parameter export & schema contract tests
+│       └── test_ui_smoke.py         # Streamlit & Plotly headless smoke test suite
 └── docs/                       # Architecture documentation and decision records
     ├── ARCHITECTURE.md         # Subsystem responsibilities, data flow, and build commands
     ├── CODEMAP.md              # Current navigation index and symbol directory

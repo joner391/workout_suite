@@ -396,7 +396,7 @@ def test_sample_workout_export_fixture() -> None:
     """Verifies that the mobile SQLite export fixture conforms to both the Draft-07 JSON Schema and Companion Pydantic v2 models."""
     import json
     from pathlib import Path
-    import jsonschema
+    import jsonschema  # type: ignore[import-untyped]
 
     repo_root = Path(__file__).resolve().parent.parent.parent
     fixture_path = repo_root / "schemas" / "fixtures" / "sample_workout_export.json"

@@ -292,8 +292,8 @@ CREATE TABLE strength_standards (
 | | **5.2** | **Body Metrics Screen & Longitudinal Plots with Program Era Shading** | **`[x] COMPLETED`** | Anthropometry, Navy body fat, 5-tab longitudinal charts, 644/644 mobile tests verified |
 | | 5.3 | Psychological Matrix Calibration & Volume Prescriptions | `[ ] PENDING` | Mental fatigue modulation, recovery scores |
 | **Phase 6** | **6.1** | **Tier 2 Adaptive Linear Kalman Filter Engine** | **`[x] COMPLETED`** | `kalman_1rm.py`, intra-session filtering, true 1RM bypass, quadratic noise scaling, 13/13 pytest, strict mypy verified |
-| | **6.2** | **Dynamic Recoverability & Banister Impulse-Response Engine** | **`[x] COMPLETED`** | `recovery_modifier.py`, `fatigue_banister.py`, `recommendations.py`, 13/13 pytest, strict mypy verified |
-| | 6.3–6.4 | Calibrated Exporter & Streamlit UI | `[ ] PENDING` | Export pipeline, mobile ingestion round-trip, Streamlit dashboard |
+| | **6.3** | **Calibrated Parameter Exporter & Mobile Ingestion Round-Trip** | **`[x] COMPLETED`** | `param_exporter.py`, `calibratedParamService.ts`, `SettingsScreen.tsx` JSON import, 40/40 companion & 12/12 Jest tests verified |
+| | **6.4** | **Interactive Streamlit & Plotly Scientific Dashboard** | **`[x] COMPLETED`** | `app.py`, `charts.py`, 4 Plotly visualizers, 1-click calibration download, 46/46 pytest & strict mypy verified |
 | **Phase 7** | 7.1–7.2 | Cloud Synchronization & Social Leaderboards | `[ ] PENDING` | Supabase RLS migrations, offline-first sync queue |
 
 ---
@@ -645,26 +645,27 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 
 * **Verification Gate**: Run `pytest companion/tests/test_banister.py` and `mypy --strict companion/src/models/`. *(Verified: 13/13 unit tests passed in 0.22s, 35/35 total companion tests passed, strict mypy 0 issues across all models)*
 
-#### Step 6.3: Calibrated Parameter Exporter & Mobile Ingestion Round-Trip
+#### Step 6.3: Calibrated Parameter Exporter & Mobile Ingestion Round-Trip [COMPLETED ✅]
 
-* **Scope**: `companion/src/export/param_exporter.py`, `companion/tests/test_exporter.py`, `mobile/src/services/calibratedParamService.ts`, `mobile/src/services/__tests__/calibratedParamService.test.ts`.
+* **Status**: **Completed**. Verified with `pytest companion/tests/test_exporter.py` (5/5 tests passing), `npx jest src/services/__tests__/calibratedParamService.test.ts` (12/12 tests passing), and generated `dummy_data/calibrated_parameters.json`.
+* **Scope**: `companion/src/export/param_exporter.py`, `companion/tests/test_exporter.py`, `mobile/src/services/calibratedParamService.ts`, `mobile/src/services/__tests__/calibratedParamService.test.ts`, `mobile/src/features/settings/SettingsScreen.tsx`.
 * **Deliverables**:
-1. `param_exporter.py`: Serializes the latest Kalman posterior $(1\text{RM}_t, k_t)$ per exercise into `calibrated_parameters.json` validated against `schemas/calibrated_parameters.schema.json`.
-2. `calibratedParamService.ts` (Mobile): Imports `calibrated_parameters.json` into the SQLite `calibrated_params` table and upgrades Tier 1 heuristic e1RM calculations to use individualized $k$.
+1. `param_exporter.py`: Serializes the latest Kalman posterior $(1\text{RM}_t, k_t, \mathbf{P}_t)$ per exercise into `calibrated_parameters.json` validated against `schemas/calibrated_parameters.schema.json`. *(Done)*
+2. `calibratedParamService.ts` (Mobile): Imports `calibrated_parameters.json` into the SQLite `calibrated_params` table and upgrades Tier 1 heuristic e1RM calculations to use individualized $k$. *(Done)*
+3. `SettingsScreen.tsx`: Document-picker 1-tap integration allowing athletes to import calibrated parameter JSON files directly in Expo Go. *(Done)*
 
+* **Verification Gate**: Run `pytest companion/tests/test_exporter.py` AND `cd mobile && npx jest src/services/__tests__/calibratedParamService.test.ts`. *(Verified: 5/5 pytest passed in 0.39s, 12/12 Jest passed in 1.57s, 701/701 mobile tests passing total)*
 
-* **Verification Gate**: Run `pytest companion/tests/test_exporter.py` AND `cd mobile && npx jest src/services/__tests__/calibratedParamService.test.ts`.
+#### Step 6.4: Interactive Streamlit & Plotly Scientific Dashboard [COMPLETED ✅]
 
-#### Step 6.4: Interactive Streamlit & Plotly Scientific Dashboard
-
-* **Scope**: `companion/src/ui/app.py`, `companion/src/ui/charts.py`.
+* **Status**: **Completed**. Verified with `mypy --strict companion/src/ui/` (0 issues across 4 source files) and `pytest companion/tests/test_ui_smoke.py` (6/6 tests passing, 46/46 companion tests total).
+* **Scope**: `companion/src/ui/app.py`, `companion/src/ui/charts.py`, `companion/tests/test_ui_smoke.py`.
 * **Deliverables**:
-1. File uploader for `workout_data_export.json`.
-2. Interactive Plotly charts: Kalman $1\text{RM}_t$ trajectory with $\pm 1\text{ SD}$ uncertainty bands ($\text{e1RM} \cdot \sqrt{P_{0,0}}$), individualized $k_t$ endurance drift, Banister Fitness vs. Fatigue vs. Net Preparedness curves, and 14-day $\Delta BW / \Delta t$ recovery modifier plot.
-3. 1-click download button for `calibrated_parameters.json`.
+1. File uploader for `workout_data_export.json` and 1-tap bundled dummy data loader. *(Done)*
+2. Interactive Plotly charts: Kalman $1\text{RM}_t$ trajectory with $\pm 1\text{ SD}$ uncertainty bands ($\text{e1RM} \cdot \sqrt{P_{0,0}}$), individualized $k_t$ endurance drift, Banister Fitness vs. Fatigue vs. Net Preparedness curves, and 14-day $\Delta BW / \Delta t$ recovery modifier plot. *(Done)*
+3. 1-click download button for `calibrated_parameters.json`. *(Done)*
 
-
-* **Verification Gate**: Run `mypy companion/src/ui/` and run a smoke test importing `app.py` via `pytest`.
+* **Verification Gate**: Run `mypy companion/src/ui/` and run a smoke test importing `app.py` via `pytest`. *(Verified: strict mypy clean, 46/46 pytest tests passing in 2.85s)*
 
 ---
 

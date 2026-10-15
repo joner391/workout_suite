@@ -256,15 +256,15 @@ class WorkoutSet(StrictSchemaModel):
     )
     rpe: Optional[float] = Field(
         default=None,
-        ge=5.0,
+        ge=0.0,
         le=10.0,
-        description="Rate of Perceived Exertion (5.0-10.0).",
+        description="Rate of Perceived Exertion (0.0-10.0).",
     )
     rir: Optional[float] = Field(
         default=None,
         ge=0.0,
-        le=5.0,
-        description="Reps in Reserve (0.0-5.0).",
+        le=10.0,
+        description="Reps in Reserve (0.0-10.0).",
     )
     set_type: SetType = Field(
         default="working",
@@ -322,6 +322,10 @@ class Exercise(StrictSchemaModel):
         default=120,
         ge=0,
         description="Default rest timer duration in seconds.",
+    )
+    secondary_muscles: Optional[List[str]] = Field(
+        default=None,
+        description="Assisting / synergist muscle groups receiving 0.5 set volume credit.",
     )
 
 

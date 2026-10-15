@@ -10,4 +10,5 @@ export * from './gearInventoryService';
 export * from './exportService';
 export * from './importService';
 export * from './exerciseInspectionService';
+export * from './calibratedParamService';
 

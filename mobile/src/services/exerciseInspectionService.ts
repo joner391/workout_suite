@@ -106,11 +106,11 @@ export class ExerciseInspectionService {
     // Ensures for any repetition counts r_a <= r_b that M(r_a) >= M(r_b)
     const records = applyMonotonicUpperEnvelope(rawRecords, DEFAULTLombardiK());
 
-    // 5. Identify peak record (highest e1RM across all unique rep counts)
+    // 5. Identify peak record (highest e1RM across authentic rep-max performances)
     let peakRecord: RepMaxRecord | null = null;
     let maxE1rm = -1;
     for (const rec of records) {
-      if (rec.e1rmKg > maxE1rm) {
+      if (!rec.isEnveloped && rec.e1rmKg > maxE1rm) {
         maxE1rm = rec.e1rmKg;
         peakRecord = rec;
       }
