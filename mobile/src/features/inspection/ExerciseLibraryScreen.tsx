@@ -246,7 +246,8 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
   };
 
   // Render individual exercise row item
-  const renderExerciseItem = (item: Exercise, isChild = false) => {
+  const renderExerciseItem = useCallback(
+    (item: Exercise, isChild = false) => {
     const parentName = item.parent_exercise_id
       ? exerciseMap.get(item.parent_exercise_id)?.name
       : null;
@@ -392,7 +393,24 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
         )}
       </View>
     );
-  };
+  }, [
+    exerciseMap,
+    variantChildrenMap,
+    expandedRoots,
+    onSelectExercise,
+    viewMode,
+    workoutRepo,
+  ]);
+
+  const renderFlatItem = useCallback(
+    ({ item }: { item: Exercise }) => renderExerciseItem(item, false),
+    [renderExerciseItem]
+  );
+
+  const renderTreeItem = useCallback(
+    ({ item }: { item: Exercise }) => renderExerciseItem(item, false),
+    [renderExerciseItem]
+  );
 
   return (
     <View style={styles.container}>
@@ -540,8 +558,12 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
         <FlatList
           data={filteredExercises}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => renderExerciseItem(item, false)}
+          renderItem={renderFlatItem}
           contentContainerStyle={styles.listContent}
+          initialNumToRender={15}
+          maxToRenderPerBatch={15}
+          windowSize={7}
+          removeClippedSubviews={true}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyTitle}>No exercises found</Text>
@@ -553,8 +575,12 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
         <FlatList
           data={treeRoots}
           keyExtractor={(item) => `root-${item.id}`}
-          renderItem={({ item }) => renderExerciseItem(item, false)}
+          renderItem={renderTreeItem}
           contentContainerStyle={styles.listContent}
+          initialNumToRender={15}
+          maxToRenderPerBatch={15}
+          windowSize={7}
+          removeClippedSubviews={true}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyTitle}>No movements in variant tree</Text>

@@ -369,9 +369,10 @@ When code generation begins in subsequent phases, components must be placed into
   - `progressionEngine.ts` — Pure condition-action rule evaluation engine (supports increase, decrease, reset, deload actions).
   - `programBlockService.ts` — Meso-cycle date interval resolver and color band calculator.
 - `mobile/src/database/` — Infrastructure Layer (Adapters).
-  - `schema.ts` — SQLite table DDL and `PRAGMA user_version` migration framework (`expo-sqlite`).
-  - `repositories/` — Concrete SQLite implementations of domain repository interfaces (`SQLiteProgramRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserProfileRepository.ts`, `SQLiteBodyMetricsRepository.ts`, `SQLiteUserSettingsRepository.ts`, etc.).
-  - `mocks/` — In-memory test repositories (`MockProgramRepository.ts`, `MockWorkoutRepository.ts`, `MockGearRepository.ts`, `MockUserProfileRepository.ts`, `MockBodyMetricsRepository.ts`, `MockUserSettingsRepository.ts`, etc.).
+  - `index.ts` — Production barrel exporting schema and repositories (decoupled from mocks to guarantee tree-shaking).
+  - `schema.ts` — SQLite table DDL (11 tables) and transactional `PRAGMA user_version = 3` migration framework (`expo-sqlite`), featuring composite index `idx_workout_sets_ex_created` and cascading constraints.
+  - `repositories/` — Concrete SQLite implementations of domain repository interfaces (`SQLiteProgramRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserProfileRepository.ts`, `SQLiteBodyMetricsRepository.ts` with `imported_from` provenance, `SQLiteUserSettingsRepository.ts`, etc.).
+  - `mocks/` — In-memory test repositories (`MockProgramRepository.ts`, `MockWorkoutRepository.ts`, `MockGearRepository.ts`, `MockUserProfileRepository.ts`, `MockBodyMetricsRepository.ts`, `MockUserSettingsRepository.ts`, etc.), consumed strictly within unit tests.
 
 ### 3.3 Companion Analysis Suite (`companion/`)
 > **Workspace Execution Rule**: All Python commands (`pip`, `pytest`, `mypy`, `streamlit`) MUST be executed within the virtual environment `companion/.venv`.

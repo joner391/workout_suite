@@ -690,12 +690,13 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
           <ActivityIndicator color="#00E676" size="small" />
         </View>
       ) : selectedDateWorkouts.length === 0 ? null : (
-        <ScrollView
+        <FlatList
+          data={selectedDateWorkouts}
+          keyExtractor={(w) => w.id}
           style={styles.workoutsList}
           contentContainerStyle={styles.workoutsListContent}
           showsVerticalScrollIndicator={false}
-        >
-          {selectedDateWorkouts.map((w) => (
+          renderItem={({ item: w }) => (
             <TouchableOpacity
               key={w.id}
               style={styles.workoutCard}
@@ -743,8 +744,8 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
                 <Text style={styles.tapToInspectText}>Tap for set breakdown ›</Text>
               </View>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          )}
+        />
       )}
 
       {/* Drill-down Inspection Modal */}

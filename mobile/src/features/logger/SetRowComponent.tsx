@@ -18,7 +18,7 @@
  * - Delete set action
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -61,7 +61,7 @@ const SET_TYPE_COLORS: Record<SetType, { bg: string; text: string }> = {
   dc: { bg: '#1E3A8A', text: '#BFDBFE' }, // Blue/Indigo
 };
 
-export const SetRowComponent: React.FC<SetRowProps> = ({
+const SetRowComponentInner: React.FC<SetRowProps> = ({
   set,
   exercise,
   ghostSet,
@@ -79,7 +79,54 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
   const [showNotes, setShowNotes] = useState<boolean>(!!set.set_notes);
   const [notesText, setNotesText] = useState<string>(set.set_notes ?? '');
   const [weightInput, setWeightInput] = useState<string | null>(null);
+  const [repsInput, setRepsInput] = useState<string | null>(null);
+  const [repsRightInput, setRepsRightInput] = useState<string | null>(null);
   const [intensityInput, setIntensityInput] = useState<string | null>(null);
+
+  // Debouncing refs for SQLite write-through reduction
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingUpdatesRef = useRef<Partial<WorkoutSet>>({});
+
+  const flushPendingUpdates = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (Object.keys(pendingUpdatesRef.current).length > 0) {
+      const updates = { ...pendingUpdatesRef.current };
+      pendingUpdatesRef.current = {};
+      onUpdateSet(updates);
+    }
+  }, [onUpdateSet]);
+
+  const queueUpdate = useCallback(
+    (fields: Partial<WorkoutSet>, immediate: boolean = false) => {
+      pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...fields };
+      if (immediate) {
+        flushPendingUpdates();
+      } else {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+        }
+        debounceTimerRef.current = setTimeout(() => {
+          flushPendingUpdates();
+        }, 350);
+      }
+    },
+    [flushPendingUpdates]
+  );
+
+  // Flush on unmount if any updates are pending
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      if (Object.keys(pendingUpdatesRef.current).length > 0) {
+        onUpdateSet(pendingUpdatesRef.current);
+      }
+    };
+  }, [onUpdateSet]);
 
   const isExpanded = propIsExpanded !== undefined ? propIsExpanded : internalExpanded;
 
@@ -91,17 +138,21 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
     }
   };
 
-  // Cycle set type on tag tap
+  // Cycle set type on tag tap (immediate persistence)
   const handleCycleSetType = () => {
+    flushPendingUpdates();
     const currentIndex = SET_TYPE_ORDER.indexOf(set.set_type);
     const nextIndex = (currentIndex + 1) % SET_TYPE_ORDER.length;
     onUpdateSet({ set_type: SET_TYPE_ORDER[nextIndex] });
   };
 
-  // Copy ghost values into current set
+  // Copy ghost values into current set (immediate persistence)
   const handleCopyGhostValues = () => {
     if (!ghostSet) return;
+    flushPendingUpdates();
     setWeightInput(null);
+    setRepsInput(null);
+    setRepsRightInput(null);
     setIntensityInput(null);
     onUpdateSet({
       raw_input_weight: ghostSet.raw_input_weight,
@@ -113,7 +164,7 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
     });
   };
 
-  // Handle weight change (supports '.' and ',' as decimal separator)
+  // Handle weight change (debounced persistence)
   const handleWeightChange = (text: string) => {
     const normalized = text.replace(',', '.');
     const cleaned = normalized.replace(/[^0-9.]/g, '');
@@ -123,64 +174,78 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
     setWeightInput(sanitized);
 
     if (sanitized === '' || sanitized === '.') {
-      onUpdateSet({
-        raw_input_weight: 0,
-      });
+      queueUpdate({ raw_input_weight: 0 });
     } else {
       const num = parseFloat(sanitized);
       if (!isNaN(num)) {
-        onUpdateSet({
-          raw_input_weight: num,
-        });
+        queueUpdate({ raw_input_weight: num });
       }
     }
   };
 
   const handleWeightBlur = () => {
     setWeightInput(null);
+    flushPendingUpdates();
   };
 
-  // Step weight by delta
+  // Step weight by delta (immediate persistence)
   const handleStepWeight = (delta: number) => {
+    flushPendingUpdates();
     setWeightInput(null);
     const current = set.raw_input_weight || 0;
     const next = Math.max(0, Math.round((current + delta) * 10) / 10);
     onUpdateSet({ raw_input_weight: next });
   };
 
-  // Handle reps change
+  // Handle reps change (debounced persistence)
   const handleRepsChange = (text: string) => {
     const cleaned = text.replace(/[^0-9]/g, '');
+    setRepsInput(cleaned);
     const num = parseInt(cleaned, 10);
-    onUpdateSet({
+    queueUpdate({
       reps: isNaN(num) ? 0 : num,
     });
   };
 
-  // Step reps by delta
+  const handleRepsBlur = () => {
+    setRepsInput(null);
+    flushPendingUpdates();
+  };
+
+  // Step reps by delta (immediate persistence)
   const handleStepReps = (delta: number) => {
+    flushPendingUpdates();
+    setRepsInput(null);
     const current = set.reps || 0;
     const next = Math.max(0, current + delta);
     onUpdateSet({ reps: next });
   };
 
-  // Handle unilateral right reps change
+  // Handle unilateral right reps change (debounced persistence)
   const handleRepsRightChange = (text: string) => {
     const cleaned = text.replace(/[^0-9]/g, '');
+    setRepsRightInput(cleaned);
     const num = parseInt(cleaned, 10);
-    onUpdateSet({
+    queueUpdate({
       reps_right: isNaN(num) ? null : num,
     });
   };
 
-  // Step unilateral right reps by delta
+  const handleRepsRightBlur = () => {
+    setRepsRightInput(null);
+    flushPendingUpdates();
+  };
+
+  // Step unilateral right reps by delta (immediate persistence)
   const handleStepRepsRight = (delta: number) => {
+    flushPendingUpdates();
+    setRepsRightInput(null);
     const current = set.reps_right !== null && set.reps_right !== undefined ? set.reps_right : (set.reps || 0);
     const next = Math.max(0, current + delta);
     onUpdateSet({ reps_right: next });
   };
 
-  // Handle intensity metric (RPE or RIR) change (supports '.' and ',' as decimal separator)
+  // Handle intensity metric (RPE or RIR) change (debounced persistence)
   const handleIntensityChange = (text: string) => {
     const normalized = text.replace(',', '.');
     const cleaned = normalized.replace(/[^0-9.]/g, '');
@@ -191,26 +256,28 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
 
     if (sanitized === '' || sanitized === '.') {
       if (intensityMetric === 'RPE') {
-        onUpdateSet({ rpe: null });
+        queueUpdate({ rpe: null });
       } else {
-        onUpdateSet({ rir: null });
+        queueUpdate({ rir: null });
       }
       return;
     }
     const num = parseFloat(sanitized);
     if (intensityMetric === 'RPE') {
-      onUpdateSet({ rpe: isNaN(num) ? null : num });
+      queueUpdate({ rpe: isNaN(num) ? null : num });
     } else {
-      onUpdateSet({ rir: isNaN(num) ? null : num });
+      queueUpdate({ rir: isNaN(num) ? null : num });
     }
   };
 
   const handleIntensityBlur = () => {
     setIntensityInput(null);
+    flushPendingUpdates();
   };
 
-  // Step intensity by +/- 0.5 (allowing values under 6.0 RPE)
+  // Step intensity by +/- 0.5 (immediate persistence)
   const handleStepIntensity = (delta: number) => {
+    flushPendingUpdates();
     setIntensityInput(null);
     if (intensityMetric === 'RPE') {
       const current = set.rpe ?? 8.0;
@@ -223,16 +290,21 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
     }
   };
 
-  // Clear intensity metric
+  // Clear intensity metric (immediate persistence)
   const handleClearIntensity = () => {
+    flushPendingUpdates();
     setIntensityInput(null);
     onUpdateSet({ rpe: null, rir: null });
   };
 
-  // Save notes
+  // Save notes (debounced persistence)
   const handleSaveNotes = (text: string) => {
     setNotesText(text);
-    onUpdateSet({ set_notes: text.trim() === '' ? null : text.trim() });
+    queueUpdate({ set_notes: text.trim() === '' ? null : text.trim() });
+  };
+
+  const handleNotesBlur = () => {
+    flushPendingUpdates();
   };
 
   // Determine tag display text
@@ -312,8 +384,9 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
                   keyboardType="number-pad"
                   placeholder={ghostSet ? `${ghostSet.reps}` : 'L'}
                   placeholderTextColor="#71717A"
-                  value={set.reps > 0 ? `${set.reps}` : ''}
+                  value={repsInput !== null ? repsInput : (set.reps > 0 ? `${set.reps}` : '')}
                   onChangeText={handleRepsChange}
+                  onBlur={handleRepsBlur}
                   editable={!isCompleted}
                   onFocus={() => { if (!isExpanded) toggleExpand(); }}
                   accessibilityLabel="Left limb reps"
@@ -327,8 +400,9 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
                   keyboardType="number-pad"
                   placeholder={ghostSet?.reps_right !== null && ghostSet?.reps_right !== undefined ? `${ghostSet.reps_right}` : 'R'}
                   placeholderTextColor="#71717A"
-                  value={set.reps_right && set.reps_right > 0 ? `${set.reps_right}` : ''}
+                  value={repsRightInput !== null ? repsRightInput : (set.reps_right && set.reps_right > 0 ? `${set.reps_right}` : '')}
                   onChangeText={handleRepsRightChange}
+                  onBlur={handleRepsRightBlur}
                   editable={!isCompleted}
                   onFocus={() => { if (!isExpanded) toggleExpand(); }}
                   accessibilityLabel="Right limb reps"
@@ -342,8 +416,9 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
               keyboardType="number-pad"
               placeholder={ghostSet ? `${ghostSet.reps}` : '0'}
               placeholderTextColor="#71717A"
-              value={set.reps > 0 ? `${set.reps}` : ''}
+              value={repsInput !== null ? repsInput : (set.reps > 0 ? `${set.reps}` : '')}
               onChangeText={handleRepsChange}
+              onBlur={handleRepsBlur}
               editable={!isCompleted}
               onFocus={() => { if (!isExpanded) toggleExpand(); }}
             />
@@ -551,7 +626,14 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
 
             <TouchableOpacity
               testID="delete-set-button"
-              onPress={onDeleteSet}
+              onPress={() => {
+                if (debounceTimerRef.current) {
+                  clearTimeout(debounceTimerRef.current);
+                  debounceTimerRef.current = null;
+                }
+                pendingUpdatesRef.current = {};
+                onDeleteSet();
+              }}
               style={styles.deleteButton}
               accessibilityLabel="Delete set"
             >
@@ -569,6 +651,7 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
                 placeholderTextColor="#71717A"
                 value={notesText}
                 onChangeText={handleSaveNotes}
+                onBlur={handleNotesBlur}
                 multiline
               />
             </View>
@@ -578,6 +661,21 @@ export const SetRowComponent: React.FC<SetRowProps> = ({
     </View>
   );
 };
+
+export const SetRowComponent = React.memo(
+  SetRowComponentInner,
+  (prev, next) => {
+    return (
+      prev.set === next.set &&
+      prev.exercise === next.exercise &&
+      prev.ghostSet === next.ghostSet &&
+      prev.unitSystem === next.unitSystem &&
+      prev.intensityMetric === next.intensityMetric &&
+      prev.isCompleted === next.isCompleted &&
+      prev.isExpanded === next.isExpanded
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   container: {

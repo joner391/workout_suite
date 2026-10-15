@@ -76,6 +76,59 @@ describe('Database Schema & Migrations', () => {
     expect(inserts).toHaveLength(0);
   });
 
+  it('chains migrations from version 1 through version 3 cleanly without restart', async () => {
+    mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 1 }]);
+
+    await migrateDatabase(mockDb);
+
+    // Should execute v1 -> v2 column addition
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE user_profiles ADD COLUMN training_mentality'))
+    ).toBe(true);
+
+    // Should immediately chain and execute v2 -> v3 migrations
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE calibrated_params ADD COLUMN cov_p00'))
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE body_metrics ADD COLUMN imported_from'))
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) => q.includes('CREATE INDEX IF NOT EXISTS idx_workout_sets_ex_created'))
+    ).toBe(true);
+
+    // Final version should be CURRENT_SCHEMA_VERSION (3)
+    expect(mockDb.execQueries).toContain(
+      `PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`
+    );
+  });
+
+  it('runs v2 -> v3 migration when user_version is 2', async () => {
+    mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 2 }]);
+
+    await migrateDatabase(mockDb);
+
+    // Should NOT re-run v1 -> v2
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE user_profiles ADD COLUMN training_mentality'))
+    ).toBe(false);
+
+    // Should run v2 -> v3
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE calibrated_params ADD COLUMN cov_p00'))
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE body_metrics ADD COLUMN imported_from'))
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) => q.includes('CREATE INDEX IF NOT EXISTS idx_workout_sets_ex_created'))
+    ).toBe(true);
+
+    expect(mockDb.execQueries).toContain(
+      `PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`
+    );
+  });
+
   it('resets the database by dropping tables and re-migrating', async () => {
     // Simulate current version = 1 initially, but resetDatabase will drop and re-seed
     mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 0 }]);

@@ -38,7 +38,6 @@ import {
 } from '../../core/parsers/csvImportParser';
 import {
   EvaluationPresetType,
-  EVALUATION_PRESETS,
 } from './dummyDataPresets';
 
 export interface DocumentAsset {
@@ -272,41 +271,43 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
       {/* Step 1: File Selection & Options */}
       {step === 'select' && (
         <ScrollView style={styles.scrollContent} contentContainerStyle={styles.scrollContainer}>
-          {/* Quick Expo Go Evaluation Section */}
-          <View style={styles.evaluationCard}>
-            <Text style={styles.evaluationBadge}>⚡ EXPO GO QUICK EVALUATION</Text>
-            <Text style={styles.evaluationTitle}>Load Evaluation Data</Text>
-            <Text style={styles.cardDescription}>
-              Instant 1-tap loader with your exported Liftosaur and StrengthLog history. Evaluate how the app looks with rich historical data without needing to transfer CSV files to your phone:
-            </Text>
-            <View style={styles.evalButtonRow}>
-              <TouchableOpacity
-                testID="eval-preset-3m-btn"
-                style={styles.evalPresetBtn}
-                onPress={() => handleLoadEvaluationPreset('last_3_months')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.evalPresetBtnTitle}>⚡ Quick Eval: Last 3 Months</Text>
-                <Text style={styles.evalPresetBtnSubtitle}>
-                  ~35 Liftosaur sessions + 10 body composition logs (July – Oct 2026)
-                </Text>
-              </TouchableOpacity>
+          {/* Quick Expo Go Evaluation Section (__DEV__ only) */}
+          {(__DEV__ || process.env.NODE_ENV !== 'production') && (
+            <View style={styles.evaluationCard}>
+              <Text style={styles.evaluationBadge}>⚡ EXPO GO QUICK EVALUATION</Text>
+              <Text style={styles.evaluationTitle}>Load Evaluation Data</Text>
+              <Text style={styles.cardDescription}>
+                Instant 1-tap loader with your exported Liftosaur and StrengthLog history. Evaluate how the app looks with rich historical data without needing to transfer CSV files to your phone:
+              </Text>
+              <View style={styles.evalButtonRow}>
+                <TouchableOpacity
+                  testID="eval-preset-3m-btn"
+                  style={styles.evalPresetBtn}
+                  onPress={() => handleLoadEvaluationPreset('last_3_months')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.evalPresetBtnTitle}>⚡ Quick Eval: Last 3 Months</Text>
+                  <Text style={styles.evalPresetBtnSubtitle}>
+                    ~35 Liftosaur sessions + 10 body composition logs (July – Oct 2026)
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                testID="eval-preset-all-btn"
-                style={[styles.evalPresetBtn, styles.evalPresetBtnOutline]}
-                onPress={() => handleLoadEvaluationPreset('all')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.evalPresetBtnTitle, styles.evalPresetBtnTitleOutline]}>
-                  🏛️ Full History: All Time (2.5 Years)
-                </Text>
-                <Text style={[styles.evalPresetBtnSubtitle, styles.evalPresetBtnSubtitleOutline]}>
-                  357 sessions (Liftosaur + StrengthLog), 4,617 sets, 34 body logs
-                </Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  testID="eval-preset-all-btn"
+                  style={[styles.evalPresetBtn, styles.evalPresetBtnOutline]}
+                  onPress={() => handleLoadEvaluationPreset('all')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.evalPresetBtnTitle, styles.evalPresetBtnTitleOutline]}>
+                    🏛️ Full History: All Time (2.5 Years)
+                  </Text>
+                  <Text style={[styles.evalPresetBtnSubtitle, styles.evalPresetBtnSubtitleOutline]}>
+                    357 sessions (Liftosaur + StrengthLog), 4,617 sets, 34 body logs
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          )}
 
           <Text style={styles.sectionTitle}>OR IMPORT CUSTOM EXPORT FILE</Text>
 

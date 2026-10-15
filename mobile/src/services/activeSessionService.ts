@@ -94,11 +94,37 @@ function getTodayIsoDate(): string {
 }
 
 export class ActiveSessionService {
+  private readonly exerciseCache: Map<string, Exercise> = new Map();
+  private readonly gearCache: Map<string, GearInventory> = new Map();
+
   constructor(
     private readonly workoutRepo: IWorkoutRepository,
     private readonly exerciseRepo: IExerciseRepository,
     private readonly gearRepo?: IGearRepository
   ) {}
+
+  private async resolveExercise(exerciseId: string): Promise<Exercise | null> {
+    if (this.exerciseCache.has(exerciseId)) {
+      return this.exerciseCache.get(exerciseId)!;
+    }
+    const exercise = await this.exerciseRepo.findById(exerciseId);
+    if (exercise) {
+      this.exerciseCache.set(exerciseId, exercise);
+    }
+    return exercise;
+  }
+
+  private async resolveGear(gearId: string): Promise<GearInventory | null> {
+    if (this.gearCache.has(gearId)) {
+      return this.gearCache.get(gearId)!;
+    }
+    if (!this.gearRepo) return null;
+    const gear = await this.gearRepo.findById(gearId);
+    if (gear) {
+      this.gearCache.set(gearId, gear);
+    }
+    return gear;
+  }
 
   // ==========================================================================
   // Session Lifecycle Management
@@ -227,16 +253,13 @@ export class ActiveSessionService {
     }
 
     // Resolve exercise definition for load normalization
-    const exercise = await this.exerciseRepo.findById(input.exerciseId);
+    const exercise = await this.resolveExercise(input.exerciseId);
     if (!exercise) {
       throw new Error(`Exercise with ID '${input.exerciseId}' not found in catalog.`);
     }
 
     // Resolve gear if specified
-    let gear: GearInventory | null = null;
-    if (input.gearId && this.gearRepo) {
-      gear = await this.gearRepo.findById(input.gearId);
-    }
+    const gear = input.gearId ? await this.resolveGear(input.gearId) : null;
 
     // Normalize mechanical load per ADR-026
     const normalized = normalizeExerciseLoad(
@@ -300,16 +323,13 @@ export class ActiveSessionService {
       throw new Error(`Set with ID '${setId}' not found in workout '${workoutId}'.`);
     }
 
-    const exercise = await this.exerciseRepo.findById(existingSet.exercise_id);
+    const exercise = await this.resolveExercise(existingSet.exercise_id);
     if (!exercise) {
       throw new Error(`Exercise '${existingSet.exercise_id}' not found.`);
     }
 
     const gearId = input.gearId !== undefined ? input.gearId : existingSet.gear_id;
-    let gear: GearInventory | null = null;
-    if (gearId && this.gearRepo) {
-      gear = await this.gearRepo.findById(gearId);
-    }
+    const gear = gearId ? await this.resolveGear(gearId) : null;
 
     const rawInputWeight = input.rawInputWeight !== undefined
       ? input.rawInputWeight

@@ -53,7 +53,7 @@ flowchart TD
 - **Responsibility**: In-gym capture, real-time feedback, routine management, and data import/export.
 - **Boundaries**: Strictly client-side on mobile devices. Does not execute heavy multi-year matrix optimizations. All weight values stored internally in **kilograms** (canonical unit); display conversion to lbs is performed at the presentation layer.
 - **Key Modules**:
-  - `ActiveLogger`: Dynamic set management with set type tagging (working 'Reg', warmup 'Warm', drop 'Drop', myorep 'Myo', dc 'DC'), per-set notes, ghosting placeholders from the most recent global session, set-type-specific rest timers (0s for drop, 10s for myorep, 30s for dc), superset/giant set grouping, Plate Calculator popover, in-session 1-tap exercise substitution, 1-tap implement and bar switcher (`change-gear-button-<id>`), dumbbell per-hand input with auto-doubled backend math, unilateral independent limb logging (`reps_right`), small-font gear subtext badge, total system load tracking for bodyweight/assisted movements (`is_bodyweight = 1`), and dual-load persistence (ADR-026: storing both `raw_input_weight` and normalized effective `weight` in kg).
+  - `ActiveLogger`: Dynamic set management with set type tagging (working 'Reg', warmup 'Warm', drop 'Drop', myorep 'Myo', dc 'DC'), per-set notes, ghosting placeholders from the most recent global session, set-type-specific rest timers (0s for drop, 10s for myorep, 30s for dc), superset/giant set grouping, Plate Calculator popover, in-session 1-tap exercise substitution, 1-tap implement and bar switcher (`change-gear-button-<id>`), dumbbell per-hand input with auto-doubled backend math, unilateral independent limb logging (`reps_right`), small-font gear subtext badge, total system load tracking for bodyweight/assisted movements (`is_bodyweight = 1`), dual-load persistence (ADR-026: storing both `raw_input_weight` and normalized effective `weight` in kg), 350ms input debouncing with blur/unmount flush (ADR-041), and isolated wall-clock duration ticking (`WorkoutDurationTicker`).
   - `CalendarAgenda`: Accordion calendar and day agenda view (`CalendarScreen.tsx`) featuring a default collapsed current-week row (`initialExpanded = false`) expandable on demand to full Monday-start 7-column monthly grids via toggle buttons and handle bar, completed workout badges, day agenda listings, and drill-down inspection of sessions (`SessionDetailModal.tsx`) showing volume tonnage, duration, set counts, top e1RM per exercise, deterministic superset badge notation (`SS A1`, `SS A2`), and immediate post-workout summary presentation.
   - `UserSettings`: Preferences manager (`SettingsScreen.tsx`) supporting instant toggles for Weight Unit System (`kg` / `lbs`), Intensity Metric (`RPE` / `RIR`), and Pure Utility Mode (`pure_utility_mode` per ADR-024), backed by write-through storage and diagnostics display.
   - `RootNavigation`: Lightweight, zero-dependency bottom tab navigation (`App.tsx`) organizing the app into 4 dedicated hubs: `HOME (🏠)`, `WORKOUT (⚡)`, `PROFILE (👤)`, and `SETTINGS (⚙️)`, featuring state-preserving display toggling (ADR-028) and in-progress session indicators.
@@ -114,14 +114,14 @@ To balance real-time gym responsiveness with rigorous statistical modeling:
 1. **Active Workout Execution**:
    - User opens app $\rightarrow$ Resume/Discard check for interrupted sessions $\rightarrow$ Selects template or empty workout $\rightarrow$ Exercises loaded with ghosted previous session weights/reps (global scope) $\rightarrow$ User checks off set (write-through to SQLite) $\rightarrow$ Rest timer initiates (suppressed within superset groups).
 2. **Data Export & Ingestion (Step 2.3)**:
-   - User taps "Export Data (JSON)" in Settings $\rightarrow$ `ExportService` serializes all 12 SQLite tables into canonical JSON conforming to `schemas/workout_export.schema.json` with ADR-026 dual-load preservation $\rightarrow$ Writes to cache via `expo-file-system` $\rightarrow$ Triggers native OS share sheet via `expo-sharing` $\rightarrow$ Shared payload is ingested by Companion and validated strictly by Pydantic v2 data models.
+   - User taps "Export Data (JSON)" in Settings $\rightarrow$ `ExportService` serializes all 11 SQLite tables (including `calibrated_params` with posterior covariances `cov_p00`/`cov_p11` and `body_metrics` with `imported_from` provenance) into canonical JSON conforming to `schemas/workout_export.schema.json` with ADR-026 dual-load preservation $\rightarrow$ Writes to cache via `expo-file-system` $\rightarrow$ Triggers native OS share sheet via `expo-sharing` $\rightarrow$ Shared payload is ingested by Companion and validated strictly by Pydantic v2 data models.
 
 3. **Data Import & Evaluation**:
    - User taps "Import Data" in Settings $\rightarrow$ Chooses file picker, clipboard paste, or 1-tap "Load Evaluation Dummy Data" preset (Last 3 Months / All Time) $\rightarrow$ `ImportService` auto-detects Strong, Hevy, Liftosaur, or StrengthLog (training or body comp) $\rightarrow$ Skips unperformed routine template sets $\rightarrow$ Previews matched exercises and duplicate workouts with optional date filtering $\rightarrow$ Writes imported workouts and sets to SQLite inside a single transaction, or updates anthropometric records in `body_metrics` with `imported_from` provenance.
 4. **Analytical Processing**:
    - JSON data ingested into Pandas DataFrames $\rightarrow$ Kalman filter updates $(1\text{RM}_t, k_t)$ per exercise $\rightarrow$ Stimulus computed $\rightarrow$ Bodyweight slope computed $\rightarrow$ Banister differential equations integrated $\rightarrow$ Readiness & deload signals rendered on dashboard.
 5. **Calibrated Parameter Sync**:
-   - Companion exports `calibrated_parameters.json` $\rightarrow$ User transfers file to mobile $\rightarrow$ `CalibratedParamService` writes per-exercise $(1\text{RM}, k)$ to `calibrated_params` table $\rightarrow$ Tier 1 heuristic upgrades from default $k = 0.10$ to individualized $k$.
+   - Companion exports `calibrated_parameters.json` $\rightarrow$ User transfers file to mobile $\rightarrow$ `CalibratedParamService` writes per-exercise $(1\text{RM}, k)$ and covariance parameters to `calibrated_params` table $\rightarrow$ Tier 1 heuristic upgrades from default $k = 0.10$ to individualized $k$.
 
 ---
 
@@ -148,7 +148,7 @@ flowchart TD
 
     subgraph InfrastructureLayer ["4. Infrastructure Layer (External Concerns)"]
         SQLiteRepo["SQLite Implementations (expo-sqlite)"]
-        CloudRepo["Future Supabase Implementations"]
+        CloudSync["Future Supabase Sync Engine / Outbox Adapter"]
         OSAPIs["Rest Timer Background Tasks / Share Sheet"]
         FileIO["Pydantic JSON Parsers & Deserializers"]
     end
@@ -184,7 +184,10 @@ All calculation engines are implemented as **pure, side-effect-free functions**:
 ### 5.3 Repository Pattern & Storage Decoupling
 UI screens never execute SQL statements or import `expo-sqlite` directly. All data access is mediated through domain repository interfaces (`IWorkoutRepository`, `IExerciseRepository`, `IBodyMetricsRepository`):
 - **Testing**: Screens and services can be tested against in-memory mock repositories without file I/O.
-- **Phase 7 Cloud Migration**: Migrating to Supabase PostgreSQL in Phase 7 requires writing `SupabaseWorkoutRepository` to implement the existing interface without modifying UI screens or hooks.
+- **Offline-First Zero-Latency Invariant (Phase 7 Cloud Synchronization)**:
+  - Directly replacing `SQLiteWorkoutRepository` with a network-bound `SupabaseWorkoutRepository` under UI components is strictly prohibited. In basement gym environments with intermittent or non-existent cellular coverage, awaiting HTTP roundtrips on set check-offs (`CrashRecoveryService` write-through) destroys user experience and violates zero-latency responsiveness.
+  - The local embedded SQLite database remains the **sole source of truth** for all Presentation screens, custom hooks, and active workout sessions.
+  - Cloud integration in Phase 7 is implemented as an asynchronous **Sync Engine & Outbox Service** (`SyncEngine`). The engine observes local SQLite changes (via an outbox queue and metadata), pushes pending mutations to Supabase PostgreSQL when online, and applies remote changes down to SQLite in the background without blocking the UI thread.
 
 ### 5.4 Vertical Feature Slicing
 The mobile client is partitioned into self-contained feature slices (`features/logger`, `features/inspection`, `features/progression`, `features/bodyMetrics`, `features/templates`, `features/import`) rather than horizontal directories. Each slice exposes a public interface via its root `index.ts`. Cross-feature coupling is prohibited.

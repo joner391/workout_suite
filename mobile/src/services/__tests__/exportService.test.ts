@@ -201,6 +201,19 @@ describe('ExportService (Step 2.3)', () => {
       thigh_cm: 61.5,
       calf_cm: 38.0,
       navy_body_fat: 14.0,
+      imported_from: 'strengthlog',
+    },
+  ];
+
+  const mockCalibratedParams = [
+    {
+      id: 'cal-bench-01',
+      exercise_id: 'barbell_bench_press',
+      calibrated_1rm: 125.0,
+      calibrated_k: 0.085,
+      cov_p00: 0.001,
+      cov_p11: 0.001,
+      calibrated_at: '2026-10-13T20:00:00.000Z',
     },
   ];
 
@@ -242,6 +255,7 @@ describe('ExportService (Step 2.3)', () => {
     db.mockData.set('FROM body_metrics', mockBodyMetrics);
     db.mockData.set('FROM user_settings', mockUserSettings);
     db.mockData.set('FROM user_profiles', mockUserProfiles);
+    db.mockData.set('FROM calibrated_params', mockCalibratedParams);
   }
 
   beforeEach(() => {
@@ -331,6 +345,13 @@ describe('ExportService (Step 2.3)', () => {
       expect(prof.gender).toBe('male');
       expect(prof.equipment_access).toBe('commercial_gym');
       expect(prof.secondary_goals).toEqual(['strength', 'powerbuilding']);
+
+      // Calibrated Parameters
+      expect(payload.calibrated_params).toHaveLength(1);
+      expect(payload.calibrated_params[0].calibrated_1rm).toBe(125.0);
+      expect(payload.calibrated_params[0].calibrated_k).toBe(0.085);
+      expect(payload.calibrated_params[0].cov_p00).toBe(0.001);
+      expect(payload.calibrated_params[0].cov_p11).toBe(0.001);
     });
 
     it('handles empty database tables without failing', async () => {
@@ -351,6 +372,7 @@ describe('ExportService (Step 2.3)', () => {
       expect(payload.body_metrics).toEqual([]);
       expect(payload.user_settings).toEqual({});
       expect(payload.user_profiles).toEqual([]);
+      expect(payload.calibrated_params).toEqual([]);
     });
 
     it('throws when no database is provided', async () => {

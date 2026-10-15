@@ -1017,8 +1017,102 @@
     - Full preservation of bodyweight and body composition history directly feeding the Longitudinal Plots screen, DoD Navy body fat calculations, and Companion Banister recoverability engine.
     - Zero data corruption from skipped/unperformed template sets.
     - 100% test coverage across all 49 mobile test suites (661 tests) and verified zero TypeScript errors (`npx tsc --noEmit`).
+
+---
+
+## ADR-041: UI Render Optimization, SQLite Keystroke Debouncing & Timer Lifecycle Isolation
+- **Context**:
+  1. Comprehensive audit of mobile architecture identified three critical performance bottlenecks:
+     - **Keystroke Write-Through Churn**: In `SetRowComponent.tsx`, text inputs for weight, reps, intensity, and notes triggered `onUpdateSet` on every `onChangeText` event. Each keystroke invoked `ActiveSessionService.updateSet`, performing 2 SQLite `SELECT` queries and 1 SQLite `UPDATE` per character typed (e.g. typing "100" fired 9 database operations and 6 full component tree re-renders).
+     - **Root-Level 1-Second Timer Storm**: `ActiveLoggerScreen.tsx` maintained an `elapsedDurationText` state string updating every 1,000ms via `setInterval`. Because `SetRowComponent` and `SupersetBracketGroup` were not memoized and received inline callback closures, every active set row across the workout re-rendered every single second.
+     - **Redundant Exercise & Gear Disk Queries**: On every set modification, `ActiveSessionService.updateSet` re-queried the exercise catalog and gear inventory tables from SQLite even though metadata is static during active sessions.
+     - **Background Resiliency**: `RestTimerService` used wall-clock comparison (`endTimeMs - Date.now()`) to prevent timer drift, but lacked an explicit `AppState` listener hook to refresh state immediately upon returning from the OS background.
+     - **Dual-Repository Testing Overhead**: 7 mock repositories and 7 mock test files were maintained alongside SQLite implementations because `MockSQLiteDatabase.ts` is only a query pattern matcher rather than a full SQL engine.
+- **Decision**:
+  1. **Input Debouncing & Draft State Buffering (`SetRowComponent.tsx`)**:
+     - Introduced local draft string buffers (`weightInput`, `repsInput`, `repsRightInput`, `intensityInput`, `notesText`).
+     - Added a 350ms debounce queue (`queueUpdate` / `pendingUpdatesRef`) that batches rapid typing into a single update.
+     - Added guaranteed synchronous flushes (`flushPendingUpdates`) on input `onBlur`, steppers, set-type cycling, ghost copying, intensity clearing, and component unmount.
+  2. **Isolated Duration Clock & Component Memoization (`ActiveLoggerScreen.tsx`, `SetRowComponent.tsx`, `SupersetBracketGroup.tsx`)**:
+     - Extracted elapsed session duration ticking out of `ActiveLoggerScreen` root state into an isolated, memoized `<WorkoutDurationTicker startedAt={...} />` component.
+     - Extracted a pure helper `formatElapsedDuration(startedAt)` for modal summaries.
+     - Wrapped `SetRowComponent` in `React.memo` with a custom shallow comparator matching on `set`, `exercise`, `ghostSet`, `unitSystem`, `intensityMetric`, `isCompleted`, and `isExpanded`.
+     - Wrapped `SupersetBracketGroup` in `React.memo`.
+     - Memoized `handleUpdateSet` with `useCallback`.
+  3. **In-Memory Catalog Caching (`ActiveSessionService.ts`)**:
+     - Added `exerciseCache` and `gearCache` Maps inside `ActiveSessionService` to eliminate redundant database reads during set updates.
+  4. **AppState Wall-Clock Re-synchronization (`RestTimerService.ts`, `ActiveLoggerScreen.tsx`)**:
+     - Added `syncWithWallClock()` method to `RestTimerService`.
+     - Attached React Native `AppState` event listener in `ActiveLoggerScreen` to immediately trigger `syncWithWallClock()` when the app transitions from `background` $\rightarrow$ `active`.
+  5. **List Virtualization (`ExerciseLibraryScreen.tsx`, `CalendarScreen.tsx`)**:
+     - Converted `CalendarScreen.tsx` day agenda from `ScrollView` to `FlatList`.
+     - Memoized `renderItem` in `ExerciseLibraryScreen.tsx` with `useCallback` and added virtualization props (`initialNumToRender={15}`, `maxToRenderPerBatch={15}`, `windowSize={7}`, `removeClippedSubviews={true}`).
+  6. **Repository Mock Consolidation Roadmap**:
+     - Clarified that in-memory mock repositories are retained for rapid (<5s) headless Jest testing without native C binary dependencies. Documented Phase 7 path to replace mock classes with an in-memory SQLite driver adapter (e.g. `better-sqlite3`).
+- **Consequences**:
+  - *Pros*:
+    - Typing a 3-digit weight or reps count reduces database operations from 9 to 1, eliminating mobile input latency and keyboard frame drops.
+    - Zero re-render cascading on the 1-second clock; `ActiveLoggerScreen` remains completely idle between athlete interactions.
+    - Returning to the app from background instantly syncs rest timers and workout elapsed clocks.
+    - 100% test pass rate across all 51 test suites (676 tests).
   - *Cons*:
-    - Bundled evaluation presets add a small static string payload to the app bundle for evaluation; can be easily tree-shaken or guarded in release builds if desired.
+    - Keystroke updates are held in memory for 350ms before writing to disk if the input is not explicitly blurred (safeguarded by unmount flush and blur handlers).
+
+---
+
+## ADR-042: Pre-Phase 7 Schema Synchronization, Sync Outbox Strategy, and Bundle Optimization
+- **Context**:
+  A rigorous architectural and contract audit prior to Phase 7 (Supabase Cloud Migration) surfaced several structural risks and schema drifts:
+  1. **Direct Swap to Supabase Trap (`ARCHITECTURE.md` Section 5.3)**:
+     - The architecture doc suggested swapping `SQLiteWorkoutRepository` with `SupabaseWorkoutRepository` in Phase 7. In basement gym environments with spotty or nonexistent cellular reception, awaiting network roundtrips during set check-offs (`CrashRecoveryService` write-through) would destroy the offline-first zero-latency guarantee.
+  2. **Migration Fall-Through & Unwrapped Transactions (`schema.ts`)**:
+     - Database migrations used `if (currentVersion < 1) { ... } else if (currentVersion < 2) { ... }`. Using `else if` prevented multi-step migrations from chaining in a single pass (e.g. an upgrade from v1 $\rightarrow$ v3 skipped v2 until next launch).
+     - Initial seeding loops executed $N$ separate auto-committing `runAsync` statements outside an explicit transaction, causing UI freezes on cold boot.
+     - Migration v2 attempted an invalid SQL update: `WHERE training_enjoyment = 'minimalist'` on `user_profiles`, which caused execution failures if reached.
+  3. **Foreign Key Deletion Constraint Crash**:
+     - `template_exercises.exercise_id` and `workout_sets.exercise_id` lacked explicit `ON DELETE` clauses, defaulting to `RESTRICT` under `PRAGMA foreign_keys = ON;`. Deleting a custom exercise referenced by any template or set triggered unhandled SQLite constraint exceptions.
+  4. **Schema Drift across SQLite, JSON Contracts & Python Companion**:
+     - `calibrated_params` omitted posterior error covariance diagonal elements `cov_p00` and `cov_p11`, which are required by the Kalman filter in Companion to resume incremental estimation without recomputing history from $t=0$.
+     - `workout_export.schema.json` omitted `calibrated_params` entirely.
+     - `calibrated_parameters.schema.json` contained polymorphic `oneOf` branching (bare array vs. envelope object), burdening both TypeScript and Python deserializers.
+     - `body_metrics` lacked the `imported_from` provenance column claimed in `ARCHITECTURE.md` Section 4.3.
+     - `user_profiles` retained dead column `intensity_style` in SQLite, not present in JSON contracts.
+     - `workout_sets` indexed `exercise_id` and `workout_id` separately, forcing table scans or joins when resolving ghost sets (`exercise_id, created_at DESC`).
+  5. **Production Bundle Bloat**:
+     - `mobile/src/database/index.ts` re-exported `./mocks`, bundling all 7 mock repository classes into production binaries.
+     - `dummyDataPresets.ts` (~700 KB of raw CSV text) was bundled unconditionally into production builds.
+     - SQLite schema declared a `strength_standards` table that was never seeded or queried (static mathematical lookup tables already existed in `mobile/src/core/math/strengthStandards.ts`).
+- **Decision**:
+  1. **Architectural Invariant Reaffirmation (`ARCHITECTURE.md`)**:
+     - Explicitly codified that local embedded SQLite remains the sole data source for UI components, custom hooks, and active workout sessions.
+     - Phase 7 cloud synchronization is designated to an asynchronous background **Sync Engine & Outbox Service** (`SyncEngine`) that queues local mutations and syncs with Supabase PostgreSQL without blocking user interactions.
+  2. **SQLite Migration Framework Hardening (`schema.ts`)**:
+     - Bumped `CURRENT_SCHEMA_VERSION = 3`.
+     - Wrapped initial database setup, default seeds, and sequential version migrations inside explicit `BEGIN TRANSACTION; ... COMMIT;` blocks with `ROLLBACK;` on error.
+     - Replaced `else if` branching with independent sequential `if (currentVersion < X)` blocks.
+     - Configured explicit foreign key behaviors: `template_exercises.exercise_id ON DELETE CASCADE` and `workout_sets.exercise_id ON DELETE RESTRICT`.
+     - Replaced single-column index with composite `idx_workout_sets_ex_created ON workout_sets(exercise_id, created_at DESC)`.
+  3. **Cross-Stack Schema Synchronization (`schema.ts`, `schemas/`, `companion/`)**:
+     - Added `cov_p00 REAL NOT NULL DEFAULT 0.0` and `cov_p11 REAL NOT NULL DEFAULT 0.0` to `calibrated_params` across SQLite, `mobile/src/core/types/index.ts`, `schemas/workout_export.schema.json`, and `companion/src/ingestion/schemas.py`.
+     - Added `calibrated_params` to `WorkoutExportPayload`, serialized in `ExportService.ts` and ingested by Companion.
+     - Locked `calibrated_parameters.schema.json` strictly to the versioned envelope object `{ version, exported_at, parameters }`, removing `oneOf` polymorphism.
+     - Added `imported_from TEXT` to `body_metrics` table, types, repository (`SQLiteBodyMetricsRepository.ts`), CSV import parser (`csvImportParser.ts`), export service, and Pydantic schema (`BodyMetric`).
+     - Dropped dead column `intensity_style` from `user_profiles` and removed the erroneous `WHERE training_enjoyment` statement.
+     - Dropped unused `strength_standards` SQLite table from DDL and reset routines.
+  4. **Tree-Shaking & Bundle Optimization**:
+     - Removed `export * from './mocks';` from `mobile/src/database/index.ts`. Mocks are imported directly from `src/database/mocks` only inside `*.test.ts` files.
+     - Gated `dummyDataPresets.ts` evaluation UI cards in `ImportScreen.tsx` behind `__DEV__ || process.env.NODE_ENV !== 'production'`.
+- **Consequences**:
+  - *Pros*:
+    - Migration pipeline cleanly chains multi-version transitions (v1 $\rightarrow$ v2 $\rightarrow$ v3) in a single cold boot.
+    - Batch seeding executes inside a single transaction, preventing cold-boot UI freezes.
+    - Zero production leakage of mock repository classes or 700 KB evaluation CSV strings.
+    - Kalman filter covariance parameters are persisted and synchronized across mobile and companion, enabling true incremental state estimation.
+    - Deleting custom exercises cascades cleanly to templates and fails gracefully on existing workout sets.
+    - 100% test pass rate maintained: 51/51 mobile test suites (678 tests), 0 TypeScript errors, 35/35 pytest tests, 0 mypy errors across 8 Python files.
+  - *Cons*:
+    - Schema version bumped to 3; existing dev databases must execute migration v3 or reset.
+
 
 
 

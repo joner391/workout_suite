@@ -229,6 +229,17 @@ def valid_full_export_payload(
             "pure_utility_mode": "1",
         },
         "user_profiles": [valid_user_profile_dict],
+        "calibrated_params": [
+            {
+                "id": "cal-001",
+                "exercise_id": "ex-bench",
+                "calibrated_1rm": 125.0,
+                "calibrated_k": 0.085,
+                "cov_p00": 0.001,
+                "cov_p11": 0.001,
+                "calibrated_at": "2026-10-13T20:00:00Z",
+            }
+        ],
     }
 
 

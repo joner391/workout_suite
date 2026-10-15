@@ -2,6 +2,7 @@
 
 from .schemas import (
     BodyMetric,
+    CalibratedParam,
     CalibratedParameter,
     CalibratedParametersEnvelope,
     Exercise,
@@ -19,6 +20,7 @@ from .schemas import (
 
 __all__ = [
     "BodyMetric",
+    "CalibratedParam",
     "CalibratedParameter",
     "CalibratedParametersEnvelope",
     "Exercise",

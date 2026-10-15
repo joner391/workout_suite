@@ -19,6 +19,7 @@ interface BodyMetricRow {
   thigh_cm: number | null;
   calf_cm: number | null;
   navy_body_fat: number | null;
+  imported_from: string | null;
 }
 
 interface UserProfileSubsetRow {
@@ -42,6 +43,7 @@ function mapRowToBodyMetric(row: BodyMetricRow): BodyMetric {
     calf_cm: row.calf_cm != null ? Number(row.calf_cm) : null,
     navy_body_fat:
       row.navy_body_fat != null ? Number(row.navy_body_fat) : null,
+    imported_from: row.imported_from != null ? String(row.imported_from) : null,
   };
 }
 
@@ -137,8 +139,8 @@ export class SQLiteBodyMetricsRepository implements IBodyMetricsRepository {
     await this.db.runAsync(
       `INSERT OR REPLACE INTO body_metrics (
          id, date, bodyweight, body_fat_manual, waist_cm, neck_cm,
-         hip_cm, bicep_cm, chest_cm, thigh_cm, calf_cm, navy_body_fat
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+         hip_cm, bicep_cm, chest_cm, thigh_cm, calf_cm, navy_body_fat, imported_from
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       toSave.id,
       toSave.date,
       toSave.bodyweight,
@@ -150,7 +152,8 @@ export class SQLiteBodyMetricsRepository implements IBodyMetricsRepository {
       toSave.chest_cm ?? null,
       toSave.thigh_cm ?? null,
       toSave.calf_cm ?? null,
-      toSave.navy_body_fat ?? null
+      toSave.navy_body_fat ?? null,
+      toSave.imported_from ?? null
     );
 
     return { ...toSave };

@@ -23,6 +23,7 @@ import {
   FlatList,
   TextInput,
   Alert,
+  AppState,
 } from 'react-native';
 import {
   Workout,
@@ -58,6 +59,59 @@ import { ProgressionProposalBanner } from './ProgressionProposalBanner';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
 import { SessionDetailModal } from '../calendar/SessionDetailModal';
 
+export interface WorkoutDurationTickerProps {
+  startedAt?: string | null;
+  style?: any;
+  testID?: string;
+}
+
+export const WorkoutDurationTicker: React.FC<WorkoutDurationTickerProps> = React.memo(({
+  startedAt,
+  style,
+  testID = 'session-elapsed-ticker',
+}) => {
+  const [durationText, setDurationText] = useState<string>('00:00:00');
+
+  useEffect(() => {
+    if (!startedAt) return;
+    const startMs = new Date(startedAt).getTime();
+
+    const update = () => {
+      const nowMs = Date.now();
+      const elapsedSec = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+      const hours = Math.floor(elapsedSec / 3600);
+      const mins = Math.floor((elapsedSec % 3600) / 60);
+      const secs = elapsedSec % 60;
+      setDurationText(
+        `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs
+          .toString()
+          .padStart(2, '0')}`
+      );
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
+  return (
+    <Text testID={testID} style={style}>
+      {durationText}
+    </Text>
+  );
+});
+
+export function formatElapsedDuration(startedAt?: string | null): string {
+  if (!startedAt) return '00:00:00';
+  const startMs = new Date(startedAt).getTime();
+  const elapsedSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+  const hours = Math.floor(elapsedSec / 3600);
+  const mins = Math.floor((elapsedSec % 3600) / 60);
+  const secs = elapsedSec % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs
+    .toString()
+    .padStart(2, '0')}`;
+}
 
 export interface ActiveLoggerScreenProps {
   initialWorkoutId?: string;
@@ -121,7 +175,6 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
   const [intensityMetric, setIntensityMetric] = useState<IntensityMetric>('RPE');
   const [loading, setLoading] = useState<boolean>(true);
-  const [elapsedDurationText, setElapsedDurationText] = useState<string>('00:00:00');
   const [expandedSetId, setExpandedSetId] = useState<string | null>(null);
 
   // Modals state
@@ -169,9 +222,6 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     templateExerciseId?: string;
     exerciseId?: string;
   } | null>(null);
-
-  // Timer interval ref for elapsed duration ticker
-  const durationTickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 1. Initial Load: Check Crash Recovery or Load Specified Workout
   useEffect(() => {
@@ -240,7 +290,6 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
     return () => {
       isMounted = false;
-      if (durationTickerRef.current) clearInterval(durationTickerRef.current);
     };
   }, [initialWorkoutId]);
 
@@ -341,32 +390,18 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     }
   };
 
-  // Live session duration ticker
+  // Resynchronize rest timer when returning from background
   useEffect(() => {
-    if (!activeWorkout?.started_at) return;
-
-    const startMs = new Date(activeWorkout.started_at).getTime();
-
-    const updateDuration = () => {
-      const nowMs = Date.now();
-      const elapsedSec = Math.max(0, Math.floor((nowMs - startMs) / 1000));
-      const hours = Math.floor(elapsedSec / 3600);
-      const mins = Math.floor((elapsedSec % 3600) / 60);
-      const secs = elapsedSec % 60;
-      setElapsedDurationText(
-        `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs
-          .toString()
-          .padStart(2, '0')}`
-      );
-    };
-
-    updateDuration();
-    durationTickerRef.current = setInterval(updateDuration, 1000);
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        timerService.syncWithWallClock();
+      }
+    });
 
     return () => {
-      if (durationTickerRef.current) clearInterval(durationTickerRef.current);
+      subscription.remove();
     };
-  }, [activeWorkout?.started_at]);
+  }, [timerService]);
 
   // Crash Recovery Actions
   const handleResumeCrashSession = async (workoutId: string) => {
@@ -457,31 +492,34 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   };
 
   // Update Set
-  const handleUpdateSet = async (setId: string, updatedFields: Partial<WorkoutSet>) => {
-    if (!activeWorkout) return;
+  const handleUpdateSet = useCallback(
+    async (setId: string, updatedFields: Partial<WorkoutSet>) => {
+      if (!activeWorkout) return;
 
-    // Optimistic UI update
-    setSets((prev) =>
-      prev.map((s) => (s.id === setId ? { ...s, ...updatedFields } : s))
-    );
+      // Optimistic UI update
+      setSets((prev) =>
+        prev.map((s) => (s.id === setId ? { ...s, ...updatedFields } : s))
+      );
 
-    try {
-      const persisted = await sessionService.updateSet(activeWorkout.id, setId, {
-        rawInputWeight: updatedFields.raw_input_weight,
-        reps: updatedFields.reps,
-        repsRight: updatedFields.reps_right,
-        rpe: updatedFields.rpe,
-        rir: updatedFields.rir,
-        setType: updatedFields.set_type,
-        setNotes: updatedFields.set_notes,
-        gearId: updatedFields.gear_id,
-      });
+      try {
+        const persisted = await sessionService.updateSet(activeWorkout.id, setId, {
+          rawInputWeight: updatedFields.raw_input_weight,
+          reps: updatedFields.reps,
+          repsRight: updatedFields.reps_right,
+          rpe: updatedFields.rpe,
+          rir: updatedFields.rir,
+          setType: updatedFields.set_type,
+          setNotes: updatedFields.set_notes,
+          gearId: updatedFields.gear_id,
+        });
 
-      setSets((prev) => prev.map((s) => (s.id === setId ? persisted : s)));
-    } catch (err) {
-      console.error('Failed to update set:', err);
-    }
-  };
+        setSets((prev) => prev.map((s) => (s.id === setId ? persisted : s)));
+      } catch (err) {
+        console.error('Failed to update set:', err);
+      }
+    },
+    [activeWorkout, sessionService]
+  );
 
   // Switch gear/implement for all sets of an exercise in the active session (ADR-025)
   const handleSelectGearForExercise = async (exerciseId: string, selectedGearId: string | null) => {
@@ -1050,9 +1088,10 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           </Text>
           <View style={styles.headerSubRow}>
             <View style={styles.livePulseDot} />
-            <Text testID="session-elapsed-ticker" style={styles.headerTicker}>
-              {elapsedDurationText}
-            </Text>
+            <WorkoutDurationTicker
+              startedAt={activeWorkout?.started_at}
+              style={styles.headerTicker}
+            />
             <Text style={styles.headerUnitPill}>{unitSystem.toUpperCase()} / {intensityMetric}</Text>
           </View>
         </View>
@@ -1333,7 +1372,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           <View style={styles.confirmModalCard}>
             <Text style={styles.confirmModalTitle}>Finish Workout</Text>
             <Text style={styles.confirmModalSubtitle}>
-              Great work! Duration: {elapsedDurationText}. Add any final notes:
+              Great work! Duration: {formatElapsedDuration(activeWorkout?.started_at)}. Add any final notes:
             </Text>
 
             {sets.some((s) => !completedSetIds.has(s.id)) && (

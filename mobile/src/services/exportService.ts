@@ -26,6 +26,7 @@ import {
   BodyMetric,
   UserProfile,
   TrainingMentality,
+  CalibratedParam,
 } from '../core/types';
 
 export const EXPORT_SCHEMA_VERSION = '1.0.0';
@@ -262,7 +263,7 @@ export class ExportService {
     // 10. Body Metrics
     const rawMetrics = await db.getAllAsync<any>(
       `SELECT id, date, bodyweight, body_fat_manual, waist_cm, neck_cm,
-              hip_cm, bicep_cm, chest_cm, thigh_cm, calf_cm, navy_body_fat
+              hip_cm, bicep_cm, chest_cm, thigh_cm, calf_cm, navy_body_fat, imported_from
        FROM body_metrics
        ORDER BY date ASC;`
     );
@@ -279,6 +280,7 @@ export class ExportService {
       thigh_cm: r.thigh_cm != null ? Number(r.thigh_cm) : null,
       calf_cm: r.calf_cm != null ? Number(r.calf_cm) : null,
       navy_body_fat: r.navy_body_fat != null ? Number(r.navy_body_fat) : null,
+      imported_from: r.imported_from != null ? String(r.imported_from) : null,
     }));
 
     // 11. User Settings (Transforms relational rows to string key-value map)
@@ -327,6 +329,22 @@ export class ExportService {
       };
     });
 
+    // 13. Calibrated Parameters (Tier 2 Kalman Filter state)
+    const rawCalibrated = await db.getAllAsync<any>(
+      `SELECT id, exercise_id, calibrated_1rm, calibrated_k, cov_p00, cov_p11, calibrated_at
+       FROM calibrated_params
+       ORDER BY exercise_id ASC;`
+    );
+    const calibrated_params: CalibratedParam[] = (rawCalibrated || []).map((r) => ({
+      id: String(r.id),
+      exercise_id: String(r.exercise_id),
+      calibrated_1rm: Number(r.calibrated_1rm),
+      calibrated_k: Number(r.calibrated_k),
+      cov_p00: Number(r.cov_p00 ?? 0.0),
+      cov_p11: Number(r.cov_p11 ?? 0.0),
+      calibrated_at: String(r.calibrated_at),
+    }));
+
     return {
       version: EXPORT_SCHEMA_VERSION,
       exported_at: new Date().toISOString(),
@@ -342,6 +360,7 @@ export class ExportService {
       body_metrics,
       user_settings,
       user_profiles,
+      calibrated_params,
     };
   }
 

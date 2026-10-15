@@ -2,7 +2,7 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { DEFAULT_EXERCISES, DEFAULT_GEAR } from './seeds/defaultExercises';
 
 export const DATABASE_NAME = 'workout_suite.db';
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 /**
  * Minimal abstraction matching the modern expo-sqlite async interface.
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS program_blocks (
 CREATE TABLE IF NOT EXISTS template_exercises (
     id TEXT PRIMARY KEY,
     template_id TEXT NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
-    exercise_id TEXT NOT NULL REFERENCES exercises(id),
+    exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
     gear_id TEXT REFERENCES gear_inventory(id) ON DELETE SET NULL,
     target_sets INTEGER,
     target_reps_min INTEGER,
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS workouts (
 CREATE TABLE IF NOT EXISTS workout_sets (
     id TEXT PRIMARY KEY,
     workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
-    exercise_id TEXT NOT NULL REFERENCES exercises(id),
+    exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE RESTRICT,
     gear_id TEXT REFERENCES gear_inventory(id) ON DELETE SET NULL,
     set_number INTEGER NOT NULL,
     weight REAL NOT NULL,
@@ -148,7 +148,8 @@ CREATE TABLE IF NOT EXISTS body_metrics (
     chest_cm REAL,
     thigh_cm REAL,
     calf_cm REAL,
-    navy_body_fat REAL
+    navy_body_fat REAL,
+    imported_from TEXT
 );
 
 -- Calibrated 1RM Parameters (imported from Companion Kalman engine)
@@ -157,6 +158,8 @@ CREATE TABLE IF NOT EXISTS calibrated_params (
     exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
     calibrated_1rm REAL NOT NULL,
     calibrated_k REAL NOT NULL,
+    cov_p00 REAL NOT NULL DEFAULT 0.0,
+    cov_p11 REAL NOT NULL DEFAULT 0.0,
     calibrated_at TEXT NOT NULL,
     UNIQUE(exercise_id)
 );
@@ -174,7 +177,6 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     birthdate TEXT,
     height_cm REAL,
     training_mentality TEXT NOT NULL DEFAULT 'precision',
-    intensity_style TEXT,
     primary_goal TEXT NOT NULL DEFAULT 'hypertrophy',
     secondary_goals TEXT,
     preferred_days_per_week INTEGER NOT NULL DEFAULT 4,
@@ -184,22 +186,9 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     updated_at TEXT NOT NULL
 );
 
--- Pre-Seeded SBD Strength Standards Benchmarks
-CREATE TABLE IF NOT EXISTS strength_standards (
-    id TEXT PRIMARY KEY,
-    lift_type TEXT NOT NULL,
-    gender TEXT NOT NULL,
-    bodyweight_kg REAL NOT NULL,
-    untrained_1rm REAL NOT NULL,
-    novice_1rm REAL NOT NULL,
-    intermediate_1rm REAL NOT NULL,
-    advanced_1rm REAL NOT NULL,
-    elite_1rm REAL NOT NULL
-);
-
 -- Indices for rapid query performance and ghost set lookups
 CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_id ON workout_sets(workout_id);
-CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise_id ON workout_sets(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sets_ex_created ON workout_sets(exercise_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_workouts_status ON workouts(status);
 CREATE INDEX IF NOT EXISTS idx_workouts_date ON workouts(date);
 CREATE INDEX IF NOT EXISTS idx_exercises_parent_id ON exercises(parent_exercise_id);
@@ -217,82 +206,134 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
   const versionRow = await db.getFirstAsync<{ user_version: number }>(
     'PRAGMA user_version;'
   );
-  const currentVersion = versionRow?.user_version ?? 0;
+  let currentVersion = versionRow?.user_version ?? 0;
 
   if (currentVersion < 1) {
-    // 1. Create all relational tables and indexes
-    await db.execAsync(CREATE_TABLES_SQL);
-
-    // 2. Seed foundational exercise catalog
-    for (const ex of DEFAULT_EXERCISES) {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO exercises (
-          id, name, muscle_group, category, is_compound, is_bodyweight,
-          is_unilateral, load_mode, default_cable_ratio, default_bar_weight_kg,
-          is_custom, parent_exercise_id, standard_lift_type, default_rest_seconds
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-        ex.id,
-        ex.name,
-        ex.muscle_group,
-        ex.category,
-        ex.is_compound ? 1 : 0,
-        ex.is_bodyweight ? 1 : 0,
-        ex.is_unilateral ? 1 : 0,
-        ex.load_mode,
-        ex.default_cable_ratio,
-        ex.default_bar_weight_kg,
-        ex.is_custom ? 1 : 0,
-        ex.parent_exercise_id,
-        ex.standard_lift_type,
-        ex.default_rest_seconds
-      );
-    }
-
-    // 3. Seed default gear inventory
-    for (const gear of DEFAULT_GEAR) {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO gear_inventory (
-          id, name, type, tare_weight_kg, cable_ratio, is_default, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
-        gear.id,
-        gear.name,
-        gear.type,
-        gear.tare_weight_kg,
-        gear.cable_ratio,
-        gear.is_default ? 1 : 0,
-        gear.notes
-      );
-    }
-
-    // 4. Seed baseline default settings
-    await db.runAsync(
-      `INSERT OR IGNORE INTO user_settings (key, value) VALUES ('unit_system', 'kg');`
-    );
-    await db.runAsync(
-      `INSERT OR IGNORE INTO user_settings (key, value) VALUES ('intensity_metric', 'RPE');`
-    );
-    await db.runAsync(
-      `INSERT OR IGNORE INTO user_settings (key, value) VALUES ('pure_utility_mode', '0');`
-    );
-
-    // 5. Update schema version
-    await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
-  } else if (currentVersion < 2) {
-    // Migration v1 -> v2: Add training_mentality column to user_profiles and backfill
+    await db.execAsync('BEGIN TRANSACTION;');
     try {
-      await db.execAsync(
-        "ALTER TABLE user_profiles ADD COLUMN training_mentality TEXT NOT NULL DEFAULT 'precision';"
+      // 1. Create all relational tables and indexes
+      await db.execAsync(CREATE_TABLES_SQL);
+
+      // 2. Seed foundational exercise catalog
+      for (const ex of DEFAULT_EXERCISES) {
+        await db.runAsync(
+          `INSERT OR IGNORE INTO exercises (
+            id, name, muscle_group, category, is_compound, is_bodyweight,
+            is_unilateral, load_mode, default_cable_ratio, default_bar_weight_kg,
+            is_custom, parent_exercise_id, standard_lift_type, default_rest_seconds
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          ex.id,
+          ex.name,
+          ex.muscle_group,
+          ex.category,
+          ex.is_compound ? 1 : 0,
+          ex.is_bodyweight ? 1 : 0,
+          ex.is_unilateral ? 1 : 0,
+          ex.load_mode,
+          ex.default_cable_ratio,
+          ex.default_bar_weight_kg,
+          ex.is_custom ? 1 : 0,
+          ex.parent_exercise_id,
+          ex.standard_lift_type,
+          ex.default_rest_seconds
+        );
+      }
+
+      // 3. Seed default gear inventory
+      for (const gear of DEFAULT_GEAR) {
+        await db.runAsync(
+          `INSERT OR IGNORE INTO gear_inventory (
+            id, name, type, tare_weight_kg, cable_ratio, is_default, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
+          gear.id,
+          gear.name,
+          gear.type,
+          gear.tare_weight_kg,
+          gear.cable_ratio,
+          gear.is_default ? 1 : 0,
+          gear.notes
+        );
+      }
+
+      // 4. Seed baseline default settings
+      await db.runAsync(
+        `INSERT OR IGNORE INTO user_settings (key, value) VALUES ('unit_system', 'kg');`
       );
-      await db.execAsync(
-        "UPDATE user_profiles SET training_mentality = 'fury' WHERE intensity_style = 'high_intensity_low_volume';"
+      await db.runAsync(
+        `INSERT OR IGNORE INTO user_settings (key, value) VALUES ('intensity_metric', 'RPE');`
       );
-      await db.execAsync(
-        "UPDATE user_profiles SET training_mentality = 'get_out' WHERE training_enjoyment = 'minimalist';"
+      await db.runAsync(
+        `INSERT OR IGNORE INTO user_settings (key, value) VALUES ('pure_utility_mode', '0');`
       );
-    } catch {
-      // Column may already exist
+
+      // 5. Update schema version
+      await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
+      await db.execAsync('COMMIT;');
+      currentVersion = CURRENT_SCHEMA_VERSION;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
     }
-    await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
+  }
+
+  if (currentVersion < 2) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      // Migration v1 -> v2: Add training_mentality column to user_profiles
+      try {
+        await db.execAsync(
+          "ALTER TABLE user_profiles ADD COLUMN training_mentality TEXT NOT NULL DEFAULT 'precision';"
+        );
+      } catch {
+        // Column may already exist
+      }
+      await db.execAsync('PRAGMA user_version = 2;');
+      await db.execAsync('COMMIT;');
+      currentVersion = 2;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  if (currentVersion < 3) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      // Migration v2 -> v3:
+      // 1. Add cov_p00, cov_p11 to calibrated_params
+      // 2. Add imported_from to body_metrics
+      // 3. Create composite index idx_workout_sets_ex_created
+      try {
+        await db.execAsync(
+          'ALTER TABLE calibrated_params ADD COLUMN cov_p00 REAL NOT NULL DEFAULT 0.0;'
+        );
+        await db.execAsync(
+          'ALTER TABLE calibrated_params ADD COLUMN cov_p11 REAL NOT NULL DEFAULT 0.0;'
+        );
+      } catch {
+        // Columns may already exist
+      }
+      try {
+        await db.execAsync(
+          'ALTER TABLE body_metrics ADD COLUMN imported_from TEXT;'
+        );
+      } catch {
+        // Column may already exist
+      }
+      try {
+        await db.execAsync(
+          'CREATE INDEX IF NOT EXISTS idx_workout_sets_ex_created ON workout_sets(exercise_id, created_at DESC);'
+        );
+      } catch {
+        // Index may already exist
+      }
+      await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
+      await db.execAsync('COMMIT;');
+      currentVersion = CURRENT_SCHEMA_VERSION;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
   }
 }
 
@@ -318,7 +359,6 @@ export async function getDatabase(dbName: string = DATABASE_NAME): Promise<SQLit
 export async function resetDatabase(db: ISQLiteDatabase): Promise<void> {
   await db.execAsync('PRAGMA foreign_keys = OFF;');
   const tables = [
-    'strength_standards',
     'user_profiles',
     'user_settings',
     'calibrated_params',

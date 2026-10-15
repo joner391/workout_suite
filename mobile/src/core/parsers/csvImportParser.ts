@@ -1242,6 +1242,7 @@ export function parseStrengthLogBodyCompCsv(
         thigh_cm: null,
         calf_cm: null,
         navy_body_fat: null,
+        imported_from: 'strengthlog',
       });
     }
 

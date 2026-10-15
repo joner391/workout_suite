@@ -262,6 +262,7 @@ export interface BodyMetric {
   thigh_cm: number | null;
   calf_cm: number | null;
   navy_body_fat: number | null;
+  imported_from?: string | null;
 }
 
 /**
@@ -272,6 +273,8 @@ export interface CalibratedParam {
   exercise_id: string;
   calibrated_1rm: number;
   calibrated_k: number;
+  cov_p00: number;
+  cov_p11: number;
   calibrated_at: string;
 }
 
@@ -567,5 +570,6 @@ export interface WorkoutExportPayload {
   body_metrics: BodyMetric[];
   user_settings: Record<string, string>;
   user_profiles: UserProfile[];
+  calibrated_params: CalibratedParam[];
 }
 

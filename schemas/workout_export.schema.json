@@ -18,7 +18,8 @@
     "gear_inventory",
     "body_metrics",
     "user_settings",
-    "user_profiles"
+    "user_profiles",
+    "calibrated_params"
   ],
   "additionalProperties": false,
   "properties": {
@@ -114,6 +115,13 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/UserProfile"
+      }
+    },
+    "calibrated_params": {
+      "description": "Collection of calibrated 1RM and endurance parameters with posterior covariance from Tier 2 Kalman engine.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CalibratedParam"
       }
     }
   },
@@ -632,6 +640,10 @@
           "minimum": 2.0,
           "maximum": 70.0,
           "description": "Calculated U.S. Navy formula body fat percentage."
+        },
+        "imported_from": {
+          "type": ["string", "null"],
+          "description": "Provenance identifier if imported from external app (e.g. strengthlog)."
         }
       }
     },
@@ -727,6 +739,53 @@
           "type": "string",
           "format": "date-time",
           "description": "ISO 8601 timestamp of last profile modification."
+        }
+      }
+    },
+    "CalibratedParam": {
+      "type": "object",
+      "required": [
+        "id",
+        "exercise_id",
+        "calibrated_1rm",
+        "calibrated_k",
+        "cov_p00",
+        "cov_p11",
+        "calibrated_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for calibrated parameter record."
+        },
+        "exercise_id": {
+          "type": "string",
+          "description": "Foreign key referencing exercises.id in mobile SQLite database."
+        },
+        "calibrated_1rm": {
+          "type": "number",
+          "exclusiveMinimum": 0.0,
+          "description": "Estimated true 1-Repetition Maximum strength in kilograms (exp(x_0))."
+        },
+        "calibrated_k": {
+          "type": "number",
+          "minimum": 0.03,
+          "maximum": 0.20,
+          "description": "Individualized movement-specific endurance fatigue exponent (k)."
+        },
+        "cov_p00": {
+          "type": "number",
+          "description": "Posterior error covariance element P[0,0] associated with ln(1RM) estimate uncertainty."
+        },
+        "cov_p11": {
+          "type": "number",
+          "description": "Posterior error covariance element P[1,1] associated with the endurance exponent k uncertainty."
+        },
+        "calibrated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp recording when calibration was computed."
         }
       }
     }

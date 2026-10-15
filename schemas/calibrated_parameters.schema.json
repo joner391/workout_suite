@@ -3,40 +3,28 @@
   "$id": "https://workoutsuite.app/schemas/calibrated_parameters.schema.json",
   "title": "CalibratedParametersContract",
   "description": "Contract-first JSON Schema for companion-exported individualized 1RM and endurance (k) parameters derived from the Tier 2 Kalman Filter.",
-  "oneOf": [
-    {
-      "description": "Direct array of calibrated exercise parameters.",
+  "type": "object",
+  "required": ["version", "exported_at", "parameters"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Semantic version of the calibrated parameters schema format.",
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "exported_at": {
+      "description": "ISO 8601 UTC timestamp recording when calibration was exported.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "parameters": {
+      "description": "Array of calibrated exercise parameters.",
       "type": "array",
       "items": {
         "$ref": "#/definitions/CalibratedParameter"
       }
-    },
-    {
-      "description": "Envelope object containing version metadata and an array of calibrated parameters.",
-      "type": "object",
-      "required": ["version", "exported_at", "parameters"],
-      "additionalProperties": false,
-      "properties": {
-        "version": {
-          "description": "Semantic version of the calibrated parameters schema format.",
-          "type": "string",
-          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
-        },
-        "exported_at": {
-          "description": "ISO 8601 UTC timestamp recording when calibration was exported.",
-          "type": "string",
-          "format": "date-time"
-        },
-        "parameters": {
-          "description": "Array of calibrated exercise parameters.",
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/CalibratedParameter"
-          }
-        }
-      }
     }
-  ],
+  },
   "definitions": {
     "CalibratedParameter": {
       "type": "object",

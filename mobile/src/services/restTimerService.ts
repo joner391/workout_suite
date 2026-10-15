@@ -302,6 +302,17 @@ export class RestTimerService {
   }
 
   /**
+   * Re-evaluates timer state against system wall clock and notifies listeners immediately.
+   * Useful when resuming from background or re-focusing screens to eliminate lag.
+   */
+  public syncWithWallClock(): RestTimerState {
+    this.evaluateStatus();
+    const state = this.getState();
+    this.notifyListeners(state);
+    return state;
+  }
+
+  /**
    * Cleans up intervals and clears all listeners.
    */
   public destroy(): void {

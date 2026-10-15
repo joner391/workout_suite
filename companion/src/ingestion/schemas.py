@@ -419,6 +419,10 @@ class BodyMetric(StrictSchemaModel):
         le=70.0,
         description="Calculated U.S. Navy formula body fat percentage.",
     )
+    imported_from: Optional[str] = Field(
+        default=None,
+        description="Provenance identifier if imported from external app.",
+    )
 
 
 class UserProfile(StrictSchemaModel):
@@ -469,6 +473,33 @@ class UserProfile(StrictSchemaModel):
     updated_at: str = Field(description="ISO 8601 last update timestamp.")
 
 
+class CalibratedParam(StrictSchemaModel):
+    """Calibrated 1RM and endurance parameter record stored in mobile SQLite."""
+
+    id: str = Field(description="Unique identifier for calibrated parameter record.")
+    exercise_id: str = Field(
+        description="Foreign key referencing exercises.id in mobile SQLite.",
+    )
+    calibrated_1rm: float = Field(
+        gt=0.0,
+        description="Estimated true 1-Repetition Maximum strength in kg (exp(x_0)).",
+    )
+    calibrated_k: float = Field(
+        ge=0.03,
+        le=0.20,
+        description="Individualized endurance fatigue exponent (k).",
+    )
+    cov_p00: float = Field(
+        description="Posterior error covariance element P[0,0] for ln(1RM).",
+    )
+    cov_p11: float = Field(
+        description="Posterior error covariance element P[1,1] for k uncertainty.",
+    )
+    calibrated_at: str = Field(
+        description="ISO 8601 UTC timestamp when calibration was computed.",
+    )
+
+
 class WorkoutExportPayload(StrictSchemaModel):
     """Complete Workout Suite relational export payload."""
 
@@ -489,6 +520,7 @@ class WorkoutExportPayload(StrictSchemaModel):
     body_metrics: List[BodyMetric] = Field(default_factory=list)
     user_settings: Dict[str, str] = Field(default_factory=dict)
     user_profiles: List[UserProfile] = Field(default_factory=list)
+    calibrated_params: List[CalibratedParam] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -536,7 +568,4 @@ class CalibratedParametersEnvelope(StrictSchemaModel):
     )
 
 
-CalibratedParametersPayload = Union[
-    List[CalibratedParameter],
-    CalibratedParametersEnvelope,
-]
+CalibratedParametersPayload = CalibratedParametersEnvelope

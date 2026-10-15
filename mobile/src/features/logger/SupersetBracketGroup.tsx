@@ -23,7 +23,7 @@ export interface SupersetBracketGroupProps {
   children: React.ReactNode;
 }
 
-export const SupersetBracketGroup: React.FC<SupersetBracketGroupProps> = ({
+export const SupersetBracketGroup: React.FC<SupersetBracketGroupProps> = React.memo(({
   groupId,
   exercises,
   onUngroup,
@@ -80,7 +80,7 @@ export const SupersetBracketGroup: React.FC<SupersetBracketGroupProps> = ({
       <View style={styles.bracketBody}>{children}</View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   bracketContainer: {

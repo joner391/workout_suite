@@ -11,6 +11,7 @@
  */
 
 import { formatTimeRemaining } from '../RestTimerBanner';
+import { formatElapsedDuration } from '../ActiveLoggerScreen';
 import { calculatePlateLoading, DEFAULT_BAR_TARE_KG } from '../../../core/math/plateCalculator';
 import {
   Workout,
@@ -968,6 +969,42 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
 
       // Crucial: Bench Press sets remain COMPLETELY UNTOUCHED with null gear_id (20 kg standard bar)!
       expect(updatedBench[0].gear_id).toBeNull();
+    });
+  });
+
+  describe('8. Performance Optimizations & Ticker Isolation', () => {
+    test('formatElapsedDuration formats HH:MM:SS correctly', () => {
+      const now = Date.now();
+      expect(formatElapsedDuration(null)).toBe('00:00:00');
+      expect(formatElapsedDuration(undefined)).toBe('00:00:00');
+
+      // 65 seconds ago
+      const sixtyFiveSecsAgo = new Date(now - 65 * 1000).toISOString();
+      expect(formatElapsedDuration(sixtyFiveSecsAgo)).toBe('00:01:05');
+
+      // 3665 seconds ago (1h 1m 5s)
+      const oneHourAgo = new Date(now - 3665 * 1000).toISOString();
+      expect(formatElapsedDuration(oneHourAgo)).toBe('01:01:05');
+    });
+
+    test('RestTimerService.syncWithWallClock immediately evaluates status and notifies subscribers', () => {
+      const timer = new RestTimerService();
+      let notifiedState: any = null;
+      timer.subscribe((state) => {
+        notifiedState = state;
+      });
+
+      // Start 60s timer
+      timer.start(60);
+      expect(notifiedState.status).toBe('running');
+      expect(notifiedState.remainingSeconds).toBe(60);
+
+      // Trigger sync
+      const synced = timer.syncWithWallClock();
+      expect(synced.status).toBe('running');
+      expect(notifiedState.status).toBe('running');
+
+      timer.destroy();
     });
   });
 });
