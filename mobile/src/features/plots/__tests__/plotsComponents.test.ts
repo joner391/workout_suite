@@ -17,11 +17,13 @@ import {
   MockBodyMetricsRepository,
   MockProgramRepository,
   MockUserSettingsRepository,
+  MockUserProfileRepository,
 } from '../../../database/mocks';
 import { ProgramBlockService } from '../../../services/programBlockService';
 import {
   calculateBodyweightRollingAverages,
   calculateNavyBodyFat,
+  calculateEstimatedLeanBodyMass,
   parseIsoDateToMs,
 } from '../../../core/math/navyBodyFat';
 import { calculateHeuristic1RM } from '../../../core/math/heuristic1rm';
@@ -43,6 +45,7 @@ import {
   Exercise,
   Program,
   ProgramBlock,
+  BodyMetric,
 } from '../../../core/types';
 
 describe('Longitudinal Plots & Era Shading Suite (Step 5.2)', () => {
@@ -563,12 +566,13 @@ describe('Longitudinal Plots & Era Shading Suite (Step 5.2)', () => {
       expect(BODY_COMPOSITION_CHARTS).toEqual([
         'bodyweight',
         'body_fat',
+        'elbm',
         'circumferences',
       ]);
-      // Verify mutually exclusive and collectively exhaustive across the 5 charts
+      // Verify mutually exclusive and collectively exhaustive across the 6 charts
       const allGrouped = [...PERFORMANCE_CHARTS, ...BODY_COMPOSITION_CHARTS];
-      expect(allGrouped).toHaveLength(5);
-      expect(new Set(allGrouped).size).toBe(5);
+      expect(allGrouped).toHaveLength(6);
+      expect(new Set(allGrouped).size).toBe(6);
     });
 
     test('initializes PlotsScreen with targetGroup performance', () => {
@@ -589,6 +593,278 @@ describe('Longitudinal Plots & Era Shading Suite (Step 5.2)', () => {
       });
       expect(element).toBeDefined();
       expect(element.props.targetGroup).toBe('body_composition');
+    });
+  });
+
+  describe('8. Plot Time Span Filtering (All data, Year, 3 months, Month, Week)', () => {
+    const fixedRef = new Date('2026-10-16T12:00:00Z');
+
+    test('exposes all 5 requested time span options with exact labels', () => {
+      const { TIME_SPAN_OPTIONS } = require('../PlotsScreen');
+      expect(TIME_SPAN_OPTIONS).toEqual([
+        { key: 'all', label: 'All data' },
+        { key: 'year', label: 'Year' },
+        { key: '3months', label: '3 months' },
+        { key: 'month', label: 'Month' },
+        { key: 'week', label: 'Week' },
+      ]);
+    });
+
+    test('initializes PlotsScreen with timeSpan and onTimeSpanChange props', () => {
+      const onTimeSpanChange = jest.fn();
+      const element = React.createElement(PlotsScreen, {
+        workoutRepo,
+        exerciseRepo,
+        initialTimeSpan: 'month',
+        timeSpan: 'week',
+        onTimeSpanChange,
+        referenceDate: fixedRef,
+      });
+
+      expect(element).toBeDefined();
+      expect(element.props.initialTimeSpan).toBe('month');
+      expect(element.props.timeSpan).toBe('week');
+      expect(element.props.onTimeSpanChange).toBe(onTimeSpanChange);
+      expect(element.props.referenceDate).toBe(fixedRef);
+    });
+
+    test('filters e1RM longitudinal progression points by time span', () => {
+      const { filterDataByTimeSpan } = require('../timeSpanUtils');
+
+      const historicalE1rmPoints = [
+        { date: '2025-05-10', value: 80.0 }, // > 1 year
+        { date: '2025-11-20', value: 87.5 }, // in year
+        { date: '2026-08-15', value: 95.0 }, // in 3 months
+        { date: '2026-09-25', value: 100.0 }, // in month
+        { date: '2026-10-14', value: 105.0 }, // in week
+      ];
+
+      // All data
+      const allPts = filterDataByTimeSpan(historicalE1rmPoints, 'all', fixedRef);
+      expect(allPts).toHaveLength(5);
+
+      // Year (within 365 days)
+      const yearPts = filterDataByTimeSpan(historicalE1rmPoints, 'year', fixedRef);
+      expect(yearPts).toHaveLength(4);
+      expect(yearPts[0].date).toBe('2025-11-20');
+
+      // 3 Months (within 90 days)
+      const threeMonthPts = filterDataByTimeSpan(historicalE1rmPoints, '3months', fixedRef);
+      expect(threeMonthPts).toHaveLength(3);
+      expect(threeMonthPts[0].date).toBe('2026-08-15');
+
+      // Month (within 30 days)
+      const monthPts = filterDataByTimeSpan(historicalE1rmPoints, 'month', fixedRef);
+      expect(monthPts).toHaveLength(2);
+      expect(monthPts[0].date).toBe('2026-09-25');
+
+      // Week (within 7 days)
+      const weekPts = filterDataByTimeSpan(historicalE1rmPoints, 'week', fixedRef);
+      expect(weekPts).toHaveLength(1);
+      expect(weekPts[0].date).toBe('2026-10-14');
+    });
+
+    test('filters bodyweight rolling average points while preserving full history smoothing', () => {
+      const { filterDataByTimeSpan } = require('../timeSpanUtils');
+
+      // 14 days of entries
+      const entries = [
+        { date: '2026-10-01', bodyweight: 85.0 },
+        { date: '2026-10-02', bodyweight: 84.8 },
+        { date: '2026-10-03', bodyweight: 84.6 },
+        { date: '2026-10-04', bodyweight: 84.5 },
+        { date: '2026-10-05', bodyweight: 84.4 },
+        { date: '2026-10-06', bodyweight: 84.2 },
+        { date: '2026-10-07', bodyweight: 84.0 },
+        { date: '2026-10-08', bodyweight: 83.9 },
+        { date: '2026-10-09', bodyweight: 83.8 },
+        { date: '2026-10-10', bodyweight: 83.6 },
+        { date: '2026-10-11', bodyweight: 83.5 },
+        { date: '2026-10-12', bodyweight: 83.4 },
+        { date: '2026-10-13', bodyweight: 83.2 },
+        { date: '2026-10-14', bodyweight: 83.0 },
+        { date: '2026-10-15', bodyweight: 82.8 },
+        { date: '2026-10-16', bodyweight: 82.5 },
+      ];
+
+      // Calculate rolling averages on full dataset
+      const smoothed = calculateBodyweightRollingAverages(entries);
+      expect(smoothed).toHaveLength(16);
+
+      // Filter to week (cutoff 2026-10-09)
+      const weekPoints = filterDataByTimeSpan(smoothed, 'week', fixedRef);
+      expect(weekPoints).toHaveLength(8); // Oct 09 through Oct 16
+      // SMA on Oct 09 properly reflects prior 7 days of logs (84.6+84.5+84.4+84.2+84.0+83.9+83.8)/7 = 84.20
+      expect(weekPoints[0].sma7).toBeCloseTo(84.2, 1);
+      // Latest SMA on Oct 16: (83.6 + 83.5 + 83.4 + 83.2 + 83.0 + 82.8 + 82.5) / 7 = 83.14
+      expect(weekPoints[weekPoints.length - 1].sma7).toBeCloseTo(83.14, 2);
+    });
+  });
+
+  describe('9. Estimated Lean Body Mass (eLBM) Longitudinal Charting', () => {
+    const fixedRef = new Date('2026-10-16T12:00:00Z');
+
+    test('derives eLBM points from bodyweight and Navy BF% records', async () => {
+      const rawMetrics: BodyMetric[] = [
+        {
+          id: 'bm1',
+          date: '2026-10-01',
+          bodyweight: 84.0,
+          waist_cm: 84.0,
+          neck_cm: 38.0,
+          hip_cm: null,
+          bicep_cm: null,
+          chest_cm: null,
+          thigh_cm: null,
+          calf_cm: null,
+          navy_body_fat: 15.0,
+          body_fat_manual: null,
+        },
+        {
+          id: 'bm2',
+          date: '2026-10-08',
+          bodyweight: 83.5,
+          waist_cm: 83.0,
+          neck_cm: 38.0,
+          hip_cm: null,
+          bicep_cm: null,
+          chest_cm: null,
+          thigh_cm: null,
+          calf_cm: null,
+          navy_body_fat: 14.5,
+          body_fat_manual: null,
+        },
+        {
+          id: 'bm3',
+          date: '2026-10-15',
+          bodyweight: 83.0,
+          waist_cm: 82.0,
+          neck_cm: 38.0,
+          hip_cm: null,
+          bicep_cm: null,
+          chest_cm: null,
+          thigh_cm: null,
+          calf_cm: null,
+          navy_body_fat: 14.0,
+          body_fat_manual: null,
+        },
+      ];
+
+      for (const m of rawMetrics) {
+        await bodyMetricsRepo.save(m);
+      }
+
+      const allMetrics = await bodyMetricsRepo.getAll();
+      const elbmPoints = allMetrics
+        .filter(
+          (m): m is BodyMetric & { bodyweight: number } =>
+            m.bodyweight != null &&
+            m.bodyweight > 0 &&
+            m.navy_body_fat != null &&
+            m.navy_body_fat > 0
+        )
+        .map((m) => ({
+          date: m.date,
+          value: calculateEstimatedLeanBodyMass(m.bodyweight, m.navy_body_fat!)!,
+        }));
+
+      expect(elbmPoints).toHaveLength(3);
+      // bm1: 84.0 * (1 - 0.15) = 71.40 kg
+      expect(elbmPoints[0].value).toBe(71.4);
+      // bm2: 83.5 * (1 - 0.145) = 71.39 kg
+      expect(elbmPoints[1].value).toBe(71.39);
+      // bm3: 83.0 * (1 - 0.14) = 71.38 kg
+      expect(elbmPoints[2].value).toBe(71.38);
+    });
+
+    test('filters eLBM time-series correctly across time-span windows', () => {
+      const { filterDataByTimeSpan } = require('../timeSpanUtils');
+
+      const historicalElbmPoints = [
+        { date: '2025-05-10', value: 68.0 }, // > 1 year
+        { date: '2025-11-20', value: 69.5 }, // in year
+        { date: '2026-08-15', value: 70.5 }, // in 3 months
+        { date: '2026-09-25', value: 71.0 }, // in month
+        { date: '2026-10-14', value: 71.5 }, // in week
+      ];
+
+      expect(filterDataByTimeSpan(historicalElbmPoints, 'all', fixedRef)).toHaveLength(5);
+      expect(filterDataByTimeSpan(historicalElbmPoints, 'year', fixedRef)).toHaveLength(4);
+      expect(filterDataByTimeSpan(historicalElbmPoints, '3months', fixedRef)).toHaveLength(3);
+      expect(filterDataByTimeSpan(historicalElbmPoints, 'month', fixedRef)).toHaveLength(2);
+      expect(filterDataByTimeSpan(historicalElbmPoints, 'week', fixedRef)).toHaveLength(1);
+    });
+
+    test('converts eLBM data points to lbs when unitSystem is imperial', () => {
+      const elbmKg = 70.0;
+      const elbmLbs = kgToLbs(elbmKg);
+      expect(elbmLbs).toBeCloseTo(154.32, 1);
+      expect(formatWeight(elbmKg, 'lbs')).toBe('154.3 lbs');
+      expect(formatWeight(elbmKg, 'kg')).toBe('70 kg');
+    });
+
+    test('calculates continuous eLBM curve using chronological LOCF when tape circumferences are updated infrequently', async () => {
+      const { calculateChronologicalELBM } = require('../../../core/math/navyBodyFat');
+
+      // Day 1: full measurement (80kg, 82cm waist, 38cm neck -> 14.0% BF -> eLBM 68.80kg)
+      // Day 2: weight-only (80.5kg) -> carries forward 14.0% BF -> eLBM 69.23kg
+      // Day 3: neck-only update (39cm) -> carries forward 80.5kg weight and 82cm waist -> recalcs BF -> new eLBM
+      const metrics = [
+        {
+          id: 'm1',
+          date: '2026-10-01',
+          bodyweight: 80.0,
+          waist_cm: 82.0,
+          neck_cm: 38.0,
+        },
+        {
+          id: 'm2',
+          date: '2026-10-02',
+          bodyweight: 80.5,
+          waist_cm: null,
+          neck_cm: null,
+        },
+        {
+          id: 'm3',
+          date: '2026-10-03',
+          bodyweight: null,
+          waist_cm: null,
+          neck_cm: 39.0,
+        },
+      ];
+
+      const points = calculateChronologicalELBM(metrics, {
+        gender: 'male',
+        heightCm: 178,
+      });
+
+      expect(points).toHaveLength(3);
+      expect(points[0].date).toBe('2026-10-01');
+      expect(points[0].elbmKg).toBe(68.8);
+
+      expect(points[1].date).toBe('2026-10-02');
+      expect(points[1].bodyweight).toBe(80.5);
+      expect(points[1].navyBf).toBe(14.0);
+      expect(points[1].elbmKg).toBe(69.23);
+
+      expect(points[2].date).toBe('2026-10-03');
+      expect(points[2].bodyweight).toBe(80.5); // carried forward
+      expect(points[2].navyBf).toBeLessThan(14.0); // recalculated with new neck
+      expect(points[2].elbmKg).toBeGreaterThan(69.23);
+    });
+
+    test('initializes PlotsScreen with initialChartType elbm and userProfileRepo', () => {
+      const mockUserProfileRepo = new MockUserProfileRepository();
+      const element = React.createElement(PlotsScreen, {
+        workoutRepo,
+        exerciseRepo,
+        bodyMetricsRepo,
+        userProfileRepo: mockUserProfileRepo,
+        initialChartType: 'elbm',
+      });
+      expect(element).toBeDefined();
+      expect(element.props.initialChartType).toBe('elbm');
+      expect(element.props.userProfileRepo).toBe(mockUserProfileRepo);
     });
   });
 });

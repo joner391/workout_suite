@@ -270,7 +270,7 @@ export class ExportService {
     const body_metrics: BodyMetric[] = (rawMetrics || []).map((r) => ({
       id: String(r.id),
       date: String(r.date),
-      bodyweight: Number(r.bodyweight),
+      bodyweight: r.bodyweight != null && Number(r.bodyweight) > 0 ? Number(r.bodyweight) : null,
       body_fat_manual: r.body_fat_manual != null ? Number(r.body_fat_manual) : null,
       waist_cm: r.waist_cm != null ? Number(r.waist_cm) : null,
       neck_cm: r.neck_cm != null ? Number(r.neck_cm) : null,

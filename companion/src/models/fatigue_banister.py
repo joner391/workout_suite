@@ -12,14 +12,15 @@ Mathematical Foundations:
        relative load (weight / 1RM):
            Stimulus_set = (1.0 + (eff_rpe - 7.0) / 3.0) * (weight / 1RM)
 
-    2. Two-Component Impulse-Response Integration:
-       Daily Fitness (P) accumulates long-term adaptation with slow decay (tau_1 = 42 d):
-           P(t) = P(t-1) * exp(-1 / tau_1) + Stimulus(t)
-       Daily Fatigue (F) accumulates acute exhaustion with fast, dynamically modulated
-       decay (dynamic tau_2 ~ 7 to 14 d):
-           F(t) = F(t-1) * exp(-1 / tau_2(t)) + Stimulus(t)
+    2. Diminishing Returns & Scale-Invariant EWMA:
+       Exponential saturation per exercise movement (kappa_ex = 4.0) prevents junk
+       volume explosion. Session impulses are bounded to [0, 100].
+       Unit-gain Exponentially Weighted Moving Average (EWMA) discretization guarantees
+       both Fitness P(t) and Fatigue F(t) remain strictly within [0, 100]:
+           P(t) = P(t-1) * exp(-1 / tau_1) + (1 - exp(-1 / tau_1)) * S_fitness(t)
+           F(t) = F(t-1) * exp(-1 / tau_2(t)) + (1 - exp(-1 / tau_2(t))) * S_fatigue(t)
        Net Preparedness represents athletic readiness:
-           Preparedness(t) = k_1 * P(t) - k_2 * F(t)
+           Preparedness(t) = k_1 * P(t) - k_2 * F(t)  (in [-100, +100])
 """
 
 from __future__ import annotations
@@ -38,13 +39,18 @@ from src.models.recovery_modifier import (
 
 
 # ============================================================================
-# Constants & Hyperparameters (Rough_sketch.md Section 4.3)
+# Constants & Hyperparameters
 # ============================================================================
 
-DEFAULT_TAU1_DAYS: float = 42.0     # Long-term fitness adaptation time constant
-DEFAULT_K1: float = 1.0            # Fitness magnitude scaling factor
-DEFAULT_K2: float = 2.0            # Acute fatigue magnitude scaling factor
-MIN_STIMULATING_RPE: float = 7.0   # Exertion threshold (sets below this are non-stimulating)
+DEFAULT_TAU1_DAYS: float = 42.0          # Long-term fitness adaptation time constant
+DEFAULT_K1: float = 1.0                  # Fitness weight in unit-gain EWMA
+DEFAULT_K2: float = 1.25                 # Fatigue weight in unit-gain EWMA
+MIN_STIMULATING_RPE: float = 7.0         # Exertion threshold
+
+EXERCISE_SATURATION_KAPPA: float = 4.0   # Diminishing returns per exercise (~4 hard sets)
+SESSION_FITNESS_KAPPA: float = 10.0      # Whole-session saturation for fitness impulse
+SESSION_FATIGUE_KAPPA: float = 14.0      # Whole-session saturation for fatigue impulse
+MAX_DAILY_IMPULSE: float = 100.0         # Bounded 0-100 daily stimulus scale
 
 
 # ============================================================================
@@ -76,6 +82,12 @@ class DailyPreparedness:
     preparedness: float
     tau2: float
     energy_balance: str
+    readiness: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if self.readiness is None:
+            scale = max(12.0, 0.35 * self.fitness)
+            self.readiness = round(float(100.0 / (1.0 + math.exp(-self.preparedness / scale))), 2)
 
 
 # ============================================================================
@@ -98,13 +110,37 @@ def _get_val(obj: Any, key: str, default: Any = None) -> Any:
     return getattr(obj, key, default)
 
 
+def calculate_readiness_score(preparedness: float, fitness: float) -> float:
+    """Maps net preparedness to a normalized 0-100 readiness score via logistic transform."""
+    scale = max(12.0, 0.35 * fitness)
+    return float(100.0 / (1.0 + math.exp(-preparedness / scale)))
+
+
+def is_amrap_set(obj: Any) -> bool:
+    """Returns True if a workout set is designated as an AMRAP or failure set.
+
+    AMRAP sets ("As Many Reps As Possible") are performed until muscular failure,
+    corresponding to RPE 10.0 (0 RIR).
+    """
+    set_type = str(_get_val(obj, "set_type", "")).lower()
+    if set_type in ("amrap", "failure"):
+        return True
+    if bool(_get_val(obj, "is_amrap", False)):
+        return True
+    notes = str(
+        _get_val(obj, "set_notes", _get_val(obj, "notes", "")) or ""
+    ).lower()
+    return "amrap" in notes
+
+
 def calculate_set_stimulus(
     set_obj: Union[WorkoutSet, Mapping[str, Any], Any],
     known_1rm: Optional[float] = None,
+    default_working_rpe: Optional[float] = None,
 ) -> float:
     """Computes Effective Stimulating Set stimulus.
 
-    Formula (Rough_sketch.md §4.2):
+    Formula:
         Stimulus = (1.0 + (eff_rpe - 7.0) / 3.0) * (weight / 1RM)
     Invariants:
         - Sets with completed reps <= 0 or load <= 0 return 0.0.
@@ -150,6 +186,11 @@ def calculate_set_stimulus(
                 eff_rpe = max(0.0, 10.0 - val)
         except (ValueError, TypeError):
             pass
+    elif is_amrap_set(set_obj):
+        # AMRAP sets are by definition performed to failure (RPE 10.0 / 0 RIR)
+        eff_rpe = 10.0
+    elif default_working_rpe is not None and set_type_raw != "warmup":
+        eff_rpe = max(0.0, float(default_working_rpe))
 
     if eff_rpe is None or eff_rpe < MIN_STIMULATING_RPE:
         return 0.0
@@ -171,6 +212,63 @@ def calculate_set_stimulus(
     return float(exertion_scalar * intensity_ratio)
 
 
+def calculate_hypertrophic_effective_reps(
+    set_obj: Union[WorkoutSet, Mapping[str, Any], Any],
+    known_1rm: Optional[float] = None,
+) -> float:
+    """Computes hypertrophic effective reps (0.0 to 5.0) for a given set.
+
+    Invariants:
+        - reps <= 0 or load <= 0 returns 0.0.
+        - set_type == 'warmup' returns 0.0.
+        - auto-failure set types ('amrap', 'dc', 'myorep', 'drop') return min(reps, 5.0).
+        - unrated sets (missing RPE & RIR) return 0.0.
+        - heavy loads (weight / 1RM >= 0.85) return min(reps, 5.0).
+        - submaximal sets return max(0.0, min(reps, 5.0 - eff_rir)).
+    """
+    reps_raw = _get_val(set_obj, "reps", 0)
+    weight_raw = _get_val(set_obj, "weight", 0.0)
+    set_type_raw = str(_get_val(set_obj, "set_type", "working")).lower()
+    rpe_raw = _get_val(set_obj, "rpe", None)
+    rir_raw = _get_val(set_obj, "rir", None)
+
+    try:
+        reps = int(reps_raw)
+        weight = float(weight_raw)
+    except (ValueError, TypeError):
+        return 0.0
+
+    if reps <= 0 or weight <= 0.0 or set_type_raw == "warmup":
+        return 0.0
+
+    if set_type_raw in ("amrap", "dc", "myorep", "drop", "failure") or is_amrap_set(set_obj):
+        return float(min(reps, 5))
+
+    has_rpe = rpe_raw is not None
+    has_rir = rir_raw is not None
+
+    if not has_rpe and not has_rir:
+        return 0.0
+
+    eff_rir = 0.0
+    if has_rir:
+        try:
+            eff_rir = max(0.0, float(rir_raw))
+        except (ValueError, TypeError):
+            return 0.0
+    elif has_rpe:
+        try:
+            eff_rir = max(0.0, 10.0 - float(rpe_raw))
+        except (ValueError, TypeError):
+            return 0.0
+
+    if known_1rm is not None and known_1rm > 0.0:
+        if (weight / known_1rm) >= 0.85:
+            return float(min(reps, 5))
+
+    return float(max(0.0, min(reps, round(5.0 - eff_rir))))
+
+
 # ============================================================================
 # Banister Integration Engine
 # ============================================================================
@@ -186,21 +284,12 @@ def compute_daily_banister_series(
     k2: float = DEFAULT_K2,
     start_date: Optional[Union[str, date]] = None,
     end_date: Optional[Union[str, date]] = None,
+    default_working_rpe: Optional[float] = None,
 ) -> List[DailyPreparedness]:
-    """Integrates the two-component Banister fitness-fatigue differential equations.
-
-    Steps:
-    1. Aggregates workout sets into session stimulus scores.
-    2. Maps session stimulus scores into calendar days.
-    3. Traverses daily from start_date to end_date.
-    4. Computes daily dynamic tau_2 from 14-day rolling bodyweight slope.
-    5. Recursively integrates Fitness P(t) and Fatigue F(t).
-    6. Computes Net Preparedness(t) = k1 * P(t) - k2 * F(t).
-    """
+    """Integrates normalized unit-gain Banister fitness-fatigue differential equations."""
     if not workouts and not workout_sets:
         return []
 
-    # 1. Map workout_id to date
     workout_dates: Dict[str, str] = {}
     for w in workouts:
         wid = str(_get_val(w, "id", ""))
@@ -208,8 +297,8 @@ def compute_daily_banister_series(
         if wid and d_val:
             workout_dates[wid] = _parse_date_str(d_val)
 
-    # 2. Compute stimulus per set and group by date
-    daily_stimulus: Dict[str, float] = {}
+    # Group raw stimulus by (date, exercise_id) for diminishing returns
+    daily_ex_stimulus: Dict[str, Dict[str, float]] = {d: {} for d in workout_dates.values()}
     for s in workout_sets:
         wid = str(_get_val(s, "workout_id", ""))
         set_date = workout_dates.get(wid)
@@ -217,52 +306,69 @@ def compute_daily_banister_series(
             created_at = _get_val(s, "created_at", None)
             if created_at:
                 set_date = _parse_date_str(created_at)
-
         if not set_date:
             continue
 
-        ex_id = str(_get_val(s, "exercise_id", ""))
+        day_map = daily_ex_stimulus.setdefault(set_date, {})
+        ex_id = str(_get_val(s, "exercise_id", "unknown"))
         ex_1rm = known_1rms.get(ex_id) if known_1rms else None
-        stim = calculate_set_stimulus(s, known_1rm=ex_1rm)
+        stim = calculate_set_stimulus(
+            s,
+            known_1rm=ex_1rm,
+            default_working_rpe=default_working_rpe,
+        )
+        if stim > 0.0:
+            day_map[ex_id] = day_map.get(ex_id, 0.0) + stim
 
-        daily_stimulus[set_date] = daily_stimulus.get(set_date, 0.0) + stim
-
-    if not daily_stimulus:
+    if not daily_ex_stimulus:
         return []
 
-    # 3. Determine calendar boundaries
-    all_logged_dates = sorted(daily_stimulus.keys())
+    all_logged_dates = sorted(daily_ex_stimulus.keys())
     earliest_date = datetime.strptime(all_logged_dates[0], "%Y-%m-%d").date()
     latest_date = datetime.strptime(all_logged_dates[-1], "%Y-%m-%d").date()
 
-    if start_date is not None:
-        first_date = datetime.strptime(_parse_date_str(start_date), "%Y-%m-%d").date()
-    else:
-        first_date = earliest_date
-
-    if end_date is not None:
-        last_date = datetime.strptime(_parse_date_str(end_date), "%Y-%m-%d").date()
-    else:
-        last_date = latest_date
-
+    first_date = (
+        datetime.strptime(_parse_date_str(start_date), "%Y-%m-%d").date()
+        if start_date is not None
+        else earliest_date
+    )
+    last_date = (
+        datetime.strptime(_parse_date_str(end_date), "%Y-%m-%d").date()
+        if end_date is not None
+        else latest_date
+    )
     if first_date > last_date:
         return []
 
-    # 4. Integrate day-by-day
     series: List[DailyPreparedness] = []
     curr_fitness: float = 0.0
     curr_fatigue: float = 0.0
     decay_p = math.exp(-1.0 / tau1)
+    alpha_p = 1.0 - decay_p
 
     total_days = (last_date - first_date).days + 1
     for day_offset in range(total_days):
         curr_dt = first_date + timedelta(days=day_offset)
         curr_date_str = curr_dt.isoformat()
 
-        # Stimulus today (0.0 on rest days)
-        stim_today = daily_stimulus.get(curr_date_str, 0.0)
+        ex_map = daily_ex_stimulus.get(curr_date_str, {})
+        if ex_map:
+            # Diminishing returns per exercise, then session-level saturation in [0, 100]
+            eff_ex_sum = sum(
+                EXERCISE_SATURATION_KAPPA * (1.0 - math.exp(-raw / EXERCISE_SATURATION_KAPPA))
+                for raw in ex_map.values()
+            )
+            raw_total = sum(ex_map.values())
+            fit_impulse = MAX_DAILY_IMPULSE * (
+                1.0 - math.exp(-eff_ex_sum / SESSION_FITNESS_KAPPA)
+            )
+            fat_impulse = MAX_DAILY_IMPULSE * (
+                1.0 - math.exp(-raw_total / SESSION_FATIGUE_KAPPA)
+            )
+        else:
+            fit_impulse = 0.0
+            fat_impulse = 0.0
 
-        # Dynamic recoverability for today
         rec_state: RecoveryState = compute_recovery_modifier(
             metrics=body_metrics,
             target_date=curr_dt,
@@ -270,19 +376,20 @@ def compute_daily_banister_series(
         )
         eff_tau2 = rec_state.effective_tau2
         decay_f = math.exp(-1.0 / eff_tau2)
+        alpha_f = 1.0 - decay_f
 
-        # Discrete Banister state recursion
-        curr_fitness = curr_fitness * decay_p + stim_today
-        curr_fatigue = curr_fatigue * decay_f + stim_today
+        # Unit-gain EWMA recursion: strictly bounds P(t) and F(t) within [0, 100]
+        curr_fitness = (curr_fitness * decay_p) + (alpha_p * fit_impulse)
+        curr_fatigue = (curr_fatigue * decay_f) + (alpha_f * fat_impulse)
         curr_preparedness = (k1 * curr_fitness) - (k2 * curr_fatigue)
 
         series.append(
             DailyPreparedness(
                 date=curr_date_str,
-                stimulus=round(stim_today, 3),
-                fitness=round(curr_fitness, 3),
-                fatigue=round(curr_fatigue, 3),
-                preparedness=round(curr_preparedness, 3),
+                stimulus=round(fit_impulse, 2),
+                fitness=round(curr_fitness, 2),
+                fatigue=round(curr_fatigue, 2),
+                preparedness=round(curr_preparedness, 2),
                 tau2=round(eff_tau2, 2),
                 energy_balance=rec_state.energy_balance,
             )

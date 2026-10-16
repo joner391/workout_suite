@@ -107,6 +107,52 @@ export function calculateNavyBodyFat(inputs: NavyBodyFatInputs): number | null {
 }
 
 /**
+ * Calculates estimated Lean Body Mass (eLBM) from bodyweight and body fat percentage.
+ *
+ * Formula:
+ *   eLBM = bodyweight * (1 - bodyFatPercent / 100)
+ *
+ * @param bodyweight - Bodyweight in kg or lbs (returns eLBM in the same unit)
+ * @param bodyFatPercent - Body fat percentage (typically U.S. Navy formula), e.g. 14.0 for 14.0%
+ * @returns eLBM rounded to 2 decimal places, or null if inputs are invalid
+ */
+export function calculateEstimatedLeanBodyMass(
+  bodyweight: number,
+  bodyFatPercent: number
+): number | null {
+  if (
+    typeof bodyweight !== 'number' ||
+    isNaN(bodyweight) ||
+    bodyweight <= 0 ||
+    typeof bodyFatPercent !== 'number' ||
+    isNaN(bodyFatPercent) ||
+    bodyFatPercent < 0 ||
+    bodyFatPercent >= 100
+  ) {
+    return null;
+  }
+
+  const elbm = bodyweight * (1 - bodyFatPercent / 100);
+  return Number(elbm.toFixed(2));
+}
+
+/**
+ * Calculates estimated Lean Body Mass (eLBM) directly using the U.S. Navy circumference formula.
+ *
+ * @param bodyweight - Bodyweight in kg or lbs
+ * @param inputs - U.S. Navy circumference measurements (gender, heightCm, waistCm, neckCm, hipCm)
+ * @returns eLBM in the same unit as bodyweight, or null if inputs are invalid
+ */
+export function calculateNavyELBM(
+  bodyweight: number,
+  inputs: NavyBodyFatInputs
+): number | null {
+  const bf = calculateNavyBodyFat(inputs);
+  if (bf === null) return null;
+  return calculateEstimatedLeanBodyMass(bodyweight, bf);
+}
+
+/**
  * Groups and averages multiple entries on the same date, then sorts ascending by date.
  */
 function normalizeAndSortEntries(entries: BodyweightEntry[]): BodyweightEntry[] {
@@ -230,4 +276,136 @@ export function calculateBodyweightRollingAverages(
     sma7: smaItem.sma7,
     ema7: emaList[idx]?.ema7 ?? smaItem.sma7,
   }));
+}
+
+/**
+ * Data point for body metrics forward-filling and eLBM calculation.
+ */
+export interface BodyMetricEntry {
+  date: string;
+  bodyweight?: number | null;
+  waist_cm?: number | null;
+  neck_cm?: number | null;
+  hip_cm?: number | null;
+  navy_body_fat?: number | null;
+}
+
+/**
+ * Output data point combining date, derived eLBM, body fat percentage, and bodyweight.
+ */
+export interface ChronologicalELBMPoint {
+  date: string;
+  elbmKg: number;
+  navyBf: number;
+  bodyweight: number;
+}
+
+/**
+ * Computes estimated Lean Body Mass (eLBM) across a chronological series of body metrics
+ * applying Last Observation Carried Forward (LOCF).
+ *
+ * For each logged date, if bodyweight, waist, neck, or hips are not updated, the latest
+ * prior valid measurement is carried forward to compute Navy body fat percentage and eLBM.
+ */
+export function calculateChronologicalELBM(
+  metrics: BodyMetricEntry[],
+  context?: {
+    gender?: Gender;
+    heightCm?: number | null;
+  }
+): ChronologicalELBMPoint[] {
+  const valid = metrics.filter((m) => Boolean(m.date));
+  if (valid.length === 0) return [];
+
+  // Sort ascending by date
+  const sorted = [...valid].sort((a, b) => a.date.localeCompare(b.date));
+
+  const results: ChronologicalELBMPoint[] = [];
+  let lastWeight: number | null = null;
+  let lastWaist: number | null = null;
+  let lastNeck: number | null = null;
+  let lastHip: number | null = null;
+  let lastBf: number | null = null;
+
+  const gender = context?.gender || 'male';
+  const heightCm = context?.heightCm;
+
+  for (const m of sorted) {
+    if (
+      typeof m.bodyweight === 'number' &&
+      !isNaN(m.bodyweight) &&
+      m.bodyweight > 0
+    ) {
+      lastWeight = m.bodyweight;
+    }
+    if (
+      typeof m.waist_cm === 'number' &&
+      !isNaN(m.waist_cm) &&
+      m.waist_cm > 0
+    ) {
+      lastWaist = m.waist_cm;
+    }
+    if (typeof m.neck_cm === 'number' && !isNaN(m.neck_cm) && m.neck_cm > 0) {
+      lastNeck = m.neck_cm;
+    }
+    if (typeof m.hip_cm === 'number' && !isNaN(m.hip_cm) && m.hip_cm > 0) {
+      lastHip = m.hip_cm;
+    }
+
+    let effectiveBf: number | null =
+      typeof m.navy_body_fat === 'number' &&
+      !isNaN(m.navy_body_fat) &&
+      m.navy_body_fat > 0
+        ? m.navy_body_fat
+        : null;
+
+    if (effectiveBf == null && heightCm && lastWaist && lastNeck) {
+      effectiveBf = calculateNavyBodyFat({
+        gender,
+        heightCm,
+        waistCm: lastWaist,
+        neckCm: lastNeck,
+        hipCm: lastHip,
+      });
+    }
+
+    if (effectiveBf == null && lastBf != null) {
+      effectiveBf = lastBf;
+    }
+
+    if (effectiveBf != null) {
+      lastBf = effectiveBf;
+    }
+
+    const effectiveWeight =
+      typeof m.bodyweight === 'number' &&
+      !isNaN(m.bodyweight) &&
+      m.bodyweight > 0
+        ? m.bodyweight
+        : lastWeight;
+
+    if (
+      effectiveWeight != null &&
+      effectiveWeight > 0 &&
+      effectiveBf != null &&
+      effectiveBf > 0
+    ) {
+      const elbm = calculateEstimatedLeanBodyMass(effectiveWeight, effectiveBf);
+      if (elbm != null) {
+        results.push({
+          date: m.date,
+          elbmKg: elbm,
+          navyBf: effectiveBf,
+          bodyweight: effectiveWeight,
+        });
+      }
+    }
+  }
+
+  // Deduplicate by date, keeping the latest calculation for that date
+  const byDate = new Map<string, ChronologicalELBMPoint>();
+  for (const pt of results) {
+    byDate.set(pt.date, pt);
+  }
+  return Array.from(byDate.values());
 }

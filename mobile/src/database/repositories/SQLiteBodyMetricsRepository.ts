@@ -31,7 +31,10 @@ function mapRowToBodyMetric(row: BodyMetricRow): BodyMetric {
   return {
     id: row.id,
     date: row.date,
-    bodyweight: Number(row.bodyweight),
+    bodyweight:
+      row.bodyweight != null && Number(row.bodyweight) > 0
+        ? Number(row.bodyweight)
+        : null,
     body_fat_manual:
       row.body_fat_manual != null ? Number(row.body_fat_manual) : null,
     waist_cm: row.waist_cm != null ? Number(row.waist_cm) : null,
@@ -101,37 +104,75 @@ export class SQLiteBodyMetricsRepository implements IBodyMetricsRepository {
   ): Promise<BodyMetric> {
     const toSave: BodyMetric = { ...metric };
 
-    // Automatically calculate U.S. Navy body fat if not explicitly provided
+    // Forward-fill bodyweight if not provided (satisfies NOT NULL constraint)
+    if (toSave.bodyweight == null || toSave.bodyweight <= 0) {
+      const row = await this.db.getFirstAsync<{ bodyweight: number }>(
+        'SELECT bodyweight FROM body_metrics WHERE bodyweight > 0 AND date <= ? ORDER BY date DESC, id DESC LIMIT 1;',
+        toSave.date
+      );
+      if (row && row.bodyweight > 0) {
+        toSave.bodyweight = Number(row.bodyweight);
+      }
+    }
+
+    // Automatically calculate U.S. Navy body fat if not explicitly provided (using LOCF for missing circumferences)
     if (
       toSave.navy_body_fat == null &&
-      toSave.waist_cm != null &&
-      toSave.neck_cm != null
+      (toSave.waist_cm != null || toSave.neck_cm != null)
     ) {
-      let gender: Gender | undefined = profileOverride?.gender;
-      let heightCm: number | null | undefined = profileOverride?.height_cm;
+      let waistCm = toSave.waist_cm;
+      let neckCm = toSave.neck_cm;
+      let hipCm = toSave.hip_cm;
 
-      // Query active user profile if biological metrics are not passed explicitly
-      if (!gender || heightCm == null) {
-        const profileRow = await this.db.getFirstAsync<UserProfileSubsetRow>(
-          'SELECT gender, height_cm FROM user_profiles ORDER BY updated_at DESC LIMIT 1;'
+      if (waistCm == null) {
+        const row = await this.db.getFirstAsync<{ waist_cm: number }>(
+          'SELECT waist_cm FROM body_metrics WHERE waist_cm IS NOT NULL AND date <= ? ORDER BY date DESC, id DESC LIMIT 1;',
+          toSave.date
         );
-        if (profileRow) {
-          gender = gender ?? profileRow.gender;
-          heightCm = heightCm ?? profileRow.height_cm;
-        }
+        waistCm = row ? Number(row.waist_cm) : null;
+      }
+      if (neckCm == null) {
+        const row = await this.db.getFirstAsync<{ neck_cm: number }>(
+          'SELECT neck_cm FROM body_metrics WHERE neck_cm IS NOT NULL AND date <= ? ORDER BY date DESC, id DESC LIMIT 1;',
+          toSave.date
+        );
+        neckCm = row ? Number(row.neck_cm) : null;
+      }
+      if (hipCm == null) {
+        const row = await this.db.getFirstAsync<{ hip_cm: number }>(
+          'SELECT hip_cm FROM body_metrics WHERE hip_cm IS NOT NULL AND date <= ? ORDER BY date DESC, id DESC LIMIT 1;',
+          toSave.date
+        );
+        hipCm = row ? Number(row.hip_cm) : null;
       }
 
-      if (gender && heightCm != null && heightCm > 0) {
-        const computed = calculateNavyBodyFat({
-          gender,
-          heightCm: Number(heightCm),
-          waistCm: toSave.waist_cm,
-          neckCm: toSave.neck_cm,
-          hipCm: toSave.hip_cm,
-        });
+      if (waistCm != null && neckCm != null) {
+        let gender: Gender | undefined = profileOverride?.gender;
+        let heightCm: number | null | undefined = profileOverride?.height_cm;
 
-        if (computed != null) {
-          toSave.navy_body_fat = computed;
+        // Query active user profile if biological metrics are not passed explicitly
+        if (!gender || heightCm == null) {
+          const profileRow = await this.db.getFirstAsync<UserProfileSubsetRow>(
+            'SELECT gender, height_cm FROM user_profiles ORDER BY updated_at DESC LIMIT 1;'
+          );
+          if (profileRow) {
+            gender = gender ?? profileRow.gender;
+            heightCm = heightCm ?? profileRow.height_cm;
+          }
+        }
+
+        if (gender && heightCm != null && heightCm > 0) {
+          const computed = calculateNavyBodyFat({
+            gender,
+            heightCm: Number(heightCm),
+            waistCm,
+            neckCm,
+            hipCm,
+          });
+
+          if (computed != null) {
+            toSave.navy_body_fat = computed;
+          }
         }
       }
     }
@@ -143,7 +184,7 @@ export class SQLiteBodyMetricsRepository implements IBodyMetricsRepository {
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       toSave.id,
       toSave.date,
-      toSave.bodyweight,
+      toSave.bodyweight != null && toSave.bodyweight > 0 ? toSave.bodyweight : 0,
       toSave.body_fat_manual ?? null,
       toSave.waist_cm ?? null,
       toSave.neck_cm ?? null,

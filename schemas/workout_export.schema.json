@@ -421,7 +421,7 @@
         },
         "set_type": {
           "type": "string",
-          "enum": ["warmup", "working", "drop", "myorep", "dc"],
+          "enum": ["warmup", "working", "drop", "myorep", "dc", "amrap"],
           "description": "Classification tag for the set."
         },
         "set_notes": {
@@ -587,10 +587,10 @@
           "description": "Measurement date in ISO 8601 format (YYYY-MM-DD)."
         },
         "bodyweight": {
-          "type": "number",
+          "type": ["number", "null"],
           "minimum": 20.0,
           "maximum": 500.0,
-          "description": "Bodyweight in kilograms."
+          "description": "Bodyweight in kilograms, or null if an anthropometric/circumference measurement was logged without scale weight."
         },
         "body_fat_manual": {
           "type": ["number", "null"],

@@ -43,7 +43,7 @@ export interface SetRowProps {
   onOpenPlateCalculator?: (targetWeightKg: number) => void;
 }
 
-const SET_TYPE_ORDER: SetType[] = ['working', 'warmup', 'drop', 'myorep', 'dc'];
+const SET_TYPE_ORDER: SetType[] = ['working', 'warmup', 'drop', 'myorep', 'dc', 'amrap'];
 
 const SET_TYPE_LABELS: Record<SetType, string> = {
   working: 'Reg',
@@ -51,6 +51,7 @@ const SET_TYPE_LABELS: Record<SetType, string> = {
   drop: 'Drop',
   myorep: 'Myo',
   dc: 'DC',
+  amrap: 'AMRAP',
 };
 
 const SET_TYPE_COLORS: Record<SetType, { bg: string; text: string }> = {
@@ -59,6 +60,7 @@ const SET_TYPE_COLORS: Record<SetType, { bg: string; text: string }> = {
   drop: { bg: '#581C87', text: '#E9D5FF' }, // Purple
   myorep: { bg: '#164E63', text: '#A5F3FC' }, // Cyan
   dc: { bg: '#1E3A8A', text: '#BFDBFE' }, // Blue/Indigo
+  amrap: { bg: '#7F1D1D', text: '#FEE2E2' }, // Crimson/Red
 };
 
 const SetRowComponentInner: React.FC<SetRowProps> = ({
@@ -143,7 +145,12 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
     flushPendingUpdates();
     const currentIndex = SET_TYPE_ORDER.indexOf(set.set_type);
     const nextIndex = (currentIndex + 1) % SET_TYPE_ORDER.length;
-    onUpdateSet({ set_type: SET_TYPE_ORDER[nextIndex] });
+    const nextType = SET_TYPE_ORDER[nextIndex];
+    if (nextType === 'amrap') {
+      onUpdateSet({ set_type: 'amrap', rpe: 10.0, rir: 0.0 });
+    } else {
+      onUpdateSet({ set_type: nextType });
+    }
   };
 
   // Copy ghost values into current set (immediate persistence)
@@ -608,6 +615,28 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                 >
                   <Text style={styles.clearPillButtonText}>Clear</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  testID="amrap-intensity-button"
+                  style={[
+                    styles.amrapPillButton,
+                    (set.rir === 0 || set.rpe === 10) && styles.amrapPillButtonActive,
+                  ]}
+                  onPress={() => {
+                    flushPendingUpdates();
+                    setIntensityInput(null);
+                    onUpdateSet({ rir: 0.0, rpe: 10.0 });
+                  }}
+                  accessibilityLabel="Set as AMRAP 0 RIR"
+                >
+                  <Text
+                    style={[
+                      styles.amrapPillButtonText,
+                      (set.rir === 0 || set.rpe === 10) && styles.amrapPillButtonTextActive,
+                    ]}
+                  >
+                    AMRAP
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -919,6 +948,26 @@ const styles = StyleSheet.create({
     color: '#A1A1AA',
     fontSize: 11,
     fontWeight: '600',
+  },
+  amrapPillButton: {
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    backgroundColor: '#1C1917',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#78350F',
+  },
+  amrapPillButtonActive: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderColor: '#EF4444',
+  },
+  amrapPillButtonText: {
+    color: '#F59E0B',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  amrapPillButtonTextActive: {
+    color: '#EF4444',
   },
   drawerActionsRow: {
     flexDirection: 'row',

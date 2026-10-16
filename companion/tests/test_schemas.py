@@ -292,6 +292,10 @@ def test_workout_set_validation_boundaries(valid_workout_set_dict: Dict[str, Any
     dc_set = WorkoutSet.model_validate({**valid_workout_set_dict, "set_type": "dc"})
     assert dc_set.set_type == "dc"
 
+    # 'amrap' set type is valid
+    amrap_set = WorkoutSet.model_validate({**valid_workout_set_dict, "set_type": "amrap"})
+    assert amrap_set.set_type == "amrap"
+
     # 'failure' set type was purged and is forbidden
     with pytest.raises(ValidationError):
         WorkoutSet.model_validate({**valid_workout_set_dict, "set_type": "failure"})
@@ -310,6 +314,21 @@ def test_body_metric_boundaries(valid_body_metric_dict: Dict[str, Any]) -> None:
     # Invalid date pattern
     with pytest.raises(ValidationError):
         BodyMetric.model_validate({**valid_body_metric_dict, "date": "13-10-2026"})
+
+
+def test_body_metric_nullable_and_zero_coercion(valid_body_metric_dict: Dict[str, Any]) -> None:
+    """Verifies that 0 or None bodyweight is accepted for circumference-only logs."""
+    # 0 is coerced to None (legacy export compatibility)
+    m_zero = BodyMetric.model_validate({**valid_body_metric_dict, "bodyweight": 0})
+    assert m_zero.bodyweight is None
+
+    # Explicit None is accepted
+    m_none = BodyMetric.model_validate({**valid_body_metric_dict, "bodyweight": None})
+    assert m_none.bodyweight is None
+
+    # Valid positive weight is preserved
+    m_valid = BodyMetric.model_validate({**valid_body_metric_dict, "bodyweight": 84.5})
+    assert m_valid.bodyweight == 84.5
 
 
 # ============================================================================

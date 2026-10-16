@@ -9,3 +9,4 @@ export * from './plateCalculator';
 export * from './dotsCoefficients';
 export * from './strengthStandards';
 export * from './navyBodyFat';
+export * from './effectiveReps';

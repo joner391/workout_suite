@@ -40,7 +40,7 @@ from src.models.fatigue_banister import (
     DailyPreparedness,
     compute_daily_banister_series,
 )
-from src.models.kalman_1rm import Adaptive1RMKalmanFilter, KalmanState
+from src.models.kalman_1rm import Adaptive1RMKalmanFilter, KalmanState, is_amrap_set
 from src.models.recommendations import get_latest_advisory
 from src.models.recovery_modifier import (
     compute_recovery_modifier,
@@ -74,6 +74,7 @@ def run_kalman_on_exercise(
     standard_lift_type: Optional[str],
     workouts: List[Workout],
     sets: List[WorkoutSet],
+    default_working_rir: Optional[float] = None,
 ) -> Tuple[List[str], List[KalmanState], List[Tuple[str, float, float]]]:
     """Runs Kalman filter step-by-step and collects history for plotting."""
     sets_by_workout: Dict[str, List[WorkoutSet]] = defaultdict(list)
@@ -94,11 +95,23 @@ def run_kalman_on_exercise(
         if w.id in sets_by_workout:
             session_sets = sets_by_workout[w.id]
             for s in session_sets:
-                if s.reps > 0 and s.weight > 0 and (s.rir is not None or s.rpe is not None):
-                    r_eff = s.reps + (s.rir if s.rir is not None else max(0.0, 10.0 - (s.rpe or 0.0)))
+                eff_rir = s.rir
+                if eff_rir is None and s.rpe is not None:
+                    eff_rir = max(0.0, 10.0 - s.rpe)
+                elif eff_rir is None and is_amrap_set(s):
+                    eff_rir = 0.0
+                elif eff_rir is None and default_working_rir is not None and s.set_type != "warmup":
+                    eff_rir = default_working_rir
+
+                if s.reps > 0 and s.weight > 0 and eff_rir is not None and eff_rir <= 3.0:
+                    r_eff = s.reps + eff_rir
                     observations.append((w.date, s.weight, r_eff))
 
-            new_states = kf.process_session(session_sets)
+            new_states = kf.process_session(
+                session_sets,
+                default_working_rir=default_working_rir,
+                session_date=w.date,
+            )
             for state in new_states:
                 dates.append(w.date)
                 states.append(state)
@@ -143,7 +156,17 @@ def main() -> None:
         help="Upload exported JSON from your mobile app (Settings > Export Data)",
     )
 
-    dummy_data_path = Path(__file__).resolve().parents[3] / "dummy_data" / "workout_suite_export_2026-10-15T21-13-03-987Z.json"
+    dummy_dir = Path(__file__).resolve().parents[3] / "dummy_data"
+    dummy_files = sorted(
+        dummy_dir.glob("workout_suite_export_*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    dummy_data_path = (
+        dummy_files[0]
+        if dummy_files
+        else dummy_dir / "workout_suite_export_2026-10-15T21-13-03-987Z.json"
+    )
     payload: Optional[WorkoutExportPayload] = None
 
     if uploaded_file is not None:
@@ -169,6 +192,34 @@ def main() -> None:
         return
 
     # -------------------------------------------------------------------------
+    # Sidebar: Model & Analysis Settings
+    # -------------------------------------------------------------------------
+    st.sidebar.markdown("---")
+    st.sidebar.header("⚙️ Analysis Settings")
+    include_unrated = st.sidebar.checkbox(
+        "Include unrated working sets",
+        value=True,
+        help="Applies standard working set exertion (RIR 2.0 / RPE 8.0) to sets lacking explicit exertion ratings (e.g. StrengthLog imports). Warmups are always excluded.",
+    )
+    fallback_rir: Optional[float] = None
+    fallback_rpe: Optional[float] = None
+    if include_unrated:
+        fallback_rir = st.sidebar.slider(
+            "Default Working Set RIR",
+            min_value=0.0,
+            max_value=3.0,
+            value=2.0,
+            step=0.5,
+            help="Assumed proximity to failure for unrated working sets. 2.0 RIR corresponds to RPE 8.0.",
+        )
+        fallback_rpe = 10.0 - fallback_rir
+        st.sidebar.caption(
+            f"Unrated working sets mapped to **{fallback_rir:.1f} RIR** (**{fallback_rpe:.1f} RPE**)."
+        )
+    else:
+        st.sidebar.caption("Only sets with explicit RIR/RPE will be evaluated.")
+
+    # -------------------------------------------------------------------------
     # Overview KPI Cards
     # -------------------------------------------------------------------------
     col1, col2, col3, col4 = st.columns(4)
@@ -179,7 +230,12 @@ def main() -> None:
     with col3:
         st.metric("Catalog Exercises", len(payload.exercises))
     with col4:
-        st.metric("Bodyweight Logs", len(payload.body_metrics))
+        bw_count = sum(
+            1
+            for m in payload.body_metrics
+            if m.bodyweight is not None and m.bodyweight > 0
+        )
+        st.metric("Bodyweight Logs", bw_count)
 
     # -------------------------------------------------------------------------
     # Tabs
@@ -228,11 +284,41 @@ def main() -> None:
             ex_obj = exercise_map.get(selected_ex_id)
             std_lift = ex_obj.standard_lift_type if ex_obj else None
 
+            # Exercise Coverage Statistics
+            exercise_sets = sets_by_exercise[selected_ex_id]
+            unique_sessions = len(set(s.workout_id for s in exercise_sets))
+            total_sets = len(exercise_sets)
+            warmup_count = sum(1 for s in exercise_sets if s.set_type == "warmup")
+            working_count = total_sets - warmup_count
+            rated_working = sum(
+                1
+                for s in exercise_sets
+                if s.set_type != "warmup" and (s.rir is not None or s.rpe is not None)
+            )
+            unrated_working = working_count - rated_working
+
+            # Display coverage strip
+            cov_col1, cov_col2, cov_col3, cov_col4 = st.columns(4)
+            with cov_col1:
+                st.metric("Total Sessions Logged", unique_sessions)
+            with cov_col2:
+                st.metric("Total Completed Sets", f"{total_sets} ({working_count} work, {warmup_count} warm)")
+            with cov_col3:
+                st.metric("Explicitly Rated Sets", f"{rated_working} sets")
+            with cov_col4:
+                unrated_label = (
+                    f"{unrated_working} sets (Included)"
+                    if include_unrated
+                    else f"{unrated_working} sets (Excluded)"
+                )
+                st.metric("Unrated Working Sets", unrated_label)
+
             dates, states, obs = run_kalman_on_exercise(
                 exercise_id=selected_ex_id,
                 standard_lift_type=std_lift,
                 workouts=payload.workouts,
-                sets=sets_by_exercise[selected_ex_id],
+                sets=exercise_sets,
+                default_working_rir=fallback_rir,
             )
 
             if states:
@@ -251,7 +337,11 @@ def main() -> None:
                         f"± {last_state.k_std_err:.4f}",
                     )
                 with mcol3:
-                    st.metric("Total Updates", last_state.step_count)
+                    session_count = len(set(dates))
+                    st.metric(
+                        "Total Updates",
+                        f"{last_state.step_count} ({session_count} sessions)",
+                    )
                 with mcol4:
                     std_label = std_lift.upper() if std_lift else "CUSTOM / ISOLATION"
                     st.metric("Lift Biomechanics", std_label)
@@ -271,9 +361,15 @@ def main() -> None:
                 )
                 st.plotly_chart(fig_k, use_container_width=True)
             else:
-                st.warning(
-                    f"Not enough high-effort sets (RIR ≤ 3) to calibrate {selected_name}."
-                )
+                if not include_unrated and unrated_working > 0:
+                    st.warning(
+                        f"No rated sets (RIR ≤ 3) found for {selected_name}. "
+                        f"Enable 'Include unrated working sets' in the sidebar to calibrate using the {unrated_working} unrated working sets."
+                    )
+                else:
+                    st.warning(
+                        f"Not enough high-effort sets (RIR ≤ 3) to calibrate {selected_name}."
+                    )
 
     # -------------------------------------------------------------------------
     # Tab 2: Banister Fitness-Fatigue
@@ -290,6 +386,7 @@ def main() -> None:
             workouts=payload.workouts,
             workout_sets=payload.workout_sets,
             body_metrics=payload.body_metrics,
+            default_working_rpe=fallback_rpe,
         )
 
         if daily_series:
@@ -334,7 +431,14 @@ def main() -> None:
 
         if payload.body_metrics:
             sorted_bm = sorted(payload.body_metrics, key=lambda m: m.date)
-            unique_dates = sorted(list(set(m.date for m in sorted_bm)))
+            valid_bm = [
+                m
+                for m in sorted_bm
+                if m.bodyweight is not None and m.bodyweight > 0
+            ]
+            unique_dates = (
+                sorted(list(set(m.date for m in valid_bm))) if valid_bm else []
+            )
             recovery_states: List[Tuple[date, RecoveryState]] = []
 
             for d_str in unique_dates:
@@ -357,7 +461,7 @@ def main() -> None:
             "for all exercises into `calibrated_parameters.json` to import back into your mobile app."
         )
 
-        envelope = export_calibrated_parameters(payload)
+        envelope = export_calibrated_parameters(payload, default_working_rir=fallback_rir)
 
         if envelope.parameters:
             table_data = [

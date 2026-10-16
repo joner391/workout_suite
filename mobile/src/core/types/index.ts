@@ -49,7 +49,7 @@ export type GearType =
 
 export type WorkoutStatus = 'in_progress' | 'completed' | 'discarded';
 
-export type SetType = 'warmup' | 'working' | 'drop' | 'myorep' | 'dc';
+export type SetType = 'warmup' | 'working' | 'drop' | 'myorep' | 'dc' | 'amrap';
 
 export type ImportSource =
   | 'strong'
@@ -253,7 +253,7 @@ export interface WorkoutSet {
 export interface BodyMetric {
   id: string;
   date: string; // ISO8601 YYYY-MM-DD
-  bodyweight: number; // Canonical kg
+  bodyweight: number | null; // Canonical kg or null if unmeasured
   body_fat_manual: number | null;
   waist_cm: number | null;
   neck_cm: number | null;

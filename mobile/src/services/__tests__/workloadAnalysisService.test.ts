@@ -527,5 +527,120 @@ describe('Workload Analysis Service Suite', () => {
       expect(stimulatingBucket!.count).toBe(1);
       expect(stimulatingBucket!.percentage).toBe(33);
     });
+
+    test('3. Effective Reps & AMRAP Set Type Accounting', async () => {
+      const exercise: Exercise = {
+        id: 'ex_test',
+        name: 'Incline Dumbbell Press',
+        muscle_group: 'Chest',
+        category: 'Dumbbell',
+        is_compound: true,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'per_hand',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 0,
+        is_custom: false,
+        parent_exercise_id: null,
+        standard_lift_type: null,
+        default_rest_seconds: 90,
+      };
+      await exerciseRepo.create(exercise);
+
+      const workout: Workout = {
+        id: 'w_test_ereps',
+        template_id: null,
+        date: '2026-10-14',
+        name: 'Hypertrophy Session',
+        notes: null,
+        started_at: '2026-10-14T10:00:00Z',
+        duration_seconds: 2400,
+        status: 'completed',
+        completed_at: '2026-10-14T10:40:00Z',
+        imported_from: null,
+      };
+
+      const sets: WorkoutSet[] = [
+        // Set 1: Regular working set, 10 reps @ 2 RIR -> 3 eReps (rated)
+        {
+          id: 's_rated_1',
+          workout_id: 'w_test_ereps',
+          exercise_id: 'ex_test',
+          gear_id: null,
+          set_number: 1,
+          weight: 60,
+          raw_input_weight: 30,
+          added_weight: null,
+          reps: 10,
+          reps_right: null,
+          rpe: 8.0,
+          rir: 2.0,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+        // Set 2: Unrated working set (missing RPE & RIR) -> 0 eReps (unrated)
+        {
+          id: 's_unrated_2',
+          workout_id: 'w_test_ereps',
+          exercise_id: 'ex_test',
+          gear_id: null,
+          set_number: 2,
+          weight: 60,
+          raw_input_weight: 30,
+          added_weight: null,
+          reps: 10,
+          reps_right: null,
+          rpe: null,
+          rir: null,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+        // Set 3: AMRAP set (no explicit RPE/RIR typed) -> 12 reps -> defaults to RPE 10 -> 5 eReps (rated)
+        {
+          id: 's_amrap_3',
+          workout_id: 'w_test_ereps',
+          exercise_id: 'ex_test',
+          gear_id: null,
+          set_number: 3,
+          weight: 50,
+          raw_input_weight: 25,
+          added_weight: null,
+          reps: 12,
+          reps_right: null,
+          rpe: null,
+          rir: null,
+          set_type: 'amrap',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+      ];
+
+      workoutRepo.seed([workout], sets);
+
+      const result = await computeWeeklyWorkloadDeepDive(workoutRepo, exerciseRepo, {
+        refDate: new Date('2026-10-15T12:00:00Z'),
+        weekOffset: 0,
+      });
+
+      expect(result.totalWorkingSets).toBe(3);
+      // 2 rated (Set 1 + Set 3 AMRAP), 1 unrated (Set 2)
+      expect(result.totalRatedSets).toBe(2);
+      expect(result.totalUnratedSets).toBe(1);
+      // Coverage = 2/3 = 67%
+      expect(result.ratingCoveragePercent).toBe(67);
+      // Total eReps = 3 (Set 1) + 0 (Set 2 unrated) + 5 (Set 3 AMRAP) = 8
+      expect(result.totalEffectiveReps).toBe(8);
+
+      const chest = result.muscleGroupVolumes.find((m) => m.muscleGroup === 'Chest');
+      expect(chest).toBeDefined();
+      expect(chest!.effectiveReps).toBe(8);
+      expect(chest!.ratedSets).toBe(2);
+      expect(chest!.totalSets).toBe(3);
+    });
   });
 });

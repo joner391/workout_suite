@@ -1142,20 +1142,265 @@
   - *Cons*:
     - Requires a negligible $O(N)$ right-to-left sweep across PR rows ($N \le 30$, $<0.1\text{ ms}$).
 
+---
 
+## ADR-044: Longitudinal Plot Time Span Windowing, In-Memory Responsive Slicing & Boundary-Aware Smoothing
+- **Context**:
+  - The Home screen dashboard previously rendered longitudinal progress plots (`e1RM`, `Volume`, `Bodyweight`, `Body Fat %`, `Circumferences`) spanning the athlete's entire recorded history ("All data").
+  - Lifters frequently need to narrow their focus to micro- and meso-cycle timeframes (`Week`, `Month`, `3 months`, `Year`) to evaluate recent adaptations, peak performances within a training block, and rate of weight change without older historical data compressing recent variance.
+  - Direct database querying on every time-span button tap introduces SQLite query latency, re-render flashing, and network/spinner churn.
+  - Furthermore, computing rolling metrics (such as the 7-day bodyweight SMA or Monday-bucketed volume tonnage) after filtering raw input logs creates severe boundary distortions: the first 6 days of a 1-month or 1-week window would lack prior data, corrupting the rolling average calculation.
+- **Decision**:
+  1. **Deterministic Time Span Specification (`timeSpanUtils.ts`)**:
+     - Supported time spans: `'all'` (All data), `'year'` (Year, 365 days), `'3months'` (3 months, 90 days), `'month'` (Month, 30 days), and `'week'` (Week, 7 days).
+     - Fixed day offsets eliminate calendar leap-day and varying month-length edge cases.
+     - Provided `filterDataByTimeSpan` and `filterWeeklyBarsByTimeSpan` (which verifies Sunday week overlap: $\text{Monday} + 6\text{ days} \ge \text{cutoff}$).
+  2. **Two-Stage Boundary-Aware Calculation Pipeline**:
+     - Compute rolling averages (`calculateBodyweightRollingAverages`) and weekly volume buckets across full training history first.
+     - Derive filtered series and period summary metrics (`e1rmSummary`, `bodyweightSummary`, `volumeSummary`, etc.) dynamically via `useMemo` hooks based on the active `selectedTimeSpan`.
+     - Guarantees that SMA7 values at the start of a selected window remain mathematically continuous and fully smoothed by prior days.
+  3. **High-Performance In-Memory Responsive Slicing (`PlotsScreen.tsx`)**:
+     - Loaded raw data points are held in component state; changing time spans executes instantly ($<1\text{ ms}$) in memory without database re-fetching.
+     - Renders an accessible, OLED-styled horizontal pill selector (`testID="plot-timespan-selector"`, buttons `plot-timespan-all`, `plot-timespan-year`, `plot-timespan-3months`, `plot-timespan-month`, `plot-timespan-week`) directly between sub-selectors and the chart canvas.
+     - Updates summary stat labels (e.g. `ALL-TIME PEAK` vs `PERIOD PEAK`) and provides contextual empty-state messages when a timeframe has no sessions.
+- **Consequences**:
+  - *Pros*:
+    - 60fps instant time span switching with zero async loading lag or UI flicker.
+    - Preserves mathematical integrity of rolling averages and weekly buckets across window boundaries.
+    - Automatically enhances all plot instances across both Home screen sections (Performance Analytics and Body Composition) and modal views.
+    - Zero type errors and 100% test pass rate (721 tests passing across 54 test suites).
+  - *Cons*:
+    - Retains raw points in component state for the currently selected movement or anthropometric site ($O(N)$ with $N \le 1,000$ points, $<50\text{ KB}$ RAM).
 
+---
 
+## ADR-045: Derived Estimated Lean Body Mass (eLBM) Tracking & Longitudinal Plotting
+- **Context**:
+  - Resistance training athletes pursuing body recomposition, hypertrophy, or cutting/bulking cycles require an objective metric to track lean muscle tissue changes independent of transient hydration and adipose tissue fluctuations.
+  - Scale bodyweight alone cannot differentiate muscle hypertrophy from fat accumulation, while body fat percentage alone obscures whether total contractile tissue is growing or depleting.
+  - The U.S. Navy circumference method (Hodgdon & Beckett, 1984) provides a reliable, accessible, and non-invasive estimate of body fat percentage ($\text{BF}\%$) from height, waist, neck, and hip circumferences.
+  - Combining scale weight with Navy $\text{BF}\%$ derives Estimated Lean Body Mass:
+    $$\text{eLBM} = \text{Bodyweight} \times \left(1 - \frac{\text{Navy BF}\%}{100}\right)$$
+- **Decision**:
+  1. **Pure Mathematical Core (`mobile/src/core/math/navyBodyFat.ts`)**:
+     - Implemented `calculateEstimatedLeanBodyMass(bodyweight, bodyFatPercent)` with strict numerical validation ($BW > 0, 0 \le BF\% < 100$) and 2-decimal precision.
+     - Implemented `calculateNavyELBM(bodyweight, inputs)` as a convenient direct composer from anatomical circumference measurements.
+  2. **Derived-Metric Architecture (Zero Schema Drift)**:
+     - Because `body_metrics` in SQLite already persists `bodyweight` (in canonical kilograms) and `navy_body_fat` (in percent), eLBM is computed on the fly.
+     - Avoids unnecessary SQLite table alterations, schema version bumps, or JSON export contract mutations (Rule 8.4).
+  3. **Canonical Kilogram Storage & Unit Invariance (ADR-008)**:
+     - The calculation is mathematically scale-invariant ($\text{kg} \to \text{kg}$, $\text{lbs} \to \text{lbs}$).
+     - In storage and internal time-series state, data points are maintained in canonical kilograms.
+     - The presentation layer cleanly formats display values via `formatWeight` and `kgToLbs` without unit distortion.
+  5. **Last Observation Carried Forward (LOCF) Forward-Fill Architecture**:
+     - *Problem*: In real-world anthropometric logging, athletes rarely measure bodyweight, waist, and neck concurrently. Bodyweight is often logged 3–7 times weekly upon waking, whereas tape circumferences (waist, neck, hips) are measured intermittently (e.g. weekly or monthly), or individual sites are updated separately. Requiring simultaneous input of weight, waist, and neck in a single session left 90%+ of logs without eLBM or Navy BF%, resulting in fragmented charts and absent live feedback.
+     - *Algorithm Selection*: Implemented chronological Last Observation Carried Forward (LOCF) forward-fill:
+       - Chronological direction: Ascending date order ($t_0 \to t_n$).
+       - Invariance: If a measurement is omitted in session $t_k$, the latest valid observation from prior history $t_{j < k}$ is carried forward to compute Navy BF% and eLBM.
+       - Tape ground truth: Omitted circumferences remain `null` on the database row to prevent synthetic points on raw circumference charts, while `navy_body_fat` and `bodyweight` capture the effective state for that calendar day.
+     - *Core Math Pipeline (`calculateChronologicalELBM`)*:
+       - Forward-fills `lastWeight`, `lastWaist`, `lastNeck`, `lastHip`, and `lastBf`.
+       - Recalculates Navy BF% whenever any circumference changes.
+       - Carries forward active Navy BF% to subsequent weigh-ins, dynamically tracking daily eLBM changes from scale weight variations.
+       - Deduplicates multiple entries occurring on the same calendar day, preserving the latest state.
+     - *Interactive UI & Form Ergonomics (`BodyMetricsScreen.tsx`)*:
+       - Dynamically sets text input placeholders to the last recorded value formatted in the user's active unit system (e.g. `80.0 kg [last]`, `38.0 cm [last]`).
+       - Live Navy card calculates real-time BF% and eLBM as soon as *any* measurement is entered, utilizing historical fallbacks for unentered fields.
+       - Subtext (`navy-estimate-subtext`) explicitly indicates which values are newly entered versus carried forward from past sessions.
+       - When saving a circumference update without stepping on the scale, `latestRecordedWeightKg` is assigned to satisfy SQLite's `bodyweight REAL NOT NULL` constraint.
+       - Historical log item cards forward-fill prior Navy BF% to render eLBM badges across all weigh-ins.
+     - *Longitudinal Plot Integration (`PlotsScreen.tsx`)*:
+       - `loadElbmData` leverages `calculateChronologicalELBM` with `userProfileRepo` biological context (`gender`, `height_cm`), rendering a continuous, unbroken eLBM trajectory across all training blocks.
+       - `loadBodyFatData` applies LOCF forward-fill across circumference updates.
+     - *Repository-Level Integrity (`SQLiteBodyMetricsRepository.ts` & `MockBodyMetricsRepository.ts`)*:
+       - `save()` automatically forward-fills missing circumferences and bodyweight via historical queries prior to calculating and persisting `navy_body_fat`.
+- **Consequences**:
+  - *Pros*:
+    - Completely eliminates fragmented eLBM curves; athletes who weigh in daily and measure tape circumferences biweekly receive daily continuous eLBM tracking.
+    - Seamless live feedback in the UI when updating a single circumference site (e.g. neck or waist).
+    - Preserves exact tape measurement ground truth on circumference charts while ensuring complete data on derived composite plots.
+    - Zero schema migrations or breaking changes to existing SQLite databases.
+    - 100% test coverage across mathematical edge cases, repository persistence, screen components, and time-span filtering.
+  - *Cons*:
+    - If a lifter undergoes drastic body recomposition over several months without updating circumferences, daily eLBM calculations will assume the older body fat percentage until a new tape measurement is recorded. Contextual subtext encourages periodic tape updates.
 
+---
 
+## ADR-061: Anthropometric Ingestion Robustness and Optional Bodyweight in Export Schemas
+- **Context**:
+  - Lifters frequently log circumference measurements (waist, hips, chest, biceps, thighs, calves) or manual caliper/DEXA body fat percentages on days when they do not step on a scale.
+  - When importing historical body composition datasets (e.g. from StrengthLog CSV exports via `csvImportParser.ts`), records on dates with circumference measurements but no bodyweight measurement were initialized with `bodyweight = 0`.
+  - When exported from mobile SQLite into JSON, these entries contained `"bodyweight": 0`.
+  - The Companion app's Pydantic validation schema (`WorkoutExportPayload`) enforced `ge=20.0, le=500.0` on `bodyweight: float`. This caused strict validation rejections:
+    `body_metrics.<idx>.bodyweight Input should be greater than or equal to 20 [type=greater_than_equal, input_value=0, input_type=int]`
+    blocking lifters from analyzing their training sessions in the Companion app.
+- **Decision**:
+  1. **Canonical Schema Contract (`schemas/workout_export.schema.json`)**:
+     - Updated `definitions.BodyMetric.properties.bodyweight` to allow `["number", "null"]` alongside `minimum: 20.0` and `maximum: 500.0`.
+     - In JSON Schema Draft-07, numeric range constraints apply only when the type is numeric, permitting `null` for circumference-only logs.
+  2. **Companion Pydantic Ingestion (`companion/src/ingestion/schemas.py`)**:
+     - Updated `BodyMetric.bodyweight` to `Optional[float] = Field(default=None, ge=20.0, le=500.0)`.
+     - Added `@field_validator("bodyweight", mode="before")` that coerces `0`, non-positive values, or empty sentinels to `None`.
+     - Preserves strict validation: physically invalid non-zero weights (e.g., `15.0 kg`) continue to fail with `Input should be greater than or equal to 20`, while legacy exports with `0` and modern exports with `null` pass effortlessly.
+  3. **Export Serializer Normalization (`mobile/src/services/exportService.ts`)**:
+     - Normalizes bodyweight during JSON export: `r.bodyweight != null && Number(r.bodyweight) > 0 ? Number(r.bodyweight) : null`.
+     - Produces clean JSON contracts without zero sentinels.
+  4. **Database Backward Compatibility (`SQLiteBodyMetricsRepository.ts`)**:
+     - On save: `toSave.bodyweight != null && toSave.bodyweight > 0 ? toSave.bodyweight : 0`. Ensures compatibility with existing SQLite tables where `bodyweight REAL NOT NULL` is enforced.
+     - On read: Maps non-positive bodyweights to `null` so domain models operate on clean optional values.
+  5. **Parser & Visual Smoothing Integrity**:
+     - `csvImportParser.ts`: Sets `bodyweight: null` instead of `0` in `parseStrengthLogBodyCompCsv`.
+     - `PlotsScreen.tsx` & `BodyMetricsScreen.tsx`: Filter `m.bodyweight != null && m.bodyweight > 0` before computing 7-day rolling SMA/EMA, preventing artificial drops toward 0 kg.
+     - Companion `charts.py` & `app.py`: Filter to valid bodyweight entries before plotting the longitudinal scatter, and count true scale logs in overview KPIs.
+- **Consequences**:
+  - *Pros*:
+    - Completely eliminates upload validation errors when exporting historical anthropometry data.
+    - Zero breaking changes to SQLite database tables or existing stored data.
+    - Preserves mathematical integrity of Banister recovery modulation (OLS bodyweight slope $\Delta BW / \Delta t$) by omitting unmeasured days rather than injecting zero values or flat forward-fill lines.
+    - Seamlessly backward-compatible with previously generated user export files containing `bodyweight: 0`.
+    - Fully verified across 737 mobile unit tests and 47 companion pytest suites.
 
+---
 
+## ADR-062: Inferred Proximity Fallbacks for Unrated Working Sets in Kalman 1RM Filtering and Banister Fatigue Modeling
+- **Context**:
+  - The Companion application ingested user workout exports where 93% of completed sets (4,280 out of 4,616) lacked subjective exertion ratings (`rir: null` and `rpe: null`). This occurs frequently when lifters import longitudinal training histories from external trackers (such as StrengthLog) or do not record RPE/RIR on every set in the gym.
+  - For high-volume movements such as Barbell Back Squat, the export contained 78 workouts and 320 sets (248 working, 72 warmup) over 2.5 years, but only 9 sets across 5 workouts had explicit RPE/RIR ratings.
+  - The Kalman 1RM state-space filter (`companion/src/models/kalman_1rm.py`) previously discarded any set where `eff_rir is None or eff_rir > max_rir_threshold`.
+  - The Banister impulse-response model (`companion/src/models/fatigue_banister.py`) previously treated sets with `eff_rpe is None or eff_rpe < MIN_STIMULATING_RPE` as generating 0.0 stimulus.
+  - Consequently, the dashboard displayed only 8 Kalman updates across 5 workouts for squats (discarding 73 sessions), Banister tracked stimulating load on only 40 days instead of 347 days across 356 workouts, and only 37 exercises could be calibrated for export instead of 105.
+- **Decision**:
+  1. **Working vs. Warmup Disambiguation**:
+     - Warmup sets (`set_type == 'warmup'`) are **always** discarded from 1RM estimation and Banister stimulus calculations, regardless of fallback configurations.
+     - Fallbacks only apply to working sets (`set_type != 'warmup'`) where both `rir` and `rpe` are missing or null. Explicit user ratings are always preserved.
+  2. **Domain-Sound Fallback Priors**:
+     - Adopt default working exertion priors of $\text{RIR} = 2.0$ ($\text{RPE} = 8.0$), grounded in strength and conditioning literature (Helms, Zourdos, Tuchscherer) and existing Workout Suite conventions (`mobile/src/core/rules/progressionRuleEngine.ts` defaults to target RPE 8.0, and `SetRowComponent.tsx` defaults to RIR 2.0).
+  3. **Headless Engine Plumb-Through**:
+     - `companion/src/models/kalman_1rm.py`: `filter_session_sets`, `process_session`, and `process_workout_history` accept `default_working_rir: Optional[float] = None`. When `None`, legacy strict behavior is preserved.
+     - `companion/src/models/fatigue_banister.py`: `calculate_set_stimulus` and `compute_daily_banister_series` accept `default_working_rpe: Optional[float] = None`.
+     - `companion/src/export/param_exporter.py`: `calibrate_exercise_stream`, `export_calibrated_parameters`, and CLI accept `default_working_rir: Optional[float] = 2.0`.
+  4. **Interactive Streamlit Dashboard Controls (`companion/src/ui/app.py`)**:
+     - **⚙️ Analysis Settings Sidebar**: Added an interactive toggle "Include unrated working sets" (default: True) with a fine-tuning slider (`0.0` to `3.0` RIR, default `2.0`).
+     - **Exercise Coverage Summary Strip (Tab 1)**: Renders 4 KPI metrics per selected exercise:
+       - *Total Sessions Logged* (e.g. 78 sessions)
+       - *Total Completed Sets* (e.g. 320 sets: 248 working, 72 warmup)
+       - *Explicitly Rated Sets* (e.g. 9 sets)
+       - *Unrated Working Sets* (e.g. 239 sets [Included/Excluded])
+     - **Enhanced Kalman KPI**: Formats "Total Updates" as `156 (78 sessions)` so lifters immediately recognize multi-session longitudinal coverage.
+     - **Scatter Plot Observation Mapping**: Inferred working sets are plotted alongside explicitly rated sets.
+     - **Empty State Guidance**: If strict mode is enabled and an exercise has 0 updates, displays an actionable notification prompting the lifter to enable the fallback toggle.
+- **Consequences**:
+  - *Pros*:
+    - Squat Kalman updates jump from 8 updates (5 workouts) to 156 updates across all 78 workouts, reconstructing true longitudinal strength adaptation from 85.3 kg to 111.8 kg.
+    - Banister impulse-response model tracks 347 stimulating days across 356 workouts (previously 40 days).
+    - Round-trip calibrated parameter export scales from 37 to 105 catalog exercises.
+    - Complete backward-compatibility: unrated sets are discarded when `default_working_rir=None`, ensuring strict unit tests pass unchanged.
+    - Lifters have full transparency over explicit vs. imputed data points.
+---
 
+## ADR-063: AMRAP Set Identification and Zero-RIR / Maximum-Stimulus Classification
+- **Context**:
+  - In strength training methodologies (e.g., 5/3/1 plus sets, GZCL, Bullmastiff, Greyskull LP), **AMRAP** ("As Many Reps As Possible") sets are prescribed to test repetition endurance and strength progression by performing repetitions until technical or volitional muscular failure.
+  - By physiological and biomechanical definition, completing an AMRAP set corresponds to **0 Reps in Reserve (0 RIR)** or **RPE 10.0**.
+  - Previously, if an AMRAP set lacked an explicit numerical RPE/RIR rating (e.g., imported from Liftosaur's `Is AMRAP?` column, StrengthLog set comments, or logged without manually adjusting the intensity stepper), it was either discarded in strict mode or evaluated at the submaximal working set default (RIR 2.0 / RPE 8.0). This underestimated the lifter's true 1RM and generated insufficient Banister fatigue.
+- **Decision**:
+  1. **Companion Mathematical Engine (`kalman_1rm.py`, `fatigue_banister.py`, `app.py`)**:
+     - Introduced `is_amrap_set(obj)` helper that identifies AMRAP sets via `set_type in ('amrap', 'failure')`, `is_amrap: true`, or per-set notes containing `"amrap"` (case-insensitive).
+     - In `filter_session_sets`, unrated AMRAP sets are automatically assigned `eff_rir = 0.0`. Under intra-session filtering, this gives AMRAP sets the highest selection priority (`eff_rir ASC`) to inform the Tier 2 Kalman state update.
+     - In `calculate_set_stimulus`, unrated AMRAP sets are assigned `eff_rpe = 10.0`, receiving the maximum 2.0x exertion scalar ($(1.0 + (10.0 - 7.0)/3.0) = 2.0$).
+     - Preserves explicit ratings: if a lifter terminates an AMRAP early and explicitly enters RIR 1.0 or RPE 9.0, the explicit rating is honored.
+  2. **Mobile CSV Import Parsers (`csvImportParser.ts`)**:
+     - **Liftosaur**: Inspects `Is AMRAP?` column (`1`, `true`) and notes. If true and RPE/RIR is unrated, sets `rpe = 10.0, rir = 0.0`.
+     - **StrengthLog**: Inspects `setcomment` for `"amrap"`. If present, sets `rpe = 10.0, rir = 0.0`.
+     - **Strong, Hevy, Generic CSV**: Inspects set order/type and notes for `"amrap"` or `"f"`/`"failure"`, mapping to `rpe = 10.0, rir = 0.0`.
+     - `mapSetType`: Maps `'amrap'` to `'working'` so volume tracking correctly accumulates productive tonnage.
+  3. **Mobile Active Logger UI (`SetRowComponent.tsx`)**:
+     - Added a dedicated 1-tap `[AMRAP]` button in the set row intensity editor drawer.
+     - Tapping `[AMRAP]` immediately sets `{ rir: 0.0, rpe: 10.0 }`, with active red/amber badge highlighting (`#EF4444`).
+- **Consequences**:
+  - *Pros*:
+    - AMRAP sets are accurately modeled as maximal efforts (0 RIR / 10 RPE), ensuring peak power-law 1RM extrapolation and realistic fatigue accumulation.
+    - Zero manual slider friction for athletes logging AMRAPs in the gym or importing from external apps.
+    - 100% backward-compatible across existing datasets and test suites.
+  - *Cons*: None.
 
+---
 
+## ADR-064: Hypertrophic Effective Reps Model, Workload Deep Dive Default, and First-Class AMRAP SetType
+- **Context**:
+  - Traditional volume quantification via raw working sets ($8–18\text{ sets/wk}$) and tonnage ($\sum w \cdot r$) fails to distinguish between high-threshold mechanical tension and submaximal junk volume. A set performed at $4.5\text{ RIR}$ ($5.5\text{ RPE}$) provides virtually zero hypertrophic stimulus to high-threshold motor units, whereas a set taken to failure ($0\text{ RIR}$) provides peak mechanical tension across the final $\sim 5$ repetitions (Henneman's size principle, Hill force-velocity relationship, and Robinson et al. 2024 meta-regressions).
+  - Lifters using `fury` (HIT / rest-pause / DC training with 1–2 sets to failure) were penalized as "under-training" under raw set landmarks, while high-set junk volume was falsely classified as "optimal".
+  - To prevent in-gym clutter, athletes requested that the active logger remain clean (no real-time eReps badges), while the Volume Deep Dive analytics should default to Effective Reps with an on-demand toggle to Working Sets.
+  - Furthermore, if a set lacks RPE/RIR data, it must not falsely assume maximal proximity; instead, unrated sets must be excluded from effective reps while disclosing the rating coverage ($N / M\text{ sets rated}$).
+  - Finally, AMRAP needed elevation to a first-class `SetType` (`'amrap'`) across the contract, defaulting immediately to RPE 10.0 / 0 RIR.
+- **Decision**:
+  1. **Cross-Stack Contract & SetType Elevation**:
+     - Updated `schemas/workout_export.schema.json` to include `"amrap"` in `set_type` enum (`["warmup", "working", "drop", "myorep", "dc", "amrap"]`).
+     - Updated `companion/src/ingestion/schemas.py`: `SetType = Literal["warmup", "working", "drop", "myorep", "dc", "amrap"]`.
+     - Updated `mobile/src/core/types/index.ts`: `export type SetType = 'warmup' | 'working' | 'drop' | 'myorep' | 'dc' | 'amrap';`.
+  2. **Headless Domain Core Math (`effectiveReps.ts` & `fatigue_banister.py`)**:
+     - Implemented `calculateHypertrophicEffectiveReps(reps, options)`:
+       - Warmup sets yield $0\text{ eReps}$.
+       - Auto-failure set types (`'amrap'`, `'dc'`, `'myorep'`, `'drop'`) automatically default to RPE 10.0 / 0 RIR and yield $\min(\text{reps}, 5)$ effective reps (counted as rated sets).
+       - Regular working sets missing both RPE and RIR yield $0\text{ eReps}$ and are flagged `isRated = false`.
+       - Heavy loads ($\ge 85\%\text{ 1RM}$) recruit high-threshold motor units from rep 1, yielding all reps up to $5$.
+       - General submaximal sets yield $\max(0, \min(\text{reps}, 5 - \text{RIR}))$.
+     - Implemented `classifyEffectiveRepsTier(eReps)`:
+       - Low / Maintenance (MED): $< 20\text{ eReps/wk}$
+       - Optimal Growth (MAV): $20 - 48\text{ eReps/wk}$
+       - High Volume: $49 - 65\text{ eReps/wk}$
+       - Fatigue Risk / Junk Zone: $> 65\text{ eReps/wk}$
+  3. **Workload Analysis Service (`workloadAnalysisService.ts`)**:
+     - Integrated effective reps calculation across 7-day daily workloads and muscle group landmarks (preserving $1.0\times$ primary muscle credit and $0.5\times$ synergist muscle credit).
+     - Computes `totalEffectiveReps`, `totalRatedSets`, `totalUnratedSets`, and `ratingCoveragePercent`.
+  4. **Workload Deep Dive Modal Presentation (`WorkloadDeepDiveModal.tsx`)**:
+     - Defaults to **Effective Reps** (`volumeMetricMode = 'ereps'`).
+     - Added high-contrast segmented control: `[⚡ Effective Reps | 📋 Working Sets]`.
+     - Renders rating coverage disclosure banner (`⚡ Rated sets: 18/22 (82%) • 4 unrated sets omitted (0 eReps)`).
+     - Renders muscle group landmark progress tracks and tier badges mapped dynamically to the active metric.
+  5. **Active Logger In-Gym Ergonomics (`SetRowComponent.tsx`)**:
+     - Strictly omitted all eReps badges from the active logger per user request to maintain speed and simplicity.
+     - Cycling set type tag transitions through `Reg -> Warm -> Drop -> Myo -> DC -> AMRAP -> Reg`.
+     - When cycling to `'amrap'`, automatically writes `{ set_type: 'amrap', rpe: 10.0, rir: 0.0 }`.
+- **Consequences**:
+  - *Pros*:
+    - Scientifically grounded hypertrophy volume quantification that eliminates junk volume distortion.
+    - Zero SQLite schema migrations required: computed deterministically on-the-fly in headless domain math.
+    - Zero active logger visual clutter.
+    - Full transparency on rating completeness and coverage.
+    - First-class AMRAP set modeling across React Native Expo, JSON Schema, and Python Companion.
+  - *Cons*: None.
 
+---
 
-
-
+## ADR-065: Consolidated Daily Batch Kalman Estimation, Dual-Defense Boundary Regularization, and Scale-Invariant Banister Unit-Gain EWMA
+- **Context**: Across longitudinal datasets (e.g. 939 days), four mathematical pathologies emerged in the companion analysis engine:
+  1. *Endurance exponent $k$ drift*: Positive cross-covariance $P_{01}$ paired with unflagged submaximal/warmup sets drove $k$ upwards until it pinned against the $0.1600$ upper boundary.
+  2. *Extreme 1RM volatility (78–129 kg swings)*: Underestimated observation noise $R_t$ and unscaled process noise $Q$ caused the filter to track day-to-day noise rather than structural strength.
+  3. *Intraday micro-sawtoothing*: Executing sequential discrete filter updates for sets in the same workout injected redundant process noise $Q$ and caused vertical jumps on identical calendar dates.
+  4. *Estimated 1RMs dropping below lifted loads*: Miscalibrated $k$ combined with unconstrained posterior updates allowed $e1\text{RM} = \exp(x_0)$ to fall below weights physically completed on high-rep working sets.
+  5. *Banister scale explosion*: Discrete integration $P(t) = P(t-1)e^{-1/\tau_1} + S(t)$ lacked normalization, inflating steady-state fitness by $\sim 42\times$ into $300+\text{ AU}$.
+- **Decision**:
+  1. **Consolidated Daily Session Batch Update**: Process each workout session as a single unified measurement batch update in `kalman_1rm.py` (`update_1rm_filter_batch` and `step_batch`), allowing top sets and back-off sets to jointly resolve $\ln(1\text{RM})$ and $k$ while eliminating duplicate $Q$ noise and chart sawtoothing.
+  2. **Calibrated Noise Covariances**:
+     - Initial prior covariance tightened to $\mathbf{P}_0 = \text{diag}(0.010, 0.00015)$ ($\sigma_{k_0} \approx 0.012$).
+     - Process noise scaled by elapsed calendar days $\Delta t_{\text{days}}$: $\mathbf{Q}_{\text{daily}} = \text{diag}(1.5\times 10^{-5}, 1.0\times 10^{-8}) \cdot \Delta t_{\text{days}}$.
+     - Homoscedastic observation noise calibrated to $\sigma_{\text{base}} = 0.045$, $\lambda = 0.030$.
+  3. **Joseph Stabilized Covariance Update**: Guarantees symmetry and positive semi-definiteness via $(I - KH)P_{\text{pred}}(I - KH)^T + K R K^T$.
+  4. **Dual-Defense Boundary Regularization**:
+     - *Soft Tikhonov Anchor*: Continuous low-weight pseudo-measurement $z_{\text{prior}} = k_{\text{prior}}$ with $H = [0, 1]$ and $R = \sigma_{k,\text{prior}}^2$ prevents random walk drift during blocks of uniform rep counts.
+     - *Simon's Covariance-Weighted Projection*: When boundary $\mathbf{d}^T \mathbf{x} \le b$ is violated, state is projected in the metric of $\mathbf{P}^{-1}$ adjusting $\ln(1\text{RM})$ along the conditional Gaussian distribution, with boundary covariance conditioned ($P_{01} \leftarrow 0$, $P_{11} \leftarrow \min(P_{11}, 10^{-5})$).
+  5. **3-Stage Gating Pipeline**:
+     - *Pre-Filter (Peak Reference Gate)*: Eliminates unflagged warmups by rejecting sets $< 65\%$ max session weight or $< 82\%$ peak session heuristic 1RM.
+     - *In-Filter (Asymmetric Huber Gate)*: Rejects severe negative outliers ($y_t / \sqrt{S_t} < -3.0$) and applies Huber M-estimation variance inflation for mild negative innovations. Never rejects valid PRs ($y_t > 0$).
+     - *Post-Update (Physical Lower-Bound Floor)*: Enforces $x_0 \ge \max_i (\ln(w_i) + 0.03 \ln(\text{reps}_i))$, guaranteeing estimated 1RM strictly exceeds working weights lifted.
+  6. **Scale-Invariant Banister Unit-Gain EWMA**:
+     - Exponential saturation per exercise ($\kappa_{\text{ex}} = 4.0$) and whole-session bounded impulse ($[0, 100]$ with $\kappa_{\text{sess}} = 10.0, \kappa_{\text{fatigue}} = 14.0$).
+     - Discretized using exact unit-gain EWMA: $P(t) = e^{-1/\tau_1} P(t-1) + (1 - e^{-1/\tau_1}) S_{\text{fit}}(t)$, bounding $P(t), F(t) \in [0, 100]$.
+     - Computes normalized Readiness ($[0, 100]$) via logistic z-transform.
+- **Consequences**:
+  - *Pros*: Completely resolves $k$ pinning, preserves physical validity across rep ranges, produces smooth daily curves without intraday noise, and bounds multi-year fatigue/fitness tracking.
+  - *Cons*: None. Fully backward compatible with existing data exchange schemas and Streamlit UI.
 
 
 

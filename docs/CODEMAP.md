@@ -35,6 +35,8 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   ├── plateCalculator.ts
 │       │   │   ├── dotsCoefficients.ts
 │       │   │   ├── strengthStandards.ts
+│       │   │   ├── navyBodyFat.ts
+│       │   │   ├── effectiveReps.ts
 │       │   │   └── __tests__/
 │       │   │       ├── unitConversion.test.ts
 │       │   │       ├── heuristic1rm.test.ts
@@ -42,7 +44,9 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │       ├── loadNormalizer.test.ts
 │       │   │       ├── plateCalculator.test.ts
 │       │   │       ├── dotsCoefficients.test.ts
-│       │   │       └── strengthStandards.test.ts
+│       │   │       ├── strengthStandards.test.ts
+│       │   │       ├── navyBodyFat.test.ts
+│       │   │       └── effectiveReps.test.ts
 │       │   ├── generator/
 │       │   │   ├── programSynthesizer.ts
 │       │   │   └── __tests__/
@@ -66,7 +70,8 @@ c:/Programmering/Eget/Workout_suite/
 │       │       ├── IGearRepository.ts
 │       │       ├── IUserSettingsRepository.ts
 │       │       ├── IProgramRepository.ts
-│       │       └── IUserProfileRepository.ts
+│       │       ├── IUserProfileRepository.ts
+│       │       └── IBodyMetricsRepository.ts
 │       ├── services/
 │       │   ├── index.ts
 │       │   ├── activeSessionService.ts
@@ -153,8 +158,10 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   ├── PlotsScreen.tsx
 │       │   │   ├── ProgramEraShadedChart.tsx
 │       │   │   ├── WorkloadDeepDiveModal.tsx
+│       │   │   ├── timeSpanUtils.ts
 │       │   │   └── __tests__/
 │       │   │       ├── plotsComponents.test.ts
+│       │   │       ├── timeSpanUtils.test.ts
 │       │   │       └── workloadDeepDiveComponents.test.ts
 │       │   ├── bodyMetrics/
 │       │   │   ├── index.ts
@@ -187,13 +194,15 @@ c:/Programmering/Eget/Workout_suite/
 │           │   ├── SQLiteUserSettingsRepository.ts
 │           │   ├── SQLiteProgramRepository.ts
 │           │   ├── SQLiteUserProfileRepository.ts
+│           │   ├── SQLiteBodyMetricsRepository.ts
 │           │   └── __tests__/
 │           │       ├── SQLiteExerciseRepository.test.ts
 │           │       ├── SQLiteWorkoutRepository.test.ts
 │           │       ├── SQLiteGearRepository.test.ts
 │           │       ├── SQLiteUserSettingsRepository.test.ts
 │           │       ├── SQLiteProgramRepository.test.ts
-│           │       └── SQLiteUserProfileRepository.test.ts
+│           │       ├── SQLiteUserProfileRepository.test.ts
+│           │       └── SQLiteBodyMetricsRepository.test.ts
 │           ├── mocks/
 │           │   ├── index.ts
 │           │   ├── MockExerciseRepository.ts
@@ -202,13 +211,15 @@ c:/Programmering/Eget/Workout_suite/
 │           │   ├── MockUserSettingsRepository.ts
 │           │   ├── MockProgramRepository.ts
 │           │   ├── MockUserProfileRepository.ts
+│           │   ├── MockBodyMetricsRepository.ts
 │           │   └── __tests__/
 │           │       ├── MockExerciseRepository.test.ts
 │           │       ├── MockWorkoutRepository.test.ts
 │           │       ├── MockGearRepository.test.ts
 │           │       ├── MockUserSettingsRepository.test.ts
 │           │       ├── MockProgramRepository.test.ts
-│           │       └── MockUserProfileRepository.test.ts
+│           │       ├── MockUserProfileRepository.test.ts
+│           │       └── MockBodyMetricsRepository.test.ts
 │           └── __tests__/
 │               ├── MockSQLiteDatabase.ts
 │               └── schema.test.ts
@@ -302,7 +313,7 @@ c:/Programmering/Eget/Workout_suite/
     - *Workload Deep Dive Modal (`WorkloadDeepDiveModal.tsx`)*: Full-screen interactive inspection modal accessible via `home-workload-deep-dive-btn` in the Home screen's Performance Analytics header. Includes calendar week navigation (with "THIS WEEK" active indicator), 4-metric KPI summary strip, muscle group landmark progress tracks, daily session comparison cards, and dual intensity distribution charts. (674 mobile tests passing across 51 test suites, `npx tsc --noEmit` verified).
 - **Phase 5: Anthropometry, Body Composition & Longitudinal Plotting**
   - **Step 5.1: U.S. Navy Body Fat, Rolling Averages & Body Metrics Repository**: `[x]` Completed — Implemented ADR-041: Official DoD metric body density formula with Siri equation (`navyBodyFat.ts`) with male and female circumference equations in cm, strict anatomical guards, physiological bounds clamping, dual-curve bodyweight smoothing (calendar-aware 7-day SMA and exponential smoothing EMA $\alpha=0.25$), abstract repository interface (`IBodyMetricsRepository.ts`), in-memory mock (`MockBodyMetricsRepository.ts`), and concrete SQLite repository (`SQLiteBodyMetricsRepository.ts`) with automatic active `user_profiles` resolution and persistence (618 mobile tests passing total across 47 test suites, `npx tsc --noEmit` and `npm run lint` verified).
-  - **Step 5.2: Body Metrics Screen & Longitudinal Plots with Program Era Shading**: `[x]` Completed — Implemented ADR-042: Reusable SVG time-series chart wrapper with meso-cycle program era shading (`ProgramEraShadedChart.tsx`), complete 5-chart longitudinal suite (`PlotsScreen.tsx` for e1RM progression, bodyweight with 7-day rolling SMA/EMA, body fat %, circumferences, and Monday-bucketed volume tonnage), anthropometry logger (`BodyMetricsScreen.tsx`), bidirectional metric/imperial unit conversion (`unitConversion.ts`), and HomeScreen inline integration (644 mobile tests passing total across 49 test suites, `npx tsc --noEmit` and `pytest companion/tests` 9/9 passing verified).
+  - **Step 5.2: Body Metrics Screen & Longitudinal Plots with Program Era Shading**: `[x]` Completed — Implemented ADR-042, ADR-045 & ADR-061: Reusable SVG time-series chart wrapper with meso-cycle program era shading (`ProgramEraShadedChart.tsx`), complete 6-chart longitudinal suite (`PlotsScreen.tsx` for e1RM progression, bodyweight with 7-day rolling SMA/EMA, body fat %, estimated Lean Body Mass (eLBM), circumferences, and Monday-bucketed volume tonnage), anthropometry logger (`BodyMetricsScreen.tsx` with live Navy BF% and eLBM estimates, rolling average banner, and historical logs), bidirectional metric/imperial unit conversion (`unitConversion.ts`), robust circumference-only optional bodyweight export synchronization (`schemas/workout_export.schema.json` & `schemas.py`), and HomeScreen inline integration (737 mobile tests passing total across 54 test suites, `npx tsc --noEmit` and `pytest companion/tests` passing verified).
 - **Phase 6: Companion Scientific Analysis Suite (Python Engine & Dashboard)**
   - **Step 6.1: Tier 2 Adaptive Linear Kalman Filter Engine (`kalman_1rm.py`)**: `[x]` Completed — Implemented ADR-044: Discrete state-space Linear Kalman Filter tracking $\mathbf{x}_t = [\ln(1\text{RM}_t), k_t]^T$ under linearized Lombardi power law, quadratic measurement noise variance $R_t = \sigma_{\text{base}}^2 (1 + \lambda r_{\text{eff}}^2)$, diagonal process noise $\mathbf{Q}$, lift-specific priors (Bench 0.085, Squat 0.095, Deadlift 0.075, Default 0.10), deadlift +10% heuristic exclusion invariant (ADR-026), true 1RM bypass ($r_{\text{eff}}=1.0 \implies \mathbf{H}=[1, 0]$), intra-session pre-processing (top 2 sets with lowest RIR / highest weight, discarding RIR > 3, warmups, and failed reps), and box-clipping heuristic $k \in [0.03, 0.16]$ (13/13 pytest unit tests passing, 22/22 total companion tests passing, strict mypy verified).
   - **Step 6.2: Dynamic Recoverability & Banister Impulse-Response Engine**: `[x]` Completed — Implemented ADR-045: 14-day rolling bodyweight OLS linear regression slope ($\Delta BW / \Delta t$) scaling fatigue decay constant $\tau_2$ dynamically (shortened 10–25% in surplus, lengthened 15–30% in deficit) in `recovery_modifier.py`; Effective Stimulating Sets ($\text{RPE} \ge 7.0$ scaled by $\text{weight}/1\text{RM}$) and two-component Fitness ($P_t, \tau_1=42\text{d}$) and Fatigue ($F_t, \text{dynamic } \tau_2$) ODE integrator in `fatigue_banister.py`; rolling Acute:Chronic Workload Ratio (ACWR) and structured training advisories (`OPTIMAL_OVERLOAD`, `DELOAD_WARNING`, `UNDER_STIMULATION`, `OVERREACHING`) in `recommendations.py` (13/13 pytest unit tests passing, 35/35 total companion tests passing, strict mypy verified).
@@ -346,6 +357,7 @@ When code generation begins in subsequent phases, components must be placed into
   - `math/strengthStandards.ts` — Evaluates SBD e1RM against empirical & allometric bodyweight tiers (Untrained to Elite) and computes continuous score + kg delta.
   - `math/dotsCoefficients.ts` — Official powerlifting DOTS formula score calculator.
   - `math/navyBodyFat.ts` — U.S. Navy circumference body fat algorithm (DoD metric density + Siri equation) and calendar-aware 7-day rolling SMA / EMA smoothing engines.
+  - `math/effectiveReps.ts` — Hypertrophic effective reps ($e_{\text{reps}}$) model and weekly volume landmark corridors ($<20$ Low/MED, $20–48$ Optimal MAV, $49–65$ High, $>65$ Peak) with strict unrated set exclusion and auto-failure handling (ADR-064).
   - `math/unitConversion.ts` — Pure kg ↔ lbs conversion functions.
   - `generator/programSynthesizer.ts` — Pure profile-driven program synthesizer mapping user demographics, schedule, exertion intensity, and equipment access to complete multi-day splits with antagonist supersets and progression rules.
   - `rules/progressionRuleEngine.ts` — Pure side-effect-free evaluator for declarative progression rules, supporting condition matching, priority sorting, DDP set-level proposals, and LP/DP/DDP presets.
@@ -362,7 +374,7 @@ When code generation begins in subsequent phases, components must be placed into
   - `features/gear/` — `GearInventoryScreen.tsx`, accessible gym equipment inventory, specialty barbell tare weights, custom machine cable ratios manager, accessed via Profile hub Equipment Access modal.
   - `features/profile/` — `UserProfileScreen.tsx`, Training Mentality matrix (`fury`, `precision`, `get_out`), demographics, logistics (including 15m duration), Equipment Access hub (`GearInventoryScreen` modal integration), 1-tap generator, active program banner.
   - `features/bodyMetrics/` — `BodyMetricsScreen.tsx`, tape measurement inputs, body fat estimator, 7-day rolling average.
-  - `features/plots/` — `PlotsScreen.tsx`, time-series charts with program era shaded bands, SBD Symmetry & Balance Radar chart, demographic cohort percentiles.
+  - `features/plots/` — `PlotsScreen.tsx`, `timeSpanUtils.ts` (time span window calculation & point filtering: All data, Year, 3 months, Month, Week), time-series charts with program era shaded bands, SBD Symmetry & Balance Radar chart, demographic cohort percentiles.
   - `features/import/` — `ImportScreen.tsx`, `dummyDataPresets.ts`, Strong CSV / Hevy CSV / Liftosaur CSV / StrengthLog Training & Body Comp CSV parsers, 1-tap Expo Go evaluation preset loaders, exercise mapping wizard UI, duplicate session detection, and date range filtering.
   - `features/settings/` — `SettingsScreen.tsx`, units, RPE/RIR preferences, `pure_utility_mode` toggle, export trigger, calibrated parameter import trigger.
 - `mobile/src/services/` — Application orchestration services.
@@ -375,7 +387,7 @@ When code generation begins in subsequent phases, components must be placed into
   - `programRecommenderService.ts` — Profile-driven routine synthesizer mapping psychology and goals to template exercises and progression rules.
   - `cohortBenchmarkService.ts` — Local-first population percentile comparisons (Phase 3) and cloud social leaderboard synchronization (Phase 7).
   - `exportService.ts` — JSON serializer and OS Share Sheet integration (`expo-sharing`).
-  - `importService.ts` — External app CSV/JSON parser, multi-source exercise catalog mapper, body metrics importer, duplicate session detector, and provenance tagger.
+  - `importService.ts` — External app CSV/JSON parser, multi-source exercise catalog mapper, AMRAP detection, body metrics importer, duplicate session detector, and provenance tagger.
   - `calibratedParamService.ts` — Reads `calibrated_parameters.json` and writes to `calibrated_params` table.
   - `crashRecoveryService.ts` — Detects `status = 'in_progress'` sessions on startup and triggers Resume/Discard flow.
   - `restTimerService.ts` — Background timer triggers, superset group awareness, and audio/haptic cues.
@@ -397,13 +409,13 @@ When code generation begins in subsequent phases, components must be placed into
   - `parser.py` — File reader for `workout_data_export.json`.
   - `schemas.py` — Pydantic v2 data models enforcing schema conformity.
 - `companion/src/models/` — Headless scientific modeling engine (pure NumPy/SciPy math).
-  - `kalman_1rm.py` — Linear Kalman Filter updating $(1\text{RM}_t, k_t)$ per exercise.
-  - `fatigue_banister.py` — Two-component impulse-response ODE solver.
+  - `kalman_1rm.py` — Linear Kalman Filter updating $(1\text{RM}_t, k_t)$ per exercise via single consolidated daily batch evaluation, 3-stage gating pipeline (intra-session reference, Huber M-estimation, physical load floor), Joseph stabilized covariance form, soft Tikhonov prior anchor, and Simon's covariance-weighted boundary projection.
+  - `fatigue_banister.py` — Two-component impulse-response ODE solver with per-exercise and session-level diminishing returns saturation ($\kappa_{\text{ex}} = 4.0$) and scale-invariant unit-gain EWMA discretization bounding $P(t), F(t) \in [0, 100]$.
   - `recovery_modifier.py` — 14-day rolling bodyweight slope ($\Delta BW / \Delta t$) fatigue scaler.
   - `recommendations.py` — ACWR calculation, deload trigger, and progressive overload advisory engine.
 - `companion/src/export/` — Calibrated parameter output.
-  - `param_exporter.py` — Serializes per-exercise $(1\text{RM}, k)$ to `calibrated_parameters.json` for mobile import.
+  - `param_exporter.py` — Serializes per-exercise $(1\text{RM}, k)$ to `calibrated_parameters.json` for mobile import with configurable `default_working_rir`.
 - `companion/src/ui/` — Presentation Layer.
-  - `app.py` — Streamlit / Plotly interactive web dashboard.
+  - `app.py` — Streamlit / Plotly interactive web dashboard with exercise coverage strip, unrated working set toggles, and round-trip export.
 
 

@@ -1,6 +1,9 @@
 import {
   calculateNavyBodyDensity,
   calculateNavyBodyFat,
+  calculateEstimatedLeanBodyMass,
+  calculateNavyELBM,
+  calculateChronologicalELBM,
   calculate7DaySMA,
   calculate7DayEMA,
   calculateBodyweightRollingAverages,
@@ -347,6 +350,193 @@ describe('navyBodyFat core math module', () => {
         sma7: 81.0,
         ema7: 80.5,
       });
+    });
+  });
+
+  describe('calculateEstimatedLeanBodyMass (eLBM)', () => {
+    it('computes eLBM in kg accurately for standard bodyweight and body fat percentage', () => {
+      // 80 kg @ 14.0% BF -> 80 * (1 - 0.14) = 68.80 kg
+      const elbm = calculateEstimatedLeanBodyMass(80, 14.0);
+      expect(elbm).toBe(68.8);
+    });
+
+    it('computes eLBM in lbs accurately without unit distortion', () => {
+      // 180 lbs @ 15.0% BF -> 180 * (1 - 0.15) = 153.00 lbs
+      const elbm = calculateEstimatedLeanBodyMass(180, 15.0);
+      expect(elbm).toBe(153.0);
+    });
+
+    it('handles 0% body fat edge case correctly', () => {
+      const elbm = calculateEstimatedLeanBodyMass(75.5, 0);
+      expect(elbm).toBe(75.5);
+    });
+
+    it('returns null for non-positive or invalid bodyweight', () => {
+      expect(calculateEstimatedLeanBodyMass(0, 15)).toBeNull();
+      expect(calculateEstimatedLeanBodyMass(-75, 15)).toBeNull();
+      expect(calculateEstimatedLeanBodyMass(NaN, 15)).toBeNull();
+      // @ts-ignore
+      expect(calculateEstimatedLeanBodyMass('80', 15)).toBeNull();
+    });
+
+    it('returns null for invalid or out-of-bounds body fat percentage', () => {
+      expect(calculateEstimatedLeanBodyMass(80, -5)).toBeNull();
+      expect(calculateEstimatedLeanBodyMass(80, 100)).toBeNull();
+      expect(calculateEstimatedLeanBodyMass(80, 105)).toBeNull();
+      expect(calculateEstimatedLeanBodyMass(80, NaN)).toBeNull();
+    });
+  });
+
+  describe('calculateNavyELBM', () => {
+    it('computes combined Navy body fat and eLBM directly from measurements for male', () => {
+      // 82 kg, 178 cm height, 82 cm waist, 38 cm neck -> 14.0% BF
+      // eLBM = 82 * (1 - 0.14) = 70.52 kg
+      const elbm = calculateNavyELBM(82, {
+        gender: 'male',
+        heightCm: 178,
+        waistCm: 82,
+        neckCm: 38,
+      });
+      expect(elbm).toBe(70.52);
+    });
+
+    it('computes combined Navy body fat and eLBM for female', () => {
+      // 65 kg, 165 cm height, 72 cm waist, 33 cm neck, 96 cm hips
+      const elbm = calculateNavyELBM(65, {
+        gender: 'female',
+        heightCm: 165,
+        waistCm: 72,
+        neckCm: 33,
+        hipCm: 96,
+      });
+      expect(elbm).not.toBeNull();
+      expect(elbm!).toBeGreaterThan(45);
+      expect(elbm!).toBeLessThan(55);
+    });
+
+    it('returns null if circumference inputs fail validation', () => {
+      const elbm = calculateNavyELBM(82, {
+        gender: 'male',
+        heightCm: 178,
+        waistCm: 38,
+        neckCm: 40, // waist < neck -> invalid
+      });
+      expect(elbm).toBeNull();
+    });
+  });
+
+  describe('calculateChronologicalELBM (LOCF forward-fill)', () => {
+    const context = { gender: 'male' as const, heightCm: 178 };
+
+    it('returns empty array when given empty metrics', () => {
+      expect(calculateChronologicalELBM([], context)).toEqual([]);
+    });
+
+    it('computes eLBM when complete measurements are present on the initial session', () => {
+      const entries = [
+        {
+          date: '2026-10-01',
+          bodyweight: 80.0,
+          waist_cm: 82.0,
+          neck_cm: 38.0,
+        },
+      ];
+      const result = calculateChronologicalELBM(entries, context);
+      expect(result).toHaveLength(1);
+      expect(result[0].date).toBe('2026-10-01');
+      expect(result[0].navyBf).toBe(14.0);
+      // 80 * (1 - 0.14) = 68.80
+      expect(result[0].elbmKg).toBe(68.8);
+      expect(result[0].bodyweight).toBe(80.0);
+    });
+
+    it('carries forward waist and weight when only neck is updated in a subsequent session', () => {
+      const entries = [
+        {
+          date: '2026-10-01',
+          bodyweight: 80.0,
+          waist_cm: 82.0,
+          neck_cm: 38.0, // Navy BF = 14.0%, eLBM = 68.80
+        },
+        {
+          date: '2026-10-08',
+          neck_cm: 39.0, // only neck updated! waist (82) and weight (80) carried forward
+        },
+      ];
+
+      const result = calculateChronologicalELBM(entries, context);
+      expect(result).toHaveLength(2);
+      expect(result[1].date).toBe('2026-10-08');
+      expect(result[1].bodyweight).toBe(80.0);
+      // Waist 82, neck 39 gives lower body fat percentage (~12.8%)
+      expect(result[1].navyBf).toBeLessThan(14.0);
+      // Lean body mass should be higher as BF dropped
+      expect(result[1].elbmKg).toBeGreaterThan(68.8);
+    });
+
+    it('carries forward Navy BF when only bodyweight is logged subsequently', () => {
+      const entries = [
+        {
+          date: '2026-10-01',
+          bodyweight: 80.0,
+          waist_cm: 82.0,
+          neck_cm: 38.0, // Navy BF = 14.0%
+        },
+        {
+          date: '2026-10-02',
+          bodyweight: 81.0, // only weight logged
+        },
+        {
+          date: '2026-10-03',
+          bodyweight: 82.0, // only weight logged
+        },
+      ];
+
+      const result = calculateChronologicalELBM(entries, context);
+      expect(result).toHaveLength(3);
+      // 10-01: 80.0 * 0.86 = 68.80
+      expect(result[0].elbmKg).toBe(68.8);
+      // 10-02: 81.0 * 0.86 = 69.66
+      expect(result[1].elbmKg).toBe(69.66);
+      expect(result[1].navyBf).toBe(14.0);
+      // 10-03: 82.0 * 0.86 = 70.52
+      expect(result[2].elbmKg).toBe(70.52);
+    });
+
+    it('deduplicates multiple entries on the same calendar day, preserving latest update', () => {
+      const entries = [
+        {
+          date: '2026-10-01',
+          bodyweight: 80.0,
+          waist_cm: 82.0,
+          neck_cm: 38.0,
+        },
+        {
+          date: '2026-10-01',
+          neck_cm: 39.0, // updated later same day
+        },
+      ];
+
+      const result = calculateChronologicalELBM(entries, context);
+      expect(result).toHaveLength(1);
+      expect(result[0].date).toBe('2026-10-01');
+      expect(result[0].navyBf).toBeLessThan(14.0);
+    });
+
+    it('respects precomputed navy_body_fat on entries where already present', () => {
+      const entries = [
+        {
+          date: '2026-10-01',
+          bodyweight: 80.0,
+          navy_body_fat: 12.5,
+        },
+      ];
+
+      const result = calculateChronologicalELBM(entries);
+      expect(result).toHaveLength(1);
+      expect(result[0].navyBf).toBe(12.5);
+      // 80 * (1 - 0.125) = 70.0
+      expect(result[0].elbmKg).toBe(70.0);
     });
   });
 });

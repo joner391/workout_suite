@@ -135,6 +135,8 @@ describe('CSV Import Parser', () => {
       expect(mapSetType('myo')).toBe('myorep');
       expect(mapSetType('DC')).toBe('dc');
       expect(mapSetType('doggcrapp')).toBe('dc');
+      expect(mapSetType('amrap')).toBe('amrap');
+      expect(mapSetType('AMRAP')).toBe('amrap');
       expect(mapSetType('1')).toBe('working');
       expect(mapSetType('normal')).toBe('working');
     });
@@ -373,6 +375,17 @@ Upper A,1775031006719,1775034205476,Bench Press,70,5,false,false,1775031975149`;
       expect(result.workouts[0].date).toBe('2026-08-01');
       expect(result.workouts[0].exercises[0].rawExerciseName).toBe('Bench Press');
     });
+
+    it('automatically evaluates unrated AMRAP sets as 0 RIR / 10 RPE', () => {
+      const csv = `Workout DateTime,Program,Day Name,Exercise,Is Warmup Set?,Required Reps,Completed Reps,Is AMRAP?,Required RPE,Completed RPE,Log RPE?,Required Weight Value,Required Weight Unit,Completed Weight Value,Completed Weight Unit,Completed Reps Time,Notes
+2026-10-14T09:00:00.000Z,Bullmastiff,Squat Day,Back Squat,0,5,10,1,,,0,100,kg,100,kg,2026-10-14T09:15:00.000Z,AMRAP set`;
+
+      const result = parseLiftosaurCsv(csv);
+      const set = result.workouts[0].exercises[0].sets[0];
+      expect(set.rpe).toBe(10.0);
+      expect(set.rir).toBe(0.0);
+      expect(set.setType).toBe('working');
+    });
   });
 
   describe('StrengthLog Training CSV Parser', () => {
@@ -423,6 +436,16 @@ New Workout,1775031006719,1775034205476,Squat,100,5,false,false,1775032000000`;
       expect(result.workouts).toHaveLength(1);
       expect(result.workouts[0].name).toBe('New Workout');
     });
+
+    it('evaluates AMRAP set comments as 0 RIR / 10 RPE', () => {
+      const csv = `workout,start,end,exercise,weight,bodyweight,extraWeight,reps,warmup,fail,checked,setComment,workoutComment
+Leg Day,1760432400000,1760436000000,Barbell Squat,120,,0,8,false,false,true,AMRAP set,Heavy lower`;
+
+      const result = parseStrengthLogTrainingCsv(csv);
+      const set = result.workouts[0].exercises[0].sets[0];
+      expect(set.rpe).toBe(10.0);
+      expect(set.rir).toBe(0.0);
+    });
   });
 
   describe('StrengthLog Body Composition CSV Parser', () => {
@@ -456,6 +479,23 @@ right-calf,1767172155336,38,cm`;
     it('identifies body comp header with isStrengthLogBodyCompCsv', () => {
       expect(isStrengthLogBodyCompCsv(['type', 'timestamp', 'value', 'unit'])).toBe(true);
       expect(isStrengthLogBodyCompCsv(['workout', 'start', 'end', 'exercise'])).toBe(false);
+    });
+
+    it('parses circumference-only measurements with null bodyweight when no bodyweight row is present', () => {
+      const csv = `type,timestamp,value,unit
+waist,1715212800000,87,cm
+chest,1715212800000,103,cm
+right-upperarm,1715212800000,31.5,cm`;
+
+      const result = parseStrengthLogBodyCompCsv(csv);
+      expect(result.errors).toHaveLength(0);
+      expect(result.metrics).toHaveLength(1);
+
+      const m = result.metrics[0];
+      expect(m.bodyweight).toBeNull();
+      expect(m.waist_cm).toBe(87);
+      expect(m.chest_cm).toBe(103);
+      expect(m.bicep_cm).toBe(31.5);
     });
   });
 });

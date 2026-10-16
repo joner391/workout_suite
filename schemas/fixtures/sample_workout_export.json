@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "exported_at": "2026-10-15T21:39:29.199Z",
+  "exported_at": "2026-10-16T09:52:13.557Z",
   "programs": [
     {
       "id": "prog-hypertrophy-01",
@@ -183,6 +183,21 @@
       "thigh_cm": 61.5,
       "calf_cm": 38,
       "navy_body_fat": 14,
+      "imported_from": "strengthlog"
+    },
+    {
+      "id": "metric-20261014-02",
+      "date": "2026-10-14",
+      "bodyweight": null,
+      "body_fat_manual": null,
+      "waist_cm": 83,
+      "neck_cm": null,
+      "hip_cm": null,
+      "bicep_cm": null,
+      "chest_cm": null,
+      "thigh_cm": null,
+      "calf_cm": null,
+      "navy_body_fat": null,
       "imported_from": "strengthlog"
     }
   ],

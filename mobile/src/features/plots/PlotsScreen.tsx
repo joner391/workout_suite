@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   IBodyMetricsRepository,
   IProgramRepository,
   IUserSettingsRepository,
+  IUserProfileRepository,
 } from '../../domain/repositories';
 import {
   ProgramBlockService,
@@ -26,7 +27,11 @@ import {
 } from './ProgramEraShadedChart';
 import {
   calculateBodyweightRollingAverages,
+  calculateEstimatedLeanBodyMass,
+  calculateChronologicalELBM,
+  calculateNavyBodyFat,
   parseIsoDateToMs,
+  RollingAveragePoint,
 } from '../../core/math/navyBodyFat';
 import { calculateHeuristic1RM } from '../../core/math/heuristic1rm';
 import {
@@ -40,12 +45,22 @@ import {
   Exercise,
   Workout,
   WeightUnit,
+  UserProfile,
 } from '../../core/types';
+import {
+  PlotTimeSpan,
+  TIME_SPAN_OPTIONS,
+  filterDataByTimeSpan,
+  filterWeeklyBarsByTimeSpan,
+} from './timeSpanUtils';
+
+export * from './timeSpanUtils';
 
 export type PlotChartType =
   | 'e1rm'
   | 'bodyweight'
   | 'body_fat'
+  | 'elbm'
   | 'circumferences'
   | 'volume';
 
@@ -55,6 +70,7 @@ export const PERFORMANCE_CHARTS: PlotChartType[] = ['e1rm', 'volume'];
 export const BODY_COMPOSITION_CHARTS: PlotChartType[] = [
   'bodyweight',
   'body_fat',
+  'elbm',
   'circumferences',
 ];
 
@@ -81,11 +97,16 @@ export interface PlotsScreenProps {
   workoutRepo: IWorkoutRepository;
   exerciseRepo: IExerciseRepository;
   bodyMetricsRepo?: IBodyMetricsRepository;
+  userProfileRepo?: IUserProfileRepository;
   programRepo?: IProgramRepository;
   programBlockService?: ProgramBlockService;
   userSettingsRepo?: IUserSettingsRepository;
   initialChartType?: PlotChartType;
   targetGroup?: PlotGroup;
+  initialTimeSpan?: PlotTimeSpan;
+  timeSpan?: PlotTimeSpan;
+  onTimeSpanChange?: (timeSpan: PlotTimeSpan) => void;
+  referenceDate?: Date;
   onNavigateToBodyMetrics?: () => void;
   onClose?: () => void;
   isInline?: boolean;
@@ -95,11 +116,16 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
   workoutRepo,
   exerciseRepo,
   bodyMetricsRepo,
+  userProfileRepo,
   programRepo,
   programBlockService,
   userSettingsRepo,
   initialChartType,
   targetGroup,
+  initialTimeSpan,
+  timeSpan: controlledTimeSpan,
+  onTimeSpanChange,
+  referenceDate,
   onNavigateToBodyMetrics,
   onClose,
   isInline = false,
@@ -119,6 +145,16 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
 
   const [activeTab, setActiveTab] = useState<PlotChartType>(defaultTab);
 
+  const [internalTimeSpan, setInternalTimeSpan] = useState<PlotTimeSpan>(
+    initialTimeSpan ?? 'all'
+  );
+  const selectedTimeSpan = controlledTimeSpan ?? internalTimeSpan;
+
+  const handleTimeSpanChange = (span: PlotTimeSpan) => {
+    setInternalTimeSpan(span);
+    onTimeSpanChange?.(span);
+  };
+
   useEffect(() => {
     if (targetGroup) {
       setActiveGroup(targetGroup);
@@ -135,6 +171,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
 
   const [loading, setLoading] = useState<boolean>(true);
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   // Program era metadata
   const [programEras, setProgramEras] = useState<ProgramEraInfo[]>([]);
@@ -142,45 +179,204 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
   // 1RM Data State
   const [compoundExercises, setCompoundExercises] = useState<Exercise[]>([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string>('');
-  const [e1rmSeries, setE1rmSeries] = useState<ChartSeries[]>([]);
-  const [e1rmSummary, setE1rmSummary] = useState<{
-    start: number;
-    peak: number;
-    current: number;
-  } | null>(null);
+  const [rawE1rmPoints, setRawE1rmPoints] = useState<{ date: string; value: number }[]>([]);
 
   // Bodyweight Data State
-  const [bodyweightSeries, setBodyweightSeries] = useState<ChartSeries[]>([]);
-  const [bodyweightSummary, setBodyweightSummary] = useState<{
-    latest: number;
-    sma7: number;
-    change30d: number;
-  } | null>(null);
+  const [rawBodyweightPoints, setRawBodyweightPoints] = useState<RollingAveragePoint[]>([]);
 
   // Body Fat Data State
-  const [bodyFatSeries, setBodyFatSeries] = useState<ChartSeries[]>([]);
-  const [bodyFatSummary, setBodyFatSummary] = useState<{
-    latestNavy: number | null;
-    latestManual: number | null;
-  } | null>(null);
+  const [rawNavyPoints, setRawNavyPoints] = useState<{ date: string; value: number }[]>([]);
+  const [rawManualPoints, setRawManualPoints] = useState<{ date: string; value: number }[]>([]);
+
+  // Estimated Lean Body Mass (eLBM) Data State
+  const [rawElbmPoints, setRawElbmPoints] = useState<{ date: string; value: number }[]>([]);
 
   // Circumferences Data State
   const [selectedCircumference, setSelectedCircumference] =
     useState<CircumferenceType>('waist_cm');
-  const [circumferenceSeries, setCircumferenceSeries] = useState<ChartSeries[]>([]);
-  const [circumferenceSummary, setCircumferenceSummary] = useState<{
-    current: number;
-    start: number;
-    delta: number;
-  } | null>(null);
+  const [rawCircumferencePoints, setRawCircumferencePoints] = useState<{ date: string; value: number }[]>([]);
 
   // Volume Data State
-  const [volumeBars, setVolumeBars] = useState<ChartBarPoint[]>([]);
-  const [volumeSummary, setVolumeSummary] = useState<{
-    thisWeek: number;
-    fourWeekAvg: number;
-    peakWeek: number;
-  } | null>(null);
+  const [rawVolumeBars, setRawVolumeBars] = useState<ChartBarPoint[]>([]);
+
+  // Derived filtered series & summaries via useMemo (instant responsive updates on time-span change)
+  const { e1rmSeries, e1rmSummary } = useMemo(() => {
+    const pts = filterDataByTimeSpan(rawE1rmPoints, selectedTimeSpan, referenceDate);
+    if (pts.length === 0) {
+      return { e1rmSeries: [] as ChartSeries[], e1rmSummary: null };
+    }
+    const start = pts[0].value;
+    const current = pts[pts.length - 1].value;
+    const peak = Math.max(...pts.map((d) => d.value));
+    return {
+      e1rmSeries: [
+        {
+          id: 'e1rm_series',
+          name: 'e1RM Trend',
+          color: '#00E676',
+          data: pts,
+          strokeWidth: 2.5,
+        },
+      ],
+      e1rmSummary: { start, peak, current },
+    };
+  }, [rawE1rmPoints, selectedTimeSpan, referenceDate]);
+
+  const { bodyweightSeries, bodyweightSummary } = useMemo(() => {
+    const pts = filterDataByTimeSpan(rawBodyweightPoints, selectedTimeSpan, referenceDate);
+    if (pts.length === 0) {
+      return { bodyweightSeries: [] as ChartSeries[], bodyweightSummary: null };
+    }
+    const rawPoints = pts.map((p) => ({
+      date: p.date,
+      value: unitSystem === 'lbs' ? kgToLbs(p.bodyweight) : p.bodyweight,
+    }));
+    const smaPoints = pts.map((p) => ({
+      date: p.date,
+      value: unitSystem === 'lbs' ? kgToLbs(p.sma7) : p.sma7,
+    }));
+
+    const latest = rawPoints[rawPoints.length - 1].value;
+    const latestSma = smaPoints[smaPoints.length - 1].value;
+    const first = rawPoints[0].value;
+    const change30d = latest - first;
+
+    return {
+      bodyweightSeries: [
+        {
+          id: 'raw_weight',
+          name: 'Daily Log',
+          color: '#666666',
+          data: rawPoints,
+          strokeWidth: 1.5,
+          strokeDasharray: '2,2',
+          dotRadius: 2.5,
+        },
+        {
+          id: 'sma7_weight',
+          name: '7-Day Avg (SMA)',
+          color: '#00E676',
+          data: smaPoints,
+          strokeWidth: 2.5,
+          dotRadius: 3.5,
+        },
+      ],
+      bodyweightSummary: {
+        latest,
+        sma7: latestSma,
+        change30d,
+      },
+    };
+  }, [rawBodyweightPoints, selectedTimeSpan, referenceDate, unitSystem]);
+
+  const { bodyFatSeries, bodyFatSummary } = useMemo(() => {
+    const navyPts = filterDataByTimeSpan(rawNavyPoints, selectedTimeSpan, referenceDate);
+    const manualPts = filterDataByTimeSpan(rawManualPoints, selectedTimeSpan, referenceDate);
+
+    const series: ChartSeries[] = [];
+    if (navyPts.length > 0) {
+      series.push({
+        id: 'navy_bf',
+        name: 'Navy Formula',
+        color: '#00E676',
+        data: navyPts,
+        strokeWidth: 2.5,
+      });
+    }
+    if (manualPts.length > 0) {
+      series.push({
+        id: 'manual_bf',
+        name: 'Manual Entry',
+        color: '#3B82F6',
+        data: manualPts,
+        strokeWidth: 2,
+        strokeDasharray: '4,4',
+      });
+    }
+
+    const latestNavy = navyPts.length > 0 ? navyPts[navyPts.length - 1].value : null;
+    const latestManual = manualPts.length > 0 ? manualPts[manualPts.length - 1].value : null;
+
+    if (latestNavy === null && latestManual === null) {
+      return { bodyFatSeries: [] as ChartSeries[], bodyFatSummary: null };
+    }
+    return {
+      bodyFatSeries: series,
+      bodyFatSummary: { latestNavy, latestManual },
+    };
+  }, [rawNavyPoints, rawManualPoints, selectedTimeSpan, referenceDate]);
+
+  const { elbmSeries, elbmSummary } = useMemo(() => {
+    const pts = filterDataByTimeSpan(rawElbmPoints, selectedTimeSpan, referenceDate);
+    if (pts.length === 0) {
+      return { elbmSeries: [] as ChartSeries[], elbmSummary: null };
+    }
+    const displayPts = pts.map((p) => ({
+      date: p.date,
+      value: unitSystem === 'lbs' ? kgToLbs(p.value) : p.value,
+    }));
+    const startKg = pts[0].value;
+    const latestKg = pts[pts.length - 1].value;
+    const peakKg = Math.max(...pts.map((d) => d.value));
+    const deltaDisplay =
+      unitSystem === 'lbs'
+        ? kgToLbs(latestKg - startKg)
+        : latestKg - startKg;
+
+    return {
+      elbmSeries: [
+        {
+          id: 'elbm_series',
+          name: 'eLBM (Navy)',
+          color: '#10B981',
+          data: displayPts,
+          strokeWidth: 2.5,
+          dotRadius: 3.5,
+        },
+      ],
+      elbmSummary: { latestKg, peakKg, deltaDisplay },
+    };
+  }, [rawElbmPoints, selectedTimeSpan, referenceDate, unitSystem]);
+
+  const { circumferenceSeries, circumferenceSummary } = useMemo(() => {
+    const pts = filterDataByTimeSpan(rawCircumferencePoints, selectedTimeSpan, referenceDate);
+    if (pts.length === 0) {
+      return { circumferenceSeries: [] as ChartSeries[], circumferenceSummary: null };
+    }
+    const start = pts[0].value;
+    const current = pts[pts.length - 1].value;
+    const delta = current - start;
+
+    return {
+      circumferenceSeries: [
+        {
+          id: `circ_${selectedCircumference}`,
+          name: CIRCUMFERENCE_LABELS[selectedCircumference],
+          color: '#F59E0B',
+          data: pts,
+          strokeWidth: 2.5,
+        },
+      ],
+      circumferenceSummary: { current, start, delta },
+    };
+  }, [rawCircumferencePoints, selectedTimeSpan, referenceDate, selectedCircumference]);
+
+  const { volumeBars, volumeSummary } = useMemo(() => {
+    const bars = filterWeeklyBarsByTimeSpan(rawVolumeBars, selectedTimeSpan, referenceDate);
+    if (bars.length === 0) {
+      return { volumeBars: [] as ChartBarPoint[], volumeSummary: null };
+    }
+    const thisWeek = bars[bars.length - 1].value;
+    const peakWeek = Math.max(...bars.map((b) => b.value));
+    const recent4 = bars.slice(-4);
+    const fourWeekAvg = Math.round(
+      recent4.reduce((acc, curr) => acc + curr.value, 0) / recent4.length
+    );
+    return {
+      volumeBars: bars,
+      volumeSummary: { thisWeek, fourWeekAvg, peakWeek },
+    };
+  }, [rawVolumeBars, selectedTimeSpan, referenceDate]);
 
   // 1. Load initial user settings & program eras
   const loadBaseMetadata = useCallback(async () => {
@@ -188,6 +384,11 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       if (userSettingsRepo) {
         const u = await userSettingsRepo.get('unit_system');
         if (u === 'lbs' || u === 'kg') setUnitSystem(u);
+      }
+
+      if (userProfileRepo) {
+        const profile = await userProfileRepo.getProfile();
+        setUserProfile(profile);
       }
 
       // Load program eras from programBlockService / programRepo
@@ -241,7 +442,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
     } catch (err) {
       console.error('Failed to load plot metadata:', err);
     }
-  }, [userSettingsRepo, programRepo, programBlockService, exerciseRepo, selectedExerciseId]);
+  }, [userSettingsRepo, userProfileRepo, programRepo, programBlockService, exerciseRepo, selectedExerciseId]);
 
   // 2. Load e1RM Time-Series
   const loadE1RMData = useCallback(async () => {
@@ -277,27 +478,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       }
 
       dataPoints.sort((a, b) => a.date.localeCompare(b.date));
-
-      if (dataPoints.length > 0) {
-        setE1rmSeries([
-          {
-            id: 'e1rm_series',
-            name: 'e1RM Trend',
-            color: '#00E676',
-            data: dataPoints,
-            strokeWidth: 2.5,
-          },
-        ]);
-
-        const start = dataPoints[0].value;
-        const current = dataPoints[dataPoints.length - 1].value;
-        const peak = Math.max(...dataPoints.map((d) => d.value));
-
-        setE1rmSummary({ start, peak, current });
-      } else {
-        setE1rmSeries([]);
-        setE1rmSummary(null);
-      }
+      setRawE1rmPoints(dataPoints);
     } catch (err) {
       console.error('Failed to load e1RM plot data:', err);
     }
@@ -309,119 +490,124 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
 
     try {
       const metrics = await bodyMetricsRepo.getAll();
-      const entries = metrics.map((m) => ({
-        date: m.date,
-        bodyweight: m.bodyweight,
-      }));
+      const entries = metrics
+        .filter(
+          (m): m is BodyMetric & { bodyweight: number } =>
+            m.bodyweight != null && m.bodyweight > 0
+        )
+        .map((m) => ({
+          date: m.date,
+          bodyweight: m.bodyweight,
+        }));
 
       const smoothed = calculateBodyweightRollingAverages(entries);
-
-      if (smoothed.length > 0) {
-        const rawPoints = smoothed.map((p) => ({
-          date: p.date,
-          value: unitSystem === 'lbs' ? kgToLbs(p.bodyweight) : p.bodyweight,
-        }));
-
-        const smaPoints = smoothed.map((p) => ({
-          date: p.date,
-          value: unitSystem === 'lbs' ? kgToLbs(p.sma7) : p.sma7,
-        }));
-
-        setBodyweightSeries([
-          {
-            id: 'raw_weight',
-            name: 'Daily Log',
-            color: '#666666',
-            data: rawPoints,
-            strokeWidth: 1.5,
-            strokeDasharray: '2,2',
-            dotRadius: 2.5,
-          },
-          {
-            id: 'sma7_weight',
-            name: '7-Day Avg (SMA)',
-            color: '#00E676',
-            data: smaPoints,
-            strokeWidth: 2.5,
-            dotRadius: 3.5,
-          },
-        ]);
-
-        const latest = rawPoints[rawPoints.length - 1].value;
-        const latestSma = smaPoints[smaPoints.length - 1].value;
-        const first = rawPoints[0].value;
-        const change30d = latest - first;
-
-        setBodyweightSummary({
-          latest,
-          sma7: latestSma,
-          change30d,
-        });
-      } else {
-        setBodyweightSeries([]);
-        setBodyweightSummary(null);
-      }
+      setRawBodyweightPoints(smoothed);
     } catch (err) {
       console.error('Failed to load bodyweight plot data:', err);
     }
-  }, [bodyMetricsRepo, unitSystem]);
+  }, [bodyMetricsRepo]);
 
   // 4. Load Body Fat Trends Time-Series
   const loadBodyFatData = useCallback(async () => {
     if (!bodyMetricsRepo) return;
 
     try {
+      let profile = userProfile;
+      if (!profile && userProfileRepo) {
+        profile = await userProfileRepo.getProfile();
+      }
+
       const metrics = await bodyMetricsRepo.getAll();
+      const sorted = [...metrics].sort((a, b) => a.date.localeCompare(b.date));
 
       const navyPoints: { date: string; value: number }[] = [];
       const manualPoints: { date: string; value: number }[] = [];
 
-      for (const m of metrics) {
-        if (m.navy_body_fat != null && m.navy_body_fat > 0) {
-          navyPoints.push({ date: m.date, value: m.navy_body_fat });
+      let lastWaist: number | null = null;
+      let lastNeck: number | null = null;
+      let lastHip: number | null = null;
+      const gender = profile?.gender || 'male';
+      const heightCm = profile?.height_cm;
+
+      for (const m of sorted) {
+        if (typeof m.waist_cm === 'number' && m.waist_cm > 0) lastWaist = m.waist_cm;
+        if (typeof m.neck_cm === 'number' && m.neck_cm > 0) lastNeck = m.neck_cm;
+        if (typeof m.hip_cm === 'number' && m.hip_cm > 0) lastHip = m.hip_cm;
+
+        let navyBf: number | null =
+          typeof m.navy_body_fat === 'number' && m.navy_body_fat > 0
+            ? m.navy_body_fat
+            : null;
+
+        // Recalculate via LOCF if missing on row but circumference session occurred
+        if (
+          navyBf == null &&
+          (m.waist_cm != null || m.neck_cm != null) &&
+          heightCm &&
+          lastWaist &&
+          lastNeck
+        ) {
+          navyBf = calculateNavyBodyFat({
+            gender,
+            heightCm,
+            waistCm: lastWaist,
+            neckCm: lastNeck,
+            hipCm: lastHip,
+          });
+        }
+
+        if (navyBf != null && navyBf > 0) {
+          navyPoints.push({ date: m.date, value: navyBf });
         }
         if (m.body_fat_manual != null && m.body_fat_manual > 0) {
           manualPoints.push({ date: m.date, value: m.body_fat_manual });
         }
       }
 
-      const series: ChartSeries[] = [];
-      if (navyPoints.length > 0) {
-        series.push({
-          id: 'navy_bf',
-          name: 'Navy Formula',
-          color: '#00E676',
-          data: navyPoints,
-          strokeWidth: 2.5,
-        });
-      }
-      if (manualPoints.length > 0) {
-        series.push({
-          id: 'manual_bf',
-          name: 'Manual Entry',
-          color: '#3B82F6',
-          data: manualPoints,
-          strokeWidth: 2,
-          strokeDasharray: '4,4',
-        });
-      }
+      // Deduplicate points by date, keeping the latest for each date
+      const dedupeByDate = (pts: { date: string; value: number }[]) => {
+        const map = new Map<string, { date: string; value: number }>();
+        for (const p of pts) {
+          map.set(p.date, p);
+        }
+        return Array.from(map.values());
+      };
 
-      setBodyFatSeries(series);
-
-      const latestNavy =
-        navyPoints.length > 0 ? navyPoints[navyPoints.length - 1].value : null;
-      const latestManual =
-        manualPoints.length > 0
-          ? manualPoints[manualPoints.length - 1].value
-          : null;
-
-      setBodyFatSummary({ latestNavy, latestManual });
+      setRawNavyPoints(dedupeByDate(navyPoints));
+      setRawManualPoints(dedupeByDate(manualPoints));
     } catch (err) {
       console.error('Failed to load body fat plot data:', err);
     }
-  }, [bodyMetricsRepo]);
+  }, [bodyMetricsRepo, userProfile, userProfileRepo]);
 
-  // 5. Load Circumference Measurements
+  // 5. Load Estimated Lean Body Mass (eLBM) Time-Series
+  const loadElbmData = useCallback(async () => {
+    if (!bodyMetricsRepo) return;
+
+    try {
+      let profile = userProfile;
+      if (!profile && userProfileRepo) {
+        profile = await userProfileRepo.getProfile();
+      }
+
+      const metrics = await bodyMetricsRepo.getAll();
+      const elbmPoints = calculateChronologicalELBM(metrics, {
+        gender: profile?.gender || 'male',
+        heightCm: profile?.height_cm,
+      });
+
+      const points = elbmPoints.map((p) => ({
+        date: p.date,
+        value: p.elbmKg,
+      }));
+
+      setRawElbmPoints(points);
+    } catch (err) {
+      console.error('Failed to load eLBM plot data:', err);
+    }
+  }, [bodyMetricsRepo, userProfile, userProfileRepo]);
+
+  // 6. Load Circumference Measurements
   const loadCircumferencesData = useCallback(async () => {
     if (!bodyMetricsRepo) return;
 
@@ -441,32 +627,13 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
         }
       }
 
-      if (points.length > 0) {
-        setCircumferenceSeries([
-          {
-            id: `circ_${selectedCircumference}`,
-            name: CIRCUMFERENCE_LABELS[selectedCircumference],
-            color: '#F59E0B',
-            data: points,
-            strokeWidth: 2.5,
-          },
-        ]);
-
-        const start = points[0].value;
-        const current = points[points.length - 1].value;
-        const delta = current - start;
-
-        setCircumferenceSummary({ current, start, delta });
-      } else {
-        setCircumferenceSeries([]);
-        setCircumferenceSummary(null);
-      }
+      setRawCircumferencePoints(points);
     } catch (err) {
       console.error('Failed to load circumferences plot data:', err);
     }
   }, [bodyMetricsRepo, selectedCircumference, unitSystem]);
 
-  // 6. Load Weekly Tonnage Volume
+  // 7. Load Weekly Tonnage Volume
   const loadVolumeData = useCallback(async () => {
     try {
       const allWorkouts = await workoutRepo.findAll();
@@ -507,20 +674,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       }
 
       barPoints.sort((a, b) => a.date.localeCompare(b.date));
-      setVolumeBars(barPoints);
-
-      if (barPoints.length > 0) {
-        const thisWeek = barPoints[barPoints.length - 1].value;
-        const peakWeek = Math.max(...barPoints.map((b) => b.value));
-        const recent4 = barPoints.slice(-4);
-        const fourWeekAvg = Math.round(
-          recent4.reduce((acc, curr) => acc + curr.value, 0) / recent4.length
-        );
-
-        setVolumeSummary({ thisWeek, fourWeekAvg, peakWeek });
-      } else {
-        setVolumeSummary(null);
-      }
+      setRawVolumeBars(barPoints);
     } catch (err) {
       console.error('Failed to load volume plot data:', err);
     }
@@ -535,6 +689,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       loadE1RMData(),
       loadBodyweightData(),
       loadBodyFatData(),
+      loadElbmData(),
       loadCircumferencesData(),
       loadVolumeData(),
     ]).finally(() => {
@@ -548,6 +703,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
     loadE1RMData,
     loadBodyweightData,
     loadBodyFatData,
+    loadElbmData,
     loadCircumferencesData,
     loadVolumeData,
   ]);
@@ -682,6 +838,21 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
+              testID="plot-pill-elbm"
+              style={[styles.pill, activeTab === 'elbm' && styles.pillActive]}
+              onPress={() => setActiveTab('elbm')}
+            >
+              <Text
+                style={[
+                  styles.pillText,
+                  activeTab === 'elbm' && styles.pillTextActive,
+                ]}
+              >
+                💪 eLBM
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               testID="plot-pill-circumferences"
               style={[
                 styles.pill,
@@ -797,6 +968,40 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
         </ScrollView>
       )}
 
+      {/* Time Span Filter Bar */}
+      <View style={styles.timeSpanRow} testID="plot-timespan-selector">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.timeSpanContainer}
+        >
+          {TIME_SPAN_OPTIONS.map((opt) => {
+            const isActive = selectedTimeSpan === opt.key;
+            return (
+              <TouchableOpacity
+                key={opt.key}
+                testID={`plot-timespan-${opt.key}`}
+                style={[
+                  styles.timeSpanBtn,
+                  isActive && styles.timeSpanBtnActive,
+                ]}
+                onPress={() => handleTimeSpanChange(opt.key)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.timeSpanText,
+                    isActive && styles.timeSpanTextActive,
+                  ]}
+                >
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       {/* Loading Indicator */}
       {loading ? (
         <View style={styles.loadingBox}>
@@ -817,7 +1022,9 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                     </Text>
                   </View>
                   <View style={styles.statBox}>
-                    <Text style={styles.statLabel}>ALL-TIME PEAK</Text>
+                    <Text style={styles.statLabel}>
+                      {selectedTimeSpan === 'all' ? 'ALL-TIME PEAK' : 'PERIOD PEAK'}
+                    </Text>
                     <Text style={[styles.statValue, { color: '#00E676' }]}>
                       {formatWeight(e1rmSummary.peak, unitSystem)}
                     </Text>
@@ -848,7 +1055,11 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                 programEras={programEras}
                 yAxisUnit={unitSystem}
                 height={210}
-                emptyMessage="No completed sessions logged for this exercise yet."
+                emptyMessage={
+                  selectedTimeSpan === 'all'
+                    ? 'No completed sessions logged for this exercise yet.'
+                    : `No completed sessions logged for this exercise in the selected time span (${TIME_SPAN_OPTIONS.find((o) => o.key === selectedTimeSpan)?.label ?? selectedTimeSpan}).`
+                }
               />
             </View>
           )}
@@ -885,7 +1096,11 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                 programEras={programEras}
                 yAxisUnit={unitSystem}
                 height={210}
-                emptyMessage="No bodyweight entries recorded yet. Tap 'Log Body' to start."
+                emptyMessage={
+                  selectedTimeSpan === 'all'
+                    ? "No bodyweight entries recorded yet. Tap 'Log Body' to start."
+                    : `No bodyweight entries recorded in the selected time span (${TIME_SPAN_OPTIONS.find((o) => o.key === selectedTimeSpan)?.label ?? selectedTimeSpan}).`
+                }
               />
             </View>
           )}
@@ -919,7 +1134,66 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                 programEras={programEras}
                 yAxisUnit="%"
                 height={210}
-                emptyMessage="No body fat measurements found. Log neck & waist in Body Metrics."
+                emptyMessage={
+                  selectedTimeSpan === 'all'
+                    ? 'No body fat measurements found. Log neck & waist in Body Metrics.'
+                    : `No body fat measurements found in the selected time span (${TIME_SPAN_OPTIONS.find((o) => o.key === selectedTimeSpan)?.label ?? selectedTimeSpan}).`
+                }
+              />
+            </View>
+          )}
+
+          {/* TAB: Estimated Lean Body Mass (eLBM) */}
+          {activeTab === 'elbm' && (
+            <View testID="plot-elbm-container">
+              {elbmSummary && (
+                <View style={styles.summaryStatsRow}>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>LATEST eLBM</Text>
+                    <Text
+                      style={[styles.statValue, { color: '#10B981' }]}
+                      testID="elbm-latest-stat"
+                    >
+                      {formatWeight(elbmSummary.latestKg, unitSystem)}
+                    </Text>
+                  </View>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>
+                      {selectedTimeSpan === 'all' ? 'ALL-TIME PEAK' : 'PERIOD PEAK'}
+                    </Text>
+                    <Text style={styles.statValue} testID="elbm-peak-stat">
+                      {formatWeight(elbmSummary.peakKg, unitSystem)}
+                    </Text>
+                  </View>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statLabel}>NET TRAJECTORY</Text>
+                    <Text
+                      style={[
+                        styles.statValue,
+                        {
+                          color:
+                            elbmSummary.deltaDisplay >= 0 ? '#10B981' : '#EF4444',
+                        },
+                      ]}
+                      testID="elbm-trajectory-stat"
+                    >
+                      {elbmSummary.deltaDisplay >= 0 ? '+' : ''}
+                      {elbmSummary.deltaDisplay.toFixed(1)} {unitSystem}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              <ProgramEraShadedChart
+                series={elbmSeries}
+                programEras={programEras}
+                yAxisUnit={unitSystem}
+                height={210}
+                emptyMessage={
+                  selectedTimeSpan === 'all'
+                    ? 'No eLBM data available. Log bodyweight, neck & waist in Body Metrics.'
+                    : `No eLBM data found in the selected time span (${TIME_SPAN_OPTIONS.find((o) => o.key === selectedTimeSpan)?.label ?? selectedTimeSpan}).`
+                }
               />
             </View>
           )}
@@ -967,7 +1241,11 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                 programEras={programEras}
                 yAxisUnit={unitSystem === 'lbs' ? 'in' : 'cm'}
                 height={210}
-                emptyMessage={`No ${CIRCUMFERENCE_LABELS[selectedCircumference]} measurements recorded yet.`}
+                emptyMessage={
+                  selectedTimeSpan === 'all'
+                    ? `No ${CIRCUMFERENCE_LABELS[selectedCircumference]} measurements recorded yet.`
+                    : `No ${CIRCUMFERENCE_LABELS[selectedCircumference]} measurements recorded in the selected time span (${TIME_SPAN_OPTIONS.find((o) => o.key === selectedTimeSpan)?.label ?? selectedTimeSpan}).`
+                }
               />
             </View>
           )}
@@ -1003,7 +1281,11 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                 programEras={programEras}
                 yAxisUnit={unitSystem}
                 height={210}
-                emptyMessage="No completed workouts found to aggregate weekly tonnage."
+                emptyMessage={
+                  selectedTimeSpan === 'all'
+                    ? 'No completed workouts found to aggregate weekly tonnage.'
+                    : `No completed workouts found in the selected time span (${TIME_SPAN_OPTIONS.find((o) => o.key === selectedTimeSpan)?.label ?? selectedTimeSpan}).`
+                }
               />
             </View>
           )}
@@ -1193,6 +1475,35 @@ const styles = StyleSheet.create({
   },
   groupSwitchTextActive: {
     color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  timeSpanRow: {
+    marginBottom: 8,
+  },
+  timeSpanContainer: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingVertical: 2,
+  },
+  timeSpanBtn: {
+    backgroundColor: '#141416',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  timeSpanBtnActive: {
+    backgroundColor: '#14291B',
+    borderColor: '#00E676',
+  },
+  timeSpanText: {
+    color: '#71717A',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  timeSpanTextActive: {
+    color: '#00E676',
     fontWeight: '700',
   },
 });

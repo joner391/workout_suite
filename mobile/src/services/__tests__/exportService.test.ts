@@ -203,6 +203,21 @@ describe('ExportService (Step 2.3)', () => {
       navy_body_fat: 14.0,
       imported_from: 'strengthlog',
     },
+    {
+      id: 'metric-20261014-02',
+      date: '2026-10-14',
+      bodyweight: 0,
+      body_fat_manual: null,
+      waist_cm: 83.0,
+      neck_cm: null,
+      hip_cm: null,
+      bicep_cm: null,
+      chest_cm: null,
+      thigh_cm: null,
+      calf_cm: null,
+      navy_body_fat: null,
+      imported_from: 'strengthlog',
+    },
   ];
 
   const mockCalibratedParams = [
@@ -328,9 +343,11 @@ describe('ExportService (Step 2.3)', () => {
       expect(bar?.tare_weight_kg).toBe(20.0);
 
       // Body Metrics
-      expect(payload.body_metrics).toHaveLength(1);
+      expect(payload.body_metrics).toHaveLength(2);
       expect(payload.body_metrics[0].bodyweight).toBe(84.2);
       expect(payload.body_metrics[0].navy_body_fat).toBe(14.0);
+      expect(payload.body_metrics[1].bodyweight).toBeNull();
+      expect(payload.body_metrics[1].waist_cm).toBe(83.0);
 
       // User Settings (Dictionary conversion)
       expect(payload.user_settings).toEqual({

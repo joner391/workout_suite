@@ -9,7 +9,7 @@ Mirrors:
 from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional, Union
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ============================================================================
 # Enums / Literal Type Aliases
@@ -25,7 +25,7 @@ GearType = Literal[
     "accessory",
 ]
 WorkoutStatus = Literal["in_progress", "completed", "discarded"]
-SetType = Literal["warmup", "working", "drop", "myorep", "dc"]
+SetType = Literal["warmup", "working", "drop", "myorep", "dc", "amrap"]
 Gender = Literal["male", "female"]
 TrainingMentality = Literal["fury", "precision", "get_out"]
 TrainingEnjoyment = Literal["enthusiast", "neutral", "minimalist"]
@@ -364,11 +364,26 @@ class BodyMetric(StrictSchemaModel):
         pattern=DATE_REGEX,
         description="Measurement date (YYYY-MM-DD).",
     )
-    bodyweight: float = Field(
+    bodyweight: Optional[float] = Field(
+        default=None,
         ge=20.0,
         le=500.0,
-        description="Bodyweight in kilograms.",
+        description="Bodyweight in kilograms, or None if unmeasured.",
     )
+
+    @field_validator("bodyweight", mode="before")
+    @classmethod
+    def coerce_unrecorded_bodyweight(cls, v: Any) -> Any:
+        """Coerce 0, non-positive numbers, or empty sentinels to None."""
+        if v is None:
+            return None
+        try:
+            val = float(v)
+            if val <= 0.0:
+                return None
+        except (ValueError, TypeError):
+            pass
+        return v
     body_fat_manual: Optional[float] = Field(
         default=None,
         ge=2.0,

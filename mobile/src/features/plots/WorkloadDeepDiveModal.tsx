@@ -47,6 +47,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
+  const [volumeMetricMode, setVolumeMetricMode] = useState<'ereps' | 'sets'>('ereps');
   const [deepDive, setDeepDive] = useState<WeeklyWorkloadDeepDive | null>(null);
 
   const loadData = useCallback(async () => {
@@ -193,9 +194,17 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
               </View>
 
               <View style={styles.kpiBox}>
-                <Text style={styles.kpiLabel}>WORKING SETS</Text>
-                <Text style={styles.kpiValue}>{deepDive.totalWorkingSets}</Text>
-                <Text style={styles.kpiSub}>hard sets total</Text>
+                <Text style={styles.kpiLabel}>
+                  {volumeMetricMode === 'ereps' ? 'EFFECTIVE REPS' : 'WORKING SETS'}
+                </Text>
+                <Text style={styles.kpiValue}>
+                  {volumeMetricMode === 'ereps' ? deepDive.totalEffectiveReps : deepDive.totalWorkingSets}
+                </Text>
+                <Text style={styles.kpiSub}>
+                  {volumeMetricMode === 'ereps'
+                    ? `${deepDive.totalRatedSets}/${deepDive.totalWorkingSets} sets rated`
+                    : 'hard sets total'}
+                </Text>
               </View>
 
               <View style={styles.kpiBox}>
@@ -223,37 +232,98 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
 
             {/* SECTION 1: MUSCLE GROUP VOLUME LANDMARKS */}
             <View style={styles.cardSection}>
+              {/* Metric Mode Toggle (Default to Effective Reps) */}
+              <View style={styles.metricToggleBar}>
+                <TouchableOpacity
+                  testID="metric-toggle-ereps"
+                  style={[
+                    styles.metricToggleBtn,
+                    volumeMetricMode === 'ereps' && styles.metricToggleBtnActive,
+                  ]}
+                  onPress={() => setVolumeMetricMode('ereps')}
+                  accessibilityLabel="Switch to Effective Reps"
+                >
+                  <Text
+                    style={[
+                      styles.metricToggleText,
+                      volumeMetricMode === 'ereps' && styles.metricToggleTextActive,
+                    ]}
+                  >
+                    ⚡ Effective Reps
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  testID="metric-toggle-sets"
+                  style={[
+                    styles.metricToggleBtn,
+                    volumeMetricMode === 'sets' && styles.metricToggleBtnActive,
+                  ]}
+                  onPress={() => setVolumeMetricMode('sets')}
+                  accessibilityLabel="Switch to Working Sets"
+                >
+                  <Text
+                    style={[
+                      styles.metricToggleText,
+                      volumeMetricMode === 'sets' && styles.metricToggleTextActive,
+                    ]}
+                  >
+                    📋 Working Sets
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.cardSectionHeader}>
                 <View>
-                  <Text style={styles.cardSectionSubtitle}>HYPERTROPHY LANDMARKS</Text>
+                  <Text style={styles.cardSectionSubtitle}>
+                    {volumeMetricMode === 'ereps' ? 'HYPERTROPHY LANDMARKS' : 'VOLUME LANDMARKS'}
+                  </Text>
                   <Text style={styles.cardSectionTitle}>Muscle Group Volume</Text>
                 </View>
                 <View style={styles.landmarkLegend}>
-                  <Text style={styles.legendText}>Target: 8–18 sets/wk</Text>
+                  <Text style={styles.legendText}>
+                    {volumeMetricMode === 'ereps' ? 'Target: 20–48 eReps/wk' : 'Target: 8–18 sets/wk'}
+                  </Text>
                 </View>
               </View>
+
+              {/* Coverage & Rating Disclosure */}
+              {volumeMetricMode === 'ereps' && (
+                <View testID="ereps-coverage-banner" style={styles.coverageBanner}>
+                  <Text style={styles.coverageText}>
+                    ⚡ Rated sets: {deepDive.totalRatedSets}/{deepDive.totalWorkingSets} ({deepDive.ratingCoveragePercent}%)
+                    {deepDive.totalUnratedSets > 0 &&
+                      ` • ${deepDive.totalUnratedSets} unrated sets omitted (0 eReps)`}
+                  </Text>
+                </View>
+              )}
 
               {deepDive.muscleGroupVolumes.length === 0 ? (
                 <Text style={styles.emptyCardText}>No completed workout sets logged for this week.</Text>
               ) : (
                 <View style={styles.muscleList}>
                   {deepDive.muscleGroupVolumes.map((m: MuscleGroupVolumeReport) => {
-                    const progressFraction = Math.min(1.0, m.workingSets / 18);
-                    const color = getTierColor(m.tier);
+                    const isEreps = volumeMetricMode === 'ereps';
+                    const displayVal = isEreps
+                      ? `${m.effectiveReps % 1 === 0 ? m.effectiveReps : m.effectiveReps.toFixed(1)} eReps`
+                      : `${m.workingSets % 1 === 0 ? m.workingSets : m.workingSets.toFixed(1)} sets`;
+                    const tier = isEreps ? m.effectiveRepsTier : m.tier;
+                    const color = getTierColor(tier);
+                    const progressFraction = isEreps
+                      ? Math.min(1.0, m.effectiveReps / 48)
+                      : Math.min(1.0, m.workingSets / 18);
 
                     return (
                       <View key={m.muscleGroup} style={styles.muscleRow}>
                         <View style={styles.muscleInfoRow}>
                           <Text style={styles.muscleName}>{m.muscleGroup}</Text>
                           <View style={styles.muscleStatsRight}>
-                            <Text style={styles.muscleSetsText}>
-                              {m.workingSets % 1 === 0 ? m.workingSets : m.workingSets.toFixed(1)} sets
-                            </Text>
+                            <Text style={styles.muscleSetsText}>{displayVal}</Text>
                             <Text style={styles.muscleTonnageText}>
                               ({formatWeight(m.totalTonnageKg, unitSystem)})
                             </Text>
                             <View style={[styles.tierPill, { backgroundColor: color + '22', borderColor: color }]}>
-                              <Text style={[styles.tierPillText, { color }]}>{getTierLabel(m.tier)}</Text>
+                              <Text style={[styles.tierPillText, { color }]}>{getTierLabel(tier)}</Text>
                             </View>
                           </View>
                         </View>
@@ -565,6 +635,47 @@ const styles = StyleSheet.create({
   kpiSub: {
     color: '#71717A',
     fontSize: 10,
+  },
+  metricToggleBar: {
+    flexDirection: 'row',
+    backgroundColor: '#1C1C1E',
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  metricToggleBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricToggleBtnActive: {
+    backgroundColor: '#27272A',
+  },
+  metricToggleText: {
+    color: '#71717A',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  metricToggleTextActive: {
+    color: '#00E676',
+  },
+  coverageBanner: {
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  coverageText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: '600',
   },
   cardSection: {
     backgroundColor: '#121214',

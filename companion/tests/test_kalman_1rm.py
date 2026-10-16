@@ -36,6 +36,7 @@ from src.models.kalman_1rm import (
     filter_session_sets,
     get_initial_prior,
     update_1rm_filter,
+    update_1rm_filter_batch,
 )
 
 
@@ -191,7 +192,7 @@ def test_true_1rm_test_bypasses_k_update() -> None:
     # 2. 1RM must update upwards toward 110 kg
     updated_1rm = math.exp(x_new[0])
     assert updated_1rm > 100.0
-    assert updated_1rm <= 110.0
+    assert updated_1rm <= 110.0 + 1e-9
 
     # 3. 1RM uncertainty P[0,0] must decrease
     assert P_new[0, 0] < prior.P[0, 0]
@@ -249,8 +250,8 @@ def test_exercise_specific_priors() -> None:
     bench_prior = get_initial_prior("bench", initial_1rm=100.0)
     assert bench_prior.k == 0.085
     assert bench_prior.e1rm == pytest.approx(100.0)
-    assert bench_prior.cov_p00 == 0.04
-    assert bench_prior.cov_p11 == 0.002
+    assert bench_prior.cov_p00 == 0.010
+    assert bench_prior.cov_p11 == 0.00015
 
     squat_prior = get_initial_prior("squat", initial_1rm=140.0)
     assert squat_prior.k == 0.095
@@ -395,3 +396,171 @@ def test_sample_workout_export_fixture_integration() -> None:
 
     param = kf.to_calibrated_parameter()
     assert param.exercise_id == "barbell_bench_press"
+
+
+# ============================================================================
+# 10. Default Working RIR for Unrated Sets (StrengthLog imports / untracked RIR)
+# ============================================================================
+
+def test_unrated_working_sets_with_fallback_rir() -> None:
+    """Verifies that unrated working sets are discarded by default, but accepted when default_working_rir is set."""
+    unrated_sets = [
+        {"reps": 5, "weight": 100.0, "set_type": "warmup", "set_number": 1},
+        {"reps": 8, "weight": 140.0, "set_type": "working", "set_number": 2},  # unrated working
+        {"reps": 8, "weight": 145.0, "set_type": "working", "set_number": 3},  # unrated working
+    ]
+
+    # Without fallback: 0 sets accepted because RIR is missing
+    assert filter_session_sets(unrated_sets, default_working_rir=None) == []
+
+    # With fallback RIR = 2.0: warmups discarded, top 2 working sets accepted with eff_rir = 2.0
+    accepted = filter_session_sets(unrated_sets, default_working_rir=2.0)
+    assert len(accepted) == 2
+    assert accepted[0].weight == 140.0
+    assert accepted[0].rir == 2.0
+    assert accepted[0].r_eff == 10.0  # 8 reps + 2.0 RIR
+    assert accepted[1].weight == 145.0
+    assert accepted[1].rir == 2.0
+
+    # Ensure Adaptive1RMKalmanFilter processes session with default_working_rir
+    kf = Adaptive1RMKalmanFilter(exercise_id="squat", standard_lift_type="squat")
+    states = kf.process_session(unrated_sets, default_working_rir=2.0)
+    assert len(states) == 1
+    assert kf.state.step_count == 1
+    assert kf.state.e1rm > 145.0
+
+
+# ============================================================================
+# 11. AMRAP Sets Evaluated as 0 RIR / 10 RPE
+# ============================================================================
+
+def test_amrap_sets_evaluated_as_zero_rir() -> None:
+    """Verifies that AMRAP sets are automatically assigned 0 RIR (10 RPE) and prioritized."""
+    session_sets = [
+        {"reps": 8, "weight": 100.0, "set_type": "working", "set_number": 1},  # unrated working
+        {"reps": 12, "weight": 100.0, "set_type": "working", "notes": "AMRAP to failure", "set_number": 2},  # AMRAP set
+    ]
+
+    # Even without default_working_rir (strict mode): AMRAP set is accepted because it has eff_rir = 0.0 <= 3.0
+    accepted_strict = filter_session_sets(session_sets, default_working_rir=None)
+    assert len(accepted_strict) == 1
+    assert accepted_strict[0].reps == 12
+    assert accepted_strict[0].rir == 0.0
+    assert accepted_strict[0].r_eff == 12.0  # 12 reps + 0 RIR
+
+    # With default_working_rir = 2.0: AMRAP set has 0 RIR, regular set has 2.0 RIR
+    accepted_fb = filter_session_sets(session_sets, default_working_rir=2.0)
+    assert len(accepted_fb) == 2
+    amrap_item = next(s for s in accepted_fb if s.original_index == 1)
+    assert amrap_item.rir == 0.0
+    reg_item = next(s for s in accepted_fb if s.original_index == 0)
+    assert reg_item.rir == 2.0
+
+
+# ============================================================================
+# 12. Intra-Session Peak Reference & Warmup Rejection Gate
+# ============================================================================
+
+def test_intra_session_peak_reference_rejection() -> None:
+    """Verifies that Stage 1 gating eliminates unflagged warmups and low-load sets.
+
+    Sets < 65% of max session weight OR < 82% of peak session heuristic 1RM are rejected.
+    """
+    raw_sets = [
+        {"reps": 10, "weight": 20.0, "rir": 2.0, "set_number": 1},   # Unflagged warmup (20 kg vs 100 kg = 20% < 65%)
+        {"reps": 5, "weight": 60.0, "rir": 2.0, "set_number": 2},    # Ramp-up set (60 kg vs 100 kg = 60% < 65%)
+        {"reps": 5, "weight": 95.0, "rir": 1.5, "set_number": 3},    # Working set (95% of max weight)
+        {"reps": 3, "weight": 100.0, "rir": 1.0, "set_number": 4},   # Top set (100% of max weight)
+    ]
+    accepted = filter_session_sets(raw_sets)
+    assert len(accepted) == 2
+    assert accepted[0].set_number == 3
+    assert accepted[0].weight == 95.0
+    assert accepted[1].set_number == 4
+    assert accepted[1].weight == 100.0
+
+
+def test_intra_session_filter_with_historical_e1rm() -> None:
+    """Verifies that sets < 55% of current historical e1RM are rejected."""
+    raw_sets = [
+        {"reps": 5, "weight": 50.0, "rir": 1.0, "set_number": 1},
+        {"reps": 5, "weight": 120.0, "rir": 1.0, "set_number": 2},
+    ]
+    # Current e1RM is 100 kg; 50 kg is 50% (< 55%), so it must be rejected
+    accepted = filter_session_sets(raw_sets, current_e1rm=100.0)
+    assert len(accepted) == 1
+    assert accepted[0].weight == 120.0
+
+
+# ============================================================================
+# 13. Simon's Covariance-Weighted Projection & Covariance Conditioning
+# ============================================================================
+
+def test_simons_covariance_weighted_projection() -> None:
+    """Verifies Simon's projection: when k hits boundary, ln(1RM) is adjusted along conditional Gaussian."""
+    # Start with a state where k violates upper boundary (e.g. k = 0.20 > 0.16)
+    x = np.array([math.log(100.0), 0.20], dtype=np.float64)
+    # Give non-zero cross-covariance P01 > 0
+    P = np.array([
+        [0.010, 0.0005],
+        [0.0005, 0.0002],
+    ], dtype=np.float64)
+
+    # In update_1rm_filter_batch, the state should be projected onto k = 0.16
+    x_new, P_new = update_1rm_filter_batch(
+        x=x,
+        P=P,
+        measurements=[(95.0, 3.0)],
+        Q=np.zeros((2, 2)),
+    )
+
+    # 1. k must be projected onto MAX_PLAUSIBLE_K = 0.16
+    assert x_new[1] == pytest.approx(MAX_PLAUSIBLE_K)
+
+    # 2. Boundary covariance must be conditioned: P01 = 0, P11 <= 1e-5
+    assert P_new[0, 1] == 0.0
+    assert P_new[1, 0] == 0.0
+    assert P_new[1, 1] <= 1e-5
+
+
+# ============================================================================
+# 14. Physical Lower-Bound Floor Guarantee
+# ============================================================================
+
+def test_physical_lower_bound_floor_guarantee() -> None:
+    """Verifies that estimated 1RM is mathematically guaranteed to be strictly greater than any lifted load."""
+    kf = Adaptive1RMKalmanFilter(exercise_id="bench", standard_lift_type="bench", initial_1rm=80.0)
+
+    # Lifter completes 90 kg x 12 reps @ RIR 2 (r_eff = 14)
+    # Physically, 1RM cannot be less than 90 kg
+    new_state = kf.step(weight=90.0, r_eff=14.0)
+
+    assert new_state.e1rm > 90.0
+    # Minimum physical extrapolation: ln(90) + 0.03 * ln(11)
+    min_expected_1rm = 90.0 * (11.0 ** 0.03)
+    assert new_state.e1rm >= min_expected_1rm - 1e-9
+
+
+# ============================================================================
+# 15. Consolidated Session Batch Evaluation
+# ============================================================================
+
+def test_consolidated_session_batch_evaluation() -> None:
+    """Verifies that top set and back-off set update the filter in a single consolidated step."""
+    kf = Adaptive1RMKalmanFilter(exercise_id="squat", standard_lift_type="squat", initial_1rm=140.0)
+
+    # Session with 1 top set (150 kg x 3 @ RIR 1) and 1 back-off set (125 kg x 8 @ RIR 1)
+    session_sets = [
+        {"reps": 3, "weight": 150.0, "rir": 1.0, "set_number": 1},
+        {"reps": 8, "weight": 125.0, "rir": 1.0, "set_number": 2},
+    ]
+
+    states = kf.process_session(session_sets, session_date="2026-10-15")
+    # Must yield exactly 1 consolidated state update
+    assert len(states) == 1
+    assert kf.state.step_count == 1
+    assert kf.state.e1rm > 150.0
+    # Posterior uncertainty P must be smaller than prior
+    assert kf.state.cov_p00 < 0.010
+
+

@@ -22,6 +22,7 @@ import {
 } from '../../core/types';
 import {
   calculateNavyBodyFat,
+  calculateEstimatedLeanBodyMass,
   calculateBodyweightRollingAverages,
 } from '../../core/math/navyBodyFat';
 import {
@@ -97,9 +98,13 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
       setMetricsHistory([...allMetrics].reverse()); // Newest first
 
       // Compute rolling averages
-      if (allMetrics.length > 0) {
+      const validWeightMetrics = allMetrics.filter(
+        (m): m is BodyMetric & { bodyweight: number } =>
+          m.bodyweight != null && m.bodyweight > 0
+      );
+      if (validWeightMetrics.length > 0) {
         const smoothed = calculateBodyweightRollingAverages(
-          allMetrics.map((m) => ({ date: m.date, bodyweight: m.bodyweight }))
+          validWeightMetrics.map((m) => ({ date: m.date, bodyweight: m.bodyweight }))
         );
         if (smoothed.length > 0) {
           const latest = smoothed[smoothed.length - 1];
@@ -133,32 +138,91 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
     return unitSystem === 'lbs' ? lbsToKg(num) : num;
   };
 
-  // 2. Real-time Live Navy Body Fat Estimation
-  const waistCm = parseCircumferenceToCm(waistInput);
-  const neckCm = parseCircumferenceToCm(neckInput);
-  const hipCm = parseCircumferenceToCm(hipInput);
+  // 1. Resolve latest recorded historical measurements (LOCF fallback)
+  const latestRecordedWeightKg =
+    metricsHistory.find((m) => m.bodyweight != null && m.bodyweight > 0)?.bodyweight ?? null;
+  const latestRecordedWaistCm =
+    metricsHistory.find((m) => m.waist_cm != null && m.waist_cm > 0)?.waist_cm ?? null;
+  const latestRecordedNeckCm =
+    metricsHistory.find((m) => m.neck_cm != null && m.neck_cm > 0)?.neck_cm ?? null;
+  const latestRecordedHipCm =
+    metricsHistory.find((m) => m.hip_cm != null && m.hip_cm > 0)?.hip_cm ?? null;
+
+  // 2. Real-time Live Navy Body Fat Estimation with Forward-Fill
+  const enteredWaistCm = parseCircumferenceToCm(waistInput);
+  const enteredNeckCm = parseCircumferenceToCm(neckInput);
+  const enteredHipCm = parseCircumferenceToCm(hipInput);
+  const enteredWeightKg = parseWeightToKg(bodyweightInput);
+
+  const effectiveWaistCm = enteredWaistCm ?? latestRecordedWaistCm;
+  const effectiveNeckCm = enteredNeckCm ?? latestRecordedNeckCm;
+  const effectiveHipCm = enteredHipCm ?? latestRecordedHipCm;
+  const effectiveWeightKg = enteredWeightKg ?? latestRecordedWeightKg;
+
   const gender: Gender = userProfile?.gender || 'male';
   const heightCm = userProfile?.height_cm;
 
   let liveNavyBf: number | null = null;
-  if (heightCm && waistCm && neckCm) {
+  if (heightCm && effectiveWaistCm && effectiveNeckCm) {
     liveNavyBf = calculateNavyBodyFat({
       gender,
       heightCm,
-      waistCm,
-      neckCm,
-      hipCm,
+      waistCm: effectiveWaistCm,
+      neckCm: effectiveNeckCm,
+      hipCm: effectiveHipCm,
     });
   }
 
+  // Real-time live eLBM calculation using effective weight & Navy BF%
+  const liveNavyElbmKg =
+    liveNavyBf != null && effectiveWeightKg != null && effectiveWeightKg > 0
+      ? calculateEstimatedLeanBodyMass(effectiveWeightKg, liveNavyBf)
+      : null;
+
+  const liveNavyElbmDisplay =
+    liveNavyElbmKg != null
+      ? unitSystem === 'lbs'
+        ? kgToLbs(liveNavyElbmKg)
+        : liveNavyElbmKg
+      : null;
+
+  // Latest eLBM from historical records incorporating LOCF
+  const latestMetricWithNavy = metricsHistory.find(
+    (m) => m.navy_body_fat != null && m.navy_body_fat > 0
+  );
+  const latestElbmKg =
+    latestRecordedWeightKg != null &&
+    latestMetricWithNavy?.navy_body_fat != null
+      ? calculateEstimatedLeanBodyMass(
+          latestRecordedWeightKg,
+          latestMetricWithNavy.navy_body_fat
+        )
+      : null;
+
   // 3. Save Entry Handler
   const handleSaveMetric = async () => {
-    const canonicalKg = parseWeightToKg(bodyweightInput);
-    if (!canonicalKg) {
+    const enteredKg = parseWeightToKg(bodyweightInput);
+    const targetWeightKg = enteredKg ?? latestRecordedWeightKg;
+    if (!targetWeightKg) {
       Alert.alert(
-        'Invalid Bodyweight',
-        `Please enter a valid bodyweight in ${unitSystem}.`
+        'Missing Bodyweight',
+        `Please enter a bodyweight in ${unitSystem} to record an initial measurement.`
       );
+      return;
+    }
+
+    if (
+      !bodyweightInput.trim() &&
+      !waistInput.trim() &&
+      !neckInput.trim() &&
+      !hipInput.trim() &&
+      !bicepInput.trim() &&
+      !chestInput.trim() &&
+      !thighInput.trim() &&
+      !calfInput.trim() &&
+      !manualBfInput.trim()
+    ) {
+      Alert.alert('Empty Entry', 'Please enter at least one measurement to save.');
       return;
     }
 
@@ -169,14 +233,14 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
       const metricToSave: BodyMetric = {
         id: newId,
         date: entryDate.trim() || todayStr,
-        bodyweight: Number(canonicalKg.toFixed(2)),
+        bodyweight: Number(targetWeightKg.toFixed(2)),
         body_fat_manual:
           !isNaN(manualBf) && manualBf > 0 && manualBf < 100
             ? Number(manualBf.toFixed(1))
             : null,
-        waist_cm: waistCm != null ? Number(waistCm.toFixed(1)) : null,
-        neck_cm: neckCm != null ? Number(neckCm.toFixed(1)) : null,
-        hip_cm: hipCm != null ? Number(hipCm.toFixed(1)) : null,
+        waist_cm: enteredWaistCm != null ? Number(enteredWaistCm.toFixed(1)) : null,
+        neck_cm: enteredNeckCm != null ? Number(enteredNeckCm.toFixed(1)) : null,
+        hip_cm: enteredHipCm != null ? Number(enteredHipCm.toFixed(1)) : null,
         bicep_cm:
           parseCircumferenceToCm(bicepInput) != null
             ? Number(parseCircumferenceToCm(bicepInput)!.toFixed(1))
@@ -204,9 +268,16 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
       setStatusMessage('Measurement saved successfully! ✓');
       setTimeout(() => setStatusMessage(null), 3000);
 
-      // Reset main weight input while leaving date
+      // Reset main inputs while leaving date
       setBodyweightInput('');
       setManualBfInput('');
+      setWaistInput('');
+      setNeckInput('');
+      setHipInput('');
+      setBicepInput('');
+      setChestInput('');
+      setThighInput('');
+      setCalfInput('');
 
       await loadData();
     } catch (err) {
@@ -300,6 +371,20 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
                 {formatWeight(rollingAvg7.ema7, unitSystem)}
               </Text>
             </View>
+            {latestElbmKg != null && (
+              <>
+                <View style={styles.rollingDivider} />
+                <View style={styles.rollingItem} testID="rolling-elbm-item">
+                  <Text style={styles.rollingLabel}>LATEST eLBM</Text>
+                  <Text
+                    style={[styles.rollingValue, { color: '#10B981' }]}
+                    testID="rolling-elbm-value"
+                  >
+                    {formatWeight(latestElbmKg, unitSystem)}
+                  </Text>
+                </View>
+              </>
+            )}
             <View style={styles.rollingDivider} />
             <View style={styles.rollingItem}>
               <Text style={styles.rollingLabel}>TREND STATUS</Text>
@@ -335,7 +420,13 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
                 style={[styles.textInput, styles.primaryInput]}
                 value={bodyweightInput}
                 onChangeText={setBodyweightInput}
-                placeholder={unitSystem === 'lbs' ? '180.5' : '82.0'}
+                placeholder={
+                  latestRecordedWeightKg != null
+                    ? formatWeight(latestRecordedWeightKg, unitSystem, { showUnit: false })
+                    : unitSystem === 'lbs'
+                    ? '180.5'
+                    : '82.0'
+                }
                 placeholderTextColor="#555555"
                 keyboardType="numeric"
               />
@@ -358,20 +449,38 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
             />
           </View>
 
-          {/* Live Navy Body Fat Estimation Card */}
+          {/* Live Navy Body Fat & eLBM Estimation Card */}
           <View style={styles.navyEstimateCard} testID="navy-estimate-card">
             <View style={styles.navyEstimateHeader}>
               <Text style={styles.navyEstimateTitle}>
-                🔬 U.S. NAVY BODY FAT FORMULA
-              </Text>
-              <Text style={styles.navyEstimateValue} testID="live-navy-bf-value">
-                {liveNavyBf != null ? `${liveNavyBf.toFixed(1)}%` : '—'}
+                🔬 U.S. NAVY FORMULA (BF% & eLBM)
               </Text>
             </View>
-            <Text style={styles.navyEstimateSubtext}>
+
+            <View style={styles.navyEstimateStatsRow}>
+              <View style={styles.navyStatItem}>
+                <Text style={styles.navyStatLabel}>BODY FAT %</Text>
+                <Text style={styles.navyEstimateValue} testID="live-navy-bf-value">
+                  {liveNavyBf != null ? `${liveNavyBf.toFixed(1)}%` : '—'}
+                </Text>
+              </View>
+
+              <View style={styles.navyStatDivider} />
+
+              <View style={styles.navyStatItem}>
+                <Text style={styles.navyStatLabel}>LEAN MASS (eLBM)</Text>
+                <Text style={styles.navyEstimateElbmValue} testID="live-navy-elbm-value">
+                  {liveNavyElbmDisplay != null
+                    ? `${liveNavyElbmDisplay.toFixed(1)} ${unitSystem}`
+                    : '—'}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.navyEstimateSubtext} testID="navy-estimate-subtext">
               {userProfile?.height_cm
                 ? liveNavyBf != null
-                  ? `Computed from Neck (${neckInput || '—'}), Waist (${waistInput || '—'})${gender === 'female' ? `, Hip (${hipInput || '—'})` : ''} & Height (${userProfile.height_cm} cm).`
+                  ? `Computed from Neck (${formatLength(effectiveNeckCm, unitSystem)}${enteredNeckCm ? '' : ' [last]'}), Waist (${formatLength(effectiveWaistCm, unitSystem)}${enteredWaistCm ? '' : ' [last]'})${gender === 'female' && effectiveHipCm ? `, Hip (${formatLength(effectiveHipCm, unitSystem)}${enteredHipCm ? '' : ' [last]'})` : ''} & Height (${userProfile.height_cm} cm)${effectiveWeightKg ? ` with Weight (${formatWeight(effectiveWeightKg, unitSystem)}${enteredWeightKg ? '' : ' [last]'})` : ''}.`
                   : `Enter Waist and Neck (${gender === 'female' ? 'plus Hips' : ''}) below to auto-calculate.`
                 : 'Configure your height in Profile to enable automatic Navy body fat calculation.'}
             </Text>
@@ -390,7 +499,13 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
                 style={styles.textInput}
                 value={waistInput}
                 onChangeText={setWaistInput}
-                placeholder={unitSystem === 'lbs' ? '32.5' : '82.0'}
+                placeholder={
+                  latestRecordedWaistCm != null
+                    ? formatLength(latestRecordedWaistCm, unitSystem, { showUnit: false })
+                    : unitSystem === 'lbs'
+                    ? '32.5'
+                    : '82.0'
+                }
                 placeholderTextColor="#555555"
                 keyboardType="numeric"
               />
@@ -403,7 +518,13 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
                 style={styles.textInput}
                 value={neckInput}
                 onChangeText={setNeckInput}
-                placeholder={unitSystem === 'lbs' ? '15.0' : '38.0'}
+                placeholder={
+                  latestRecordedNeckCm != null
+                    ? formatLength(latestRecordedNeckCm, unitSystem, { showUnit: false })
+                    : unitSystem === 'lbs'
+                    ? '15.0'
+                    : '38.0'
+                }
                 placeholderTextColor="#555555"
                 keyboardType="numeric"
               />
@@ -417,7 +538,13 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
                   style={styles.textInput}
                   value={hipInput}
                   onChangeText={setHipInput}
-                  placeholder={unitSystem === 'lbs' ? '36.0' : '92.0'}
+                  placeholder={
+                    latestRecordedHipCm != null
+                      ? formatLength(latestRecordedHipCm, unitSystem, { showUnit: false })
+                      : unitSystem === 'lbs'
+                      ? '36.0'
+                      : '92.0'
+                  }
                   placeholderTextColor="#555555"
                   keyboardType="numeric"
                 />
@@ -512,33 +639,78 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
               </Text>
             </View>
           ) : (
-            metricsHistory.map((m) => (
-              <View
-                key={m.id}
-                style={styles.historyRowCard}
-                testID={`history-item-${m.id}`}
-              >
-                <View style={styles.historyRowLeft}>
-                  <Text style={styles.historyDate}>{m.date}</Text>
-                  <Text style={styles.historyWeight}>
-                    {formatWeight(m.bodyweight, unitSystem)}
-                  </Text>
-                  <View style={styles.historyPillRow}>
-                    {m.navy_body_fat != null && (
-                      <View style={styles.historyNavyPill}>
-                        <Text style={styles.historyNavyPillText}>
-                          Navy: {m.navy_body_fat.toFixed(1)}%
-                        </Text>
-                      </View>
-                    )}
-                    {m.body_fat_manual != null && (
-                      <View style={styles.historyManualPill}>
-                        <Text style={styles.historyManualPillText}>
-                          Manual: {m.body_fat_manual.toFixed(1)}%
-                        </Text>
-                      </View>
-                    )}
-                  </View>
+            metricsHistory.map((m, index) => {
+              const effectiveRowBf =
+                m.navy_body_fat ??
+                metricsHistory
+                  .slice(index + 1)
+                  .find(
+                    (prev) =>
+                      prev.navy_body_fat != null &&
+                      prev.navy_body_fat > 0
+                  )?.navy_body_fat ??
+                null;
+
+              const effectiveRowWeight =
+                m.bodyweight != null && m.bodyweight > 0
+                  ? m.bodyweight
+                  : metricsHistory
+                      .slice(index + 1)
+                      .find(
+                        (prev) =>
+                          prev.bodyweight != null &&
+                          prev.bodyweight > 0
+                      )?.bodyweight ?? null;
+
+              const elbmKg =
+                effectiveRowWeight != null && effectiveRowBf != null
+                  ? calculateEstimatedLeanBodyMass(
+                      effectiveRowWeight,
+                      effectiveRowBf
+                    )
+                  : null;
+
+              return (
+                <View
+                  key={m.id}
+                  style={styles.historyRowCard}
+                  testID={`history-item-${m.id}`}
+                >
+                  <View style={styles.historyRowLeft}>
+                    <Text style={styles.historyDate}>{m.date}</Text>
+                    <Text style={styles.historyWeight}>
+                      {m.bodyweight != null && m.bodyweight > 0
+                        ? formatWeight(m.bodyweight, unitSystem)
+                        : effectiveRowWeight != null
+                        ? `${formatWeight(effectiveRowWeight, unitSystem)} [last]`
+                        : '—'}
+                    </Text>
+                    <View style={styles.historyPillRow}>
+                      {effectiveRowBf != null && (
+                        <View style={styles.historyNavyPill}>
+                          <Text style={styles.historyNavyPillText}>
+                            Navy: {effectiveRowBf.toFixed(1)}%
+                          </Text>
+                        </View>
+                      )}
+                      {elbmKg != null && (
+                        <View
+                          style={styles.historyElbmPill}
+                          testID={`history-elbm-pill-${m.id}`}
+                        >
+                          <Text style={styles.historyElbmPillText}>
+                            eLBM: {formatWeight(elbmKg, unitSystem)}
+                          </Text>
+                        </View>
+                      )}
+                      {m.body_fat_manual != null && (
+                        <View style={styles.historyManualPill}>
+                          <Text style={styles.historyManualPillText}>
+                            Manual: {m.body_fat_manual.toFixed(1)}%
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   {/* Tape measurement subtext */}
                   {(m.waist_cm != null || m.bicep_cm != null) && (
                     <Text style={styles.historyTapeSubtext}>
@@ -563,8 +735,9 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
                   <Text style={styles.deleteBtnText}>🗑</Text>
                 </TouchableOpacity>
               </View>
-            ))
-          )}
+            );
+          })
+        )}
         </View>
       </ScrollView>
     </View>
@@ -750,8 +923,34 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
+  navyEstimateStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 6,
+  },
+  navyStatItem: {
+    flex: 1,
+  },
+  navyStatLabel: {
+    color: '#88B896',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  navyStatDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#194A27',
+    marginHorizontal: 12,
+  },
   navyEstimateValue: {
     color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  navyEstimateElbmValue: {
+    color: '#10B981',
     fontSize: 16,
     fontWeight: '800',
   },
@@ -835,6 +1034,17 @@ const styles = StyleSheet.create({
   },
   historyNavyPillText: {
     color: '#00E676',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  historyElbmPill: {
+    backgroundColor: '#064E3B',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  historyElbmPillText: {
+    color: '#34D399',
     fontSize: 10,
     fontWeight: '700',
   },

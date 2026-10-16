@@ -39,6 +39,7 @@ def calibrate_exercise_stream(
     standard_lift_type: Optional[str],
     workouts: Sequence[Workout],
     sets: Sequence[WorkoutSet],
+    default_working_rir: Optional[float] = 2.0,
 ) -> Optional[CalibratedParameter]:
     """Runs the Adaptive1RMKalmanFilter on chronological sessions for a single exercise.
 
@@ -61,7 +62,11 @@ def calibrate_exercise_stream(
     for w in sorted_workouts:
         if w.id in sets_by_workout:
             session_sets = sets_by_workout[w.id]
-            kf.process_session(session_sets)
+            kf.process_session(
+                session_sets,
+                default_working_rir=default_working_rir,
+                session_date=w.date,
+            )
 
     if kf.state.step_count == 0:
         return None
@@ -82,6 +87,7 @@ def calibrate_exercise_stream(
 def export_calibrated_parameters(
     payload: WorkoutExportPayload,
     target_exercise_ids: Optional[Sequence[str]] = None,
+    default_working_rir: Optional[float] = 2.0,
 ) -> CalibratedParametersEnvelope:
     """Calibrates all exercises present in the payload and returns the validated envelope."""
     exercise_map = {e.id: e for e in payload.exercises}
@@ -111,6 +117,7 @@ def export_calibrated_parameters(
             standard_lift_type=std_lift,
             workouts=payload.workouts,
             sets=ex_sets,
+            default_working_rir=default_working_rir,
         )
         if param is not None:
             parameters.append(param)
@@ -127,6 +134,7 @@ def export_calibrated_parameters(
 def export_calibrated_parameters_file(
     input_path: Union[str, Path],
     output_path: Union[str, Path],
+    default_working_rir: Optional[float] = 2.0,
 ) -> CalibratedParametersEnvelope:
     """Reads a workout export JSON file, executes calibration, and writes calibrated_parameters.json."""
     in_file = Path(input_path)
@@ -136,7 +144,7 @@ def export_calibrated_parameters_file(
         raw_json = json.load(f)
 
     payload = WorkoutExportPayload.model_validate(raw_json)
-    envelope = export_calibrated_parameters(payload)
+    envelope = export_calibrated_parameters(payload, default_working_rir=default_working_rir)
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
     with open(out_file, "w", encoding="utf-8") as f:
@@ -163,9 +171,19 @@ def main() -> None:
         default="calibrated_parameters.json",
         help="Path to output calibrated_parameters.json",
     )
+    parser.add_argument(
+        "--default-working-rir",
+        type=float,
+        default=2.0,
+        help="Default RIR for working sets lacking explicit exertion rating (default: 2.0)",
+    )
     args = parser.parse_args()
 
-    envelope = export_calibrated_parameters_file(args.input, args.output)
+    envelope = export_calibrated_parameters_file(
+        args.input,
+        args.output,
+        default_working_rir=args.default_working_rir,
+    )
     print(
         f"Successfully calibrated {len(envelope.parameters)} exercises. "
         f"Saved to {args.output}"

@@ -13,6 +13,7 @@ from src.models.fatigue_banister import (
     MIN_STIMULATING_RPE,
     DailyPreparedness,
     SetStimulus,
+    calculate_hypertrophic_effective_reps,
     calculate_set_stimulus,
     compute_daily_banister_series,
 )

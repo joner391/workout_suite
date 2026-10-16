@@ -70,29 +70,67 @@ export class MockBodyMetricsRepository implements IBodyMetricsRepository {
   ): Promise<BodyMetric> {
     const toSave: BodyMetric = { ...metric };
 
-    if (toSave.navy_body_fat == null && toSave.waist_cm != null && toSave.neck_cm != null) {
-      let gender: Gender | undefined = profileOverride?.gender;
-      let heightCm: number | null | undefined = profileOverride?.height_cm;
+    // Forward-fill bodyweight if not provided
+    if (toSave.bodyweight == null || toSave.bodyweight <= 0) {
+      const prior = Array.from(this.metrics.values())
+        .filter((m) => m.bodyweight != null && m.bodyweight > 0 && m.date <= toSave.date)
+        .sort((a, b) => b.date.localeCompare(a.date));
+      if (prior.length > 0 && prior[0].bodyweight) {
+        toSave.bodyweight = prior[0].bodyweight;
+      }
+    }
 
-      if ((!gender || heightCm == null) && this.userProfileRepo) {
-        const profile = await this.userProfileRepo.getProfile();
-        if (profile) {
-          gender = gender ?? profile.gender;
-          heightCm = heightCm ?? profile.height_cm;
-        }
+    if (
+      toSave.navy_body_fat == null &&
+      (toSave.waist_cm != null || toSave.neck_cm != null)
+    ) {
+      let waistCm = toSave.waist_cm;
+      let neckCm = toSave.neck_cm;
+      let hipCm = toSave.hip_cm;
+
+      if (waistCm == null) {
+        const prior = Array.from(this.metrics.values())
+          .filter((m) => m.waist_cm != null && m.date <= toSave.date)
+          .sort((a, b) => b.date.localeCompare(a.date));
+        if (prior.length > 0) waistCm = prior[0].waist_cm;
+      }
+      if (neckCm == null) {
+        const prior = Array.from(this.metrics.values())
+          .filter((m) => m.neck_cm != null && m.date <= toSave.date)
+          .sort((a, b) => b.date.localeCompare(a.date));
+        if (prior.length > 0) neckCm = prior[0].neck_cm;
+      }
+      if (hipCm == null) {
+        const prior = Array.from(this.metrics.values())
+          .filter((m) => m.hip_cm != null && m.date <= toSave.date)
+          .sort((a, b) => b.date.localeCompare(a.date));
+        if (prior.length > 0) hipCm = prior[0].hip_cm;
       }
 
-      if (gender && heightCm != null && heightCm > 0) {
-        const computed = calculateNavyBodyFat({
-          gender,
-          heightCm,
-          waistCm: toSave.waist_cm,
-          neckCm: toSave.neck_cm,
-          hipCm: toSave.hip_cm,
-        });
+      if (waistCm != null && neckCm != null) {
+        let gender: Gender | undefined = profileOverride?.gender;
+        let heightCm: number | null | undefined = profileOverride?.height_cm;
 
-        if (computed != null) {
-          toSave.navy_body_fat = computed;
+        if ((!gender || heightCm == null) && this.userProfileRepo) {
+          const profile = await this.userProfileRepo.getProfile();
+          if (profile) {
+            gender = gender ?? profile.gender;
+            heightCm = heightCm ?? profile.height_cm;
+          }
+        }
+
+        if (gender && heightCm != null && heightCm > 0) {
+          const computed = calculateNavyBodyFat({
+            gender,
+            heightCm,
+            waistCm,
+            neckCm,
+            hipCm,
+          });
+
+          if (computed != null) {
+            toSave.navy_body_fat = computed;
+          }
         }
       }
     }

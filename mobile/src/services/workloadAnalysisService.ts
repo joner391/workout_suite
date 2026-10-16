@@ -10,16 +10,26 @@ import { IWorkoutRepository } from '../domain/repositories/IWorkoutRepository';
 import { IExerciseRepository } from '../domain/repositories/IExerciseRepository';
 import { Exercise, MuscleGroup, Workout, WorkoutSet } from '../core/types';
 import { calculateHeuristic1RM } from '../core/math/heuristic1rm';
+import {
+  calculateHypertrophicEffectiveReps,
+  classifyEffectiveRepsTier,
+} from '../core/math/effectiveReps';
 
 export type VolumeLandmarkTier = 'low' | 'optimal' | 'high' | 'peak';
 
 export interface MuscleGroupVolumeReport {
   muscleGroup: MuscleGroup | string;
   workingSets: number;
+  effectiveReps: number;
+  effectiveRepsTier: VolumeLandmarkTier;
   totalTonnageKg: number;
   tier: VolumeLandmarkTier;
   targetMinSets: number;
   targetMaxSets: number;
+  targetMinEffectiveReps: number;
+  targetMaxEffectiveReps: number;
+  ratedSets: number;
+  totalSets: number;
 }
 
 export interface DailyWorkloadSummary {
@@ -30,6 +40,7 @@ export interface DailyWorkloadSummary {
   workoutId: string | null;
   tonnageKg: number;
   workingSets: number;
+  effectiveReps: number;
   avgRpe: number | null;
 }
 
@@ -55,6 +66,10 @@ export interface WeeklyWorkloadDeepDive {
   weekEndDate: string; // YYYY-MM-DD (Sunday)
   totalTonnageKg: number;
   totalWorkingSets: number;
+  totalEffectiveReps: number;
+  totalRatedSets: number;
+  totalUnratedSets: number;
+  ratingCoveragePercent: number;
   completedWorkoutsCount: number;
   dailyWorkloads: DailyWorkloadSummary[];
   muscleGroupVolumes: MuscleGroupVolumeReport[];
@@ -274,6 +289,7 @@ export async function computeWeeklyWorkloadDeepDive(
     if (daySessions && daySessions.length > 0) {
       let dayTonnage = 0;
       let dayWorkingSets = 0;
+      let dayEffectiveReps = 0;
       let dayRpeSum = 0;
       let dayRpeCount = 0;
 
@@ -284,6 +300,15 @@ export async function computeWeeklyWorkloadDeepDive(
             if (s.weight != null && s.reps != null) {
               dayTonnage += s.weight * s.reps;
             }
+            const bestE1rm = bestE1rmMap.get(s.exercise_id);
+            const eRepsRes = calculateHypertrophicEffectiveReps(s.reps, {
+              rpe: s.rpe,
+              rir: s.rir,
+              set_type: s.set_type,
+              weightKg: s.weight,
+              e1rmKg: bestE1rm,
+            });
+            dayEffectiveReps += eRepsRes.effectiveReps;
             if (s.rpe != null && s.rpe > 0) {
               dayRpeSum += s.rpe;
               dayRpeCount++;
@@ -303,6 +328,7 @@ export async function computeWeeklyWorkloadDeepDive(
         workoutId: daySessions[0].workout.id,
         tonnageKg: Math.round(dayTonnage),
         workingSets: dayWorkingSets,
+        effectiveReps: dayEffectiveReps,
         avgRpe: dayRpeCount > 0 ? Number((dayRpeSum / dayRpeCount).toFixed(1)) : null,
       });
     } else {
@@ -314,14 +340,23 @@ export async function computeWeeklyWorkloadDeepDive(
         workoutId: null,
         tonnageKg: 0,
         workingSets: 0,
+        effectiveReps: 0,
         avgRpe: null,
       });
     }
   }
 
-  // 5. Aggregate Muscle Group Volumes (Working Sets & Tonnage)
-  // Primary muscle gets 1.0 set volume; assisting / secondary muscles get 0.5 set volume credit
-  const muscleSetCounts = new Map<string, { sets: number; tonnage: number }>();
+  // 5. Aggregate Muscle Group Volumes (Working Sets, Effective Reps & Tonnage)
+  // Primary muscle gets 1.0 volume credit; assisting / secondary muscles get 0.5 volume credit
+  const muscleSetCounts = new Map<
+    string,
+    { sets: number; tonnage: number; effectiveReps: number; ratedSets: number; totalSets: number }
+  >();
+
+  let totalWeekEffectiveReps = 0;
+  let totalWeekRatedSets = 0;
+  let totalWeekUnratedSets = 0;
+
   for (const sessionGroup of workoutsByDate.values()) {
     for (const session of sessionGroup) {
       for (const s of session.sets) {
@@ -329,21 +364,58 @@ export async function computeWeeklyWorkloadDeepDive(
           const ex = exerciseMap.get(s.exercise_id);
           const primaryGroup = ex?.muscle_group || 'Other';
           const setTonnage = s.weight != null && s.reps != null ? s.weight * s.reps : 0;
+          const bestE1rm = bestE1rmMap.get(s.exercise_id);
+          const eRepsRes = calculateHypertrophicEffectiveReps(s.reps, {
+            rpe: s.rpe,
+            rir: s.rir,
+            set_type: s.set_type,
+            weightKg: s.weight,
+            e1rmKg: bestE1rm,
+          });
 
-          // 1.0 set credit to primary muscle group
-          const prevPrimary = muscleSetCounts.get(primaryGroup) || { sets: 0, tonnage: 0 };
+          totalWeekEffectiveReps += eRepsRes.effectiveReps;
+          if (eRepsRes.isRated) {
+            totalWeekRatedSets++;
+          } else {
+            totalWeekUnratedSets++;
+          }
+
+          // 1.0 credit to primary muscle group
+          const prevPrimary = muscleSetCounts.get(primaryGroup) || {
+            sets: 0,
+            tonnage: 0,
+            effectiveReps: 0,
+            ratedSets: 0,
+            totalSets: 0,
+          };
           prevPrimary.sets += 1;
           prevPrimary.tonnage += setTonnage;
+          prevPrimary.effectiveReps += eRepsRes.effectiveReps;
+          prevPrimary.totalSets += 1;
+          if (eRepsRes.isRated) {
+            prevPrimary.ratedSets += 1;
+          }
           muscleSetCounts.set(primaryGroup, prevPrimary);
 
-          // 0.5 set credit to assisting / secondary muscle groups
+          // 0.5 credit to assisting / secondary muscle groups
           if (ex) {
             const assisting = resolveAssistingMuscles(ex);
             for (const sec of assisting) {
               if (sec && sec.toLowerCase() !== primaryGroup.toLowerCase()) {
-                const prevSec = muscleSetCounts.get(sec) || { sets: 0, tonnage: 0 };
+                const prevSec = muscleSetCounts.get(sec) || {
+                  sets: 0,
+                  tonnage: 0,
+                  effectiveReps: 0,
+                  ratedSets: 0,
+                  totalSets: 0,
+                };
                 prevSec.sets += 0.5;
                 prevSec.tonnage += Math.round(setTonnage * 0.5);
+                prevSec.effectiveReps += Math.round(eRepsRes.effectiveReps * 0.5 * 10) / 10;
+                prevSec.totalSets += 0.5;
+                if (eRepsRes.isRated) {
+                  prevSec.ratedSets += 0.5;
+                }
                 muscleSetCounts.set(sec, prevSec);
               }
             }
@@ -353,21 +425,38 @@ export async function computeWeeklyWorkloadDeepDive(
     }
   }
 
+  const ratingCoveragePercent =
+    totalWeekWorkingSets > 0
+      ? Math.round((totalWeekRatedSets / totalWeekWorkingSets) * 100)
+      : 100;
+
   const muscleGroupVolumes: MuscleGroupVolumeReport[] = Array.from(
     muscleSetCounts.entries()
   )
     .map(([group, data]) => {
-      const { tier, targetMinSets, targetMaxSets } = classifyVolumeTier(data.sets);
+      const setsLandmark = classifyVolumeTier(data.sets);
+      const eRepsLandmark = classifyEffectiveRepsTier(data.effectiveReps);
       return {
         muscleGroup: group,
         workingSets: data.sets,
+        effectiveReps: Math.round(data.effectiveReps * 10) / 10,
+        effectiveRepsTier: eRepsLandmark.tier,
         totalTonnageKg: Math.round(data.tonnage),
-        tier,
-        targetMinSets,
-        targetMaxSets,
+        tier: setsLandmark.tier,
+        targetMinSets: setsLandmark.targetMinSets,
+        targetMaxSets: setsLandmark.targetMaxSets,
+        targetMinEffectiveReps: eRepsLandmark.targetMinReps,
+        targetMaxEffectiveReps: eRepsLandmark.targetMaxReps,
+        ratedSets: Math.round(data.ratedSets * 10) / 10,
+        totalSets: Math.round(data.totalSets * 10) / 10,
       };
     })
-    .sort((a, b) => b.workingSets - a.workingSets || a.muscleGroup.localeCompare(b.muscleGroup));
+    .sort(
+      (a, b) =>
+        b.effectiveReps - a.effectiveReps ||
+        b.workingSets - a.workingSets ||
+        a.muscleGroup.localeCompare(b.muscleGroup)
+    );
 
   // 6. Dual Intensity Analysis
   // 6A. Effort Intensity (RPE & Proximity to Failure)
@@ -492,6 +581,10 @@ export async function computeWeeklyWorkloadDeepDive(
     weekEndDate: sundayIso,
     totalTonnageKg: Math.round(totalWeekTonnage),
     totalWorkingSets: totalWeekWorkingSets,
+    totalEffectiveReps: Math.round(totalWeekEffectiveReps * 10) / 10,
+    totalRatedSets: totalWeekRatedSets,
+    totalUnratedSets: totalWeekUnratedSets,
+    ratingCoveragePercent,
     completedWorkoutsCount: weekWorkouts.length,
     dailyWorkloads,
     muscleGroupVolumes,

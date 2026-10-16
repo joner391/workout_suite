@@ -429,6 +429,9 @@ export function mapSetType(raw: string): SetType {
   if (norm === 'dc' || norm === 'doggcrapp') {
     return 'dc';
   }
+  if (norm === 'amrap') {
+    return 'amrap';
+  }
   // Legacy 'failure' sets map to 'working' set (with RPE 10 / RIR 0)
   if (norm === 'f' || norm === 'failure') {
     return 'working';
@@ -530,12 +533,13 @@ export function parseStrongCsv(text: string): CsvParseResult {
     const rir = rpe != null ? Math.max(0, 10 - rpe) : null;
 
     const normRawOrder = rawSetOrder.trim().toLowerCase();
-    const isFailureSet = normRawOrder === 'f' || normRawOrder === 'failure';
+    const setNotes = getCol(row, 'notes');
+    const isAmrap = normRawOrder === 'amrap' || (setNotes ? setNotes.toLowerCase().includes('amrap') : false);
+    const isFailureSet = normRawOrder === 'f' || normRawOrder === 'failure' || isAmrap;
     const effectiveRpe = rpe && !isNaN(rpe) ? rpe : (isFailureSet ? 10.0 : null);
     const effectiveRir = rir && !isNaN(rir) ? rir : (isFailureSet ? 0.0 : null);
 
     const setType = mapSetType(rawSetOrder);
-    const setNotes = getCol(row, 'notes');
 
     const setNumber = exercise.sets.length + 1;
 
@@ -674,12 +678,13 @@ export function parseHevyCsv(text: string): CsvParseResult {
 
     const rawSetType = getCol(row, 'set_type');
     const normSetType = rawSetType.trim().toLowerCase();
-    const isFailureSet = normSetType === 'f' || normSetType === 'failure';
+    const setNotes = getCol(row, 'exercise_notes');
+    const isAmrap = normSetType === 'amrap' || (setNotes ? setNotes.toLowerCase().includes('amrap') : false);
+    const isFailureSet = normSetType === 'f' || normSetType === 'failure' || isAmrap;
     const effectiveRpe = rpe && !isNaN(rpe) ? rpe : (isFailureSet ? 10.0 : null);
     const effectiveRir = rir && !isNaN(rir) ? rir : (isFailureSet ? 0.0 : null);
 
     const setType = mapSetType(rawSetType);
-    const setNotes = getCol(row, 'exercise_notes');
     const supersetId = getCol(row, 'superset_id') || null;
 
     const setNumber = exercise.sets.length + 1;
@@ -845,12 +850,13 @@ export function parseGenericCsv(
 
     const rawSetType = getCol(row, setTypeCol);
     const normSetType = rawSetType.trim().toLowerCase();
-    const isFailureSet = normSetType === 'f' || normSetType === 'failure';
+    const setNotes = getCol(row, notesCol);
+    const isAmrap = normSetType === 'amrap' || (setNotes ? setNotes.toLowerCase().includes('amrap') : false);
+    const isFailureSet = normSetType === 'f' || normSetType === 'failure' || isAmrap;
     const effectiveRpe = rpe && !isNaN(rpe) ? rpe : (isFailureSet ? 10.0 : null);
     const effectiveRir = rir && !isNaN(rir) ? rir : (isFailureSet ? 0.0 : null);
 
     const setType = mapSetType(rawSetType);
-    const setNotes = getCol(row, notesCol);
     const supersetId = getCol(row, supersetCol) || null;
 
     const setNumber = exercise.sets.length + 1;
@@ -1004,10 +1010,15 @@ export function parseLiftosaurCsv(text: string, options?: CsvParseOptions): CsvP
     const rpe = rawRpe ? parseFloat(rawRpe) : null;
     const rir = rpe != null ? Math.max(0, 10 - rpe) : null;
 
+    const setNotes = getCol(row, 'notes');
+    const rawIsAmrap = getCol(row, 'is_amrap').toLowerCase();
+    const isAmrap = rawIsAmrap === '1' || rawIsAmrap === 'true' || (setNotes ? setNotes.toLowerCase().includes('amrap') : false);
+    const effectiveRpe = rpe && !isNaN(rpe) ? rpe : (isAmrap ? 10.0 : null);
+    const effectiveRir = rir && !isNaN(rir) ? rir : (isAmrap ? 0.0 : null);
+
     const isWarmup = getCol(row, 'is_warmup_set') === '1';
     const setType: SetType = isWarmup ? 'warmup' : 'working';
 
-    const setNotes = getCol(row, 'notes');
     const setNumber = exercise.sets.length + 1;
 
     exercise.sets.push({
@@ -1018,8 +1029,8 @@ export function parseLiftosaurCsv(text: string, options?: CsvParseOptions): CsvP
       rawInputWeightKg,
       reps,
       repsRight: null,
-      rpe,
-      rir,
+      rpe: effectiveRpe,
+      rir: effectiveRir,
       setType,
       notes: setNotes || null,
       exerciseGroupId: null,
@@ -1158,9 +1169,11 @@ export function parseStrengthLogTrainingCsv(text: string, options?: CsvParseOpti
     const isWarmup = getCol(row, 'warmup') === 'true';
     const setType: SetType = isWarmup ? 'warmup' : 'working';
 
-    const rpe = isFail ? 10.0 : null;
-    const rir = isFail ? 0.0 : null;
     const setNotes = getCol(row, 'setcomment');
+    const isAmrap = setNotes ? setNotes.toLowerCase().includes('amrap') : false;
+    const isFailureSet = isFail || isAmrap;
+    const rpe = isFailureSet ? 10.0 : null;
+    const rir = isFailureSet ? 0.0 : null;
     const setNumber = exercise.sets.length + 1;
 
     exercise.sets.push({
@@ -1232,7 +1245,7 @@ export function parseStrengthLogBodyCompCsv(
       byDate.set(date, {
         id: `bm_imp_${date}`,
         date,
-        bodyweight: 0,
+        bodyweight: null,
         body_fat_manual: null,
         waist_cm: null,
         neck_cm: null,
@@ -1248,7 +1261,7 @@ export function parseStrengthLogBodyCompCsv(
 
     const m = byDate.get(date)!;
     if (type === 'bodyweight') {
-      m.bodyweight = val;
+      m.bodyweight = val > 0 ? val : null;
     } else if (type === 'body-comp') {
       m.body_fat_manual = val;
     } else if (type === 'waist') {

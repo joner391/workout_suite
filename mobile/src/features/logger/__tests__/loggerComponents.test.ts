@@ -185,8 +185,8 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
   });
 
   describe('3. SetRowComponent Logic & Interactions', () => {
-    test('cycling set types transitions through working -> warmup -> drop -> myorep -> dc -> working', () => {
-      const SET_TYPE_ORDER: SetType[] = ['working', 'warmup', 'drop', 'myorep', 'dc'];
+    test('cycling set types transitions through working -> warmup -> drop -> myorep -> dc -> amrap -> working', () => {
+      const SET_TYPE_ORDER: SetType[] = ['working', 'warmup', 'drop', 'myorep', 'dc', 'amrap'];
 
       let currentType: SetType = 'working';
       const getNextType = (curr: SetType): SetType => {
@@ -203,16 +203,19 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
       currentType = getNextType(currentType);
       expect(currentType).toBe('dc');
       currentType = getNextType(currentType);
+      expect(currentType).toBe('amrap');
+      currentType = getNextType(currentType);
       expect(currentType).toBe('working');
     });
 
-    test('badge labels correctly display Reg, Warm, Drop, Myo, DC', () => {
+    test('badge labels correctly display Reg, Warm, Drop, Myo, DC, AMRAP', () => {
       const SET_TYPE_LABELS: Record<SetType, string> = {
         working: 'Reg',
         warmup: 'Warm',
         drop: 'Drop',
         myorep: 'Myo',
         dc: 'DC',
+        amrap: 'AMRAP',
       };
 
       expect(SET_TYPE_LABELS['working']).toBe('Reg');
@@ -220,6 +223,7 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
       expect(SET_TYPE_LABELS['drop']).toBe('Drop');
       expect(SET_TYPE_LABELS['myorep']).toBe('Myo');
       expect(SET_TYPE_LABELS['dc']).toBe('DC');
+      expect(SET_TYPE_LABELS['amrap']).toBe('AMRAP');
     });
 
     test('rest timer durations by set type: drop=0s, myorep=10s, dc=30s', () => {
@@ -344,6 +348,18 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
       clearIntensity();
       expect(rpe).toBeNull();
       expect(rir).toBeNull();
+    });
+
+    test('AMRAP button sets 0 RIR and 10 RPE', () => {
+      let rpe: number | null = null;
+      let rir: number | null = null;
+      const setAmrap = () => {
+        rpe = 10.0;
+        rir = 0.0;
+      };
+      setAmrap();
+      expect(rpe).toBe(10.0);
+      expect(rir).toBe(0.0);
     });
 
     test('intensity inheritance: first set starts with null intensity, set 2 inherits previous set', async () => {

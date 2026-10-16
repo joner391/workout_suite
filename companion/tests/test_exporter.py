@@ -108,6 +108,41 @@ def test_calibrate_exercise_stream_success() -> None:
     assert param.cov_p11 > 0.0
 
 
+def test_calibrate_exercise_stream_unrated_working_sets() -> None:
+    workouts = [
+        Workout(
+            id="w-01",
+            date="2026-10-01",
+            name="Squat Day",
+            started_at="2026-10-01T10:00:00Z",
+            status="completed",
+        ),
+    ]
+    sets = [
+        WorkoutSet(
+            id="s-01",
+            workout_id="w-01",
+            exercise_id="squat",
+            set_number=1,
+            weight=100.0,
+            raw_input_weight=100.0,
+            reps=5,
+            rir=None,
+            rpe=None,
+            set_type="working",
+            created_at="2026-10-01T10:05:00Z",
+        ),
+    ]
+    # default_working_rir=None -> None (unrated sets discarded)
+    assert calibrate_exercise_stream("squat", "squat", workouts, sets, default_working_rir=None) is None
+
+    # default_working_rir=2.0 -> valid parameter
+    param = calibrate_exercise_stream("squat", "squat", workouts, sets, default_working_rir=2.0)
+    assert param is not None
+    assert param.exercise_id == "squat"
+    assert param.calibrated_1rm > 100.0
+
+
 def test_export_calibrated_parameters_conforms_to_schema(
     sample_payload: WorkoutExportPayload,
     calibrated_schema: Dict[str, Any],

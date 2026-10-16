@@ -315,7 +315,11 @@ def build_bodyweight_recovery_chart(
         ),
     )
 
-    if not body_metrics:
+    valid_metrics = [
+        m for m in sorted(body_metrics, key=lambda m: m.date)
+        if m.bodyweight is not None and m.bodyweight > 0
+    ]
+    if not valid_metrics:
         fig.add_annotation(
             text="No bodyweight logs recorded.",
             xref="paper",
@@ -328,9 +332,8 @@ def build_bodyweight_recovery_chart(
         fig.update_layout(**DARK_LAYOUT_TEMPLATE)
         return fig
 
-    sorted_metrics = sorted(body_metrics, key=lambda m: m.date)
-    dates = [m.date for m in sorted_metrics]
-    weights = [m.bodyweight for m in sorted_metrics]
+    dates = [m.date for m in valid_metrics]
+    weights = [m.bodyweight for m in valid_metrics]
 
     # Row 1: Bodyweight Scatter & Trend
     fig.add_trace(

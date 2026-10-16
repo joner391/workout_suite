@@ -589,10 +589,19 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
                                   s.set_type === 'drop' && styles.typeDrop,
                                   s.set_type === 'dc' && styles.typeDc,
                                   s.set_type === 'myorep' && styles.typeMyorep,
+                                  s.set_type === 'amrap' && styles.typeAmrap,
                                 ]}
                               >
                                 <Text style={styles.setTypeBadgeText}>
-                                  {s.set_type === 'dc' ? 'DC' : s.set_type === 'myorep' ? 'Myo' : s.set_type === 'drop' ? 'Drop' : 'Warm'}
+                                  {s.set_type === 'dc'
+                                    ? 'DC'
+                                    : s.set_type === 'myorep'
+                                    ? 'Myo'
+                                    : s.set_type === 'drop'
+                                    ? 'Drop'
+                                    : s.set_type === 'amrap'
+                                    ? 'AMRAP'
+                                    : 'Warm'}
                                 </Text>
                               </View>
                             )}
@@ -1028,6 +1037,9 @@ const styles = StyleSheet.create({
   },
   typeMyorep: {
     backgroundColor: '#8B5CF6',
+  },
+  typeAmrap: {
+    backgroundColor: '#7F1D1D',
   },
   setTypeBadgeText: {
     color: '#FFFFFF',

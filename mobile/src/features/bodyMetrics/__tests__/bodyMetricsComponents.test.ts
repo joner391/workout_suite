@@ -17,6 +17,8 @@ import {
 } from '../../../database/mocks';
 import {
   calculateNavyBodyFat,
+  calculateEstimatedLeanBodyMass,
+  calculateNavyELBM,
   calculateBodyweightRollingAverages,
 } from '../../../core/math/navyBodyFat';
 import {
@@ -75,7 +77,7 @@ describe('Body Metrics Screen & Anthropometry Management (Step 5.2)', () => {
       // Verify retrieval and conversion back to imperial display
       const fetched = await bodyMetricsRepo.getById('metric_1');
       expect(fetched).not.toBeNull();
-      expect(kgToLbs(fetched!.bodyweight)).toBeCloseTo(185.0, 1);
+      expect(kgToLbs(fetched!.bodyweight!)).toBeCloseTo(185.0, 1);
       expect(cmToInches(fetched!.waist_cm!)).toBeCloseTo(33.5, 1);
       expect(cmToInches(fetched!.neck_cm!)).toBeCloseTo(15.5, 1);
     });
@@ -276,10 +278,15 @@ describe('Body Metrics Screen & Anthropometry Management (Step 5.2)', () => {
       }
 
       const all = await bodyMetricsRepo.getAll();
-      const weightSeries = all.map((m) => ({
-        date: m.date,
-        bodyweight: m.bodyweight,
-      }));
+      const weightSeries = all
+        .filter(
+          (m): m is BodyMetric & { bodyweight: number } =>
+            m.bodyweight != null && m.bodyweight > 0
+        )
+        .map((m) => ({
+          date: m.date,
+          bodyweight: m.bodyweight,
+        }));
 
       const rolling = calculateBodyweightRollingAverages(weightSeries);
       expect(rolling).toHaveLength(4);
@@ -312,6 +319,190 @@ describe('Body Metrics Screen & Anthropometry Management (Step 5.2)', () => {
 
       await bodyMetricsRepo.delete('metric_to_del');
       expect(await bodyMetricsRepo.getById('metric_to_del')).toBeNull();
+    });
+  });
+
+  describe('5. Estimated Lean Body Mass (eLBM) Tracking', () => {
+    test('computes live eLBM from user entered weight and Navy BF%', () => {
+      // Male: 82.5 kg, 178 cm, 82 cm waist, 38 cm neck -> 14.0% Navy BF
+      const bf = calculateNavyBodyFat({
+        gender: 'male',
+        heightCm: 178,
+        waistCm: 82,
+        neckCm: 38,
+      });
+      expect(bf).toBe(14.0);
+
+      const liveElbm = calculateEstimatedLeanBodyMass(82.5, bf!);
+      // 82.5 * (1 - 0.14) = 70.95 kg
+      expect(liveElbm).toBe(70.95);
+    });
+
+    test('derives eLBM from stored historical metrics', async () => {
+      const metric: BodyMetric = {
+        id: 'metric_navy_elbm',
+        date: '2026-10-15',
+        bodyweight: 84.0,
+        waist_cm: 83.0,
+        neck_cm: 38.5,
+        hip_cm: null,
+        bicep_cm: null,
+        chest_cm: null,
+        thigh_cm: null,
+        calf_cm: null,
+        navy_body_fat: 14.5,
+        body_fat_manual: null,
+      };
+
+      await bodyMetricsRepo.save(metric);
+
+      const all = await bodyMetricsRepo.getAll();
+      const latestMetricWithNavy = all.find(
+        (m) => m.navy_body_fat != null && m.navy_body_fat > 0
+      );
+      expect(latestMetricWithNavy).toBeDefined();
+
+      const elbmKg = calculateEstimatedLeanBodyMass(
+        latestMetricWithNavy!.bodyweight!,
+        latestMetricWithNavy!.navy_body_fat!
+      );
+      // 84.0 * (1 - 0.145) = 84.0 * 0.855 = 71.82 kg
+      expect(elbmKg).toBe(71.82);
+
+      // Verify display formatting in kg and lbs
+      expect(formatWeight(elbmKg!, 'kg')).toBe('71.8 kg');
+      expect(formatWeight(elbmKg!, 'lbs')).toBe('158.3 lbs');
+    });
+
+    test('handles absence of Navy BF gracefully with null eLBM', () => {
+      const elbm = calculateEstimatedLeanBodyMass(82.0, NaN);
+      expect(elbm).toBeNull();
+    });
+  });
+
+  describe('6. Last Observation Carried Forward (LOCF) Integration', () => {
+    test('forward-fills waist and weight when user logs only neck in a session', async () => {
+      await userProfileRepo.saveProfile({
+        id: 'profile_test',
+        gender: 'male',
+        birthdate: null,
+        height_cm: 178,
+        training_mentality: 'fury',
+        primary_goal: 'hypertrophy',
+        secondary_goals: null,
+        preferred_days_per_week: 4,
+        preferred_session_duration_mins: 60,
+        equipment_access: 'commercial_gym',
+        created_at: '2026-01-01',
+        updated_at: '2026-01-01',
+      });
+
+      // Session 1: Full measurement (80kg, 82cm waist, 38cm neck -> 14.0% BF, eLBM = 68.8kg)
+      await bodyMetricsRepo.save({
+        id: 'metric_s1',
+        date: '2026-10-01',
+        bodyweight: 80.0,
+        waist_cm: 82.0,
+        neck_cm: 38.0,
+        hip_cm: null,
+        bicep_cm: null,
+        chest_cm: null,
+        thigh_cm: null,
+        calf_cm: null,
+        navy_body_fat: null,
+        body_fat_manual: null,
+      });
+
+      const s1 = await bodyMetricsRepo.getById('metric_s1');
+      expect(s1!.navy_body_fat).toBe(14.0);
+
+      // Session 2: User only logs neck circumference (39.0 cm). Weight is omitted, waist is omitted.
+      await bodyMetricsRepo.save({
+        id: 'metric_s2',
+        date: '2026-10-08',
+        bodyweight: null,
+        waist_cm: null,
+        neck_cm: 39.0,
+        hip_cm: null,
+        bicep_cm: null,
+        chest_cm: null,
+        thigh_cm: null,
+        calf_cm: null,
+        navy_body_fat: null,
+        body_fat_manual: null,
+      });
+
+      const s2 = await bodyMetricsRepo.getById('metric_s2');
+      // Bodyweight carried forward from s1 (80.0 kg)
+      expect(s2!.bodyweight).toBe(80.0);
+      // Circumferences: waist was carried forward internally for Navy calculation
+      expect(s2!.navy_body_fat).not.toBeNull();
+      expect(s2!.navy_body_fat!).toBeLessThan(14.0);
+
+      // eLBM calculated with carried-forward weight and new Navy BF
+      const elbm2 = calculateEstimatedLeanBodyMass(s2!.bodyweight!, s2!.navy_body_fat!);
+      expect(elbm2).toBeGreaterThan(68.8);
+    });
+
+    test('historical logs forward-fill prior Navy BF for weight-only entries', async () => {
+      const history: BodyMetric[] = [
+        {
+          id: 'log_3',
+          date: '2026-10-03',
+          bodyweight: 81.5,
+          waist_cm: null,
+          neck_cm: null,
+          hip_cm: null,
+          bicep_cm: null,
+          chest_cm: null,
+          thigh_cm: null,
+          calf_cm: null,
+          navy_body_fat: null,
+          body_fat_manual: null,
+        },
+        {
+          id: 'log_2',
+          date: '2026-10-02',
+          bodyweight: 81.0,
+          waist_cm: null,
+          neck_cm: null,
+          hip_cm: null,
+          bicep_cm: null,
+          chest_cm: null,
+          thigh_cm: null,
+          calf_cm: null,
+          navy_body_fat: null,
+          body_fat_manual: null,
+        },
+        {
+          id: 'log_1',
+          date: '2026-10-01',
+          bodyweight: 80.0,
+          waist_cm: 82.0,
+          neck_cm: 38.0,
+          hip_cm: null,
+          bicep_cm: null,
+          chest_cm: null,
+          thigh_cm: null,
+          calf_cm: null,
+          navy_body_fat: 14.0,
+          body_fat_manual: null,
+        },
+      ];
+
+      // Simulated newest-first map in BodyMetricsScreen
+      const effectiveRowBf = (index: number) =>
+        history[index].navy_body_fat ??
+        history.slice(index + 1).find((prev) => prev.navy_body_fat != null && prev.navy_body_fat > 0)?.navy_body_fat ??
+        null;
+
+      expect(effectiveRowBf(0)).toBe(14.0); // log_3 carries forward 14.0%
+      expect(effectiveRowBf(1)).toBe(14.0); // log_2 carries forward 14.0%
+      expect(effectiveRowBf(2)).toBe(14.0); // log_1 direct 14.0%
+
+      const elbmLog3 = calculateEstimatedLeanBodyMass(history[0].bodyweight!, effectiveRowBf(0)!);
+      // 81.5 * (1 - 0.14) = 70.09 kg
+      expect(elbmLog3).toBe(70.09);
     });
   });
 });

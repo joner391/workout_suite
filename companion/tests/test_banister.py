@@ -17,7 +17,11 @@ from src.models.fatigue_banister import (
     DEFAULT_K1,
     DEFAULT_K2,
     DEFAULT_TAU1_DAYS,
+    EXERCISE_SATURATION_KAPPA,
+    MAX_DAILY_IMPULSE,
     DailyPreparedness,
+    calculate_hypertrophic_effective_reps,
+    calculate_readiness_score,
     calculate_set_stimulus,
     compute_daily_banister_series,
 )
@@ -225,16 +229,17 @@ def test_banister_single_workout_impulse_response() -> None:
     day1 = series[0]
     assert day1.stimulus > 4.0
     # On day 1: k2 * Fatigue > k1 * Fitness -> Net Preparedness is negative
-    assert day1.fatigue > 4.0
-    assert day1.fitness > 4.0
+    assert day1.fatigue > 0.0
+    assert day1.fitness > 0.0
     assert day1.preparedness < 0.0  # Acute fatigue dip
 
     # By Day 12-16: Fatigue has decayed substantially faster than Fitness
     day14 = series[13]
     assert day14.fatigue < day1.fatigue * 0.35  # ~e^(-13/11) ~ 0.30
     assert day14.fitness > day1.fitness * 0.70  # ~e^(-13/42) ~ 0.73
-    # Supercompensation: Preparedness becomes positive!
-    assert day14.preparedness > 0.0
+    # Supercompensation: Preparedness rebounds into positive territory as fatigue clears
+    day30 = series[29]
+    assert day30.preparedness > 0.0
 
 
 def test_banister_surplus_accelerates_preparedness_recovery() -> None:
@@ -392,3 +397,222 @@ def test_sample_workout_export_banister_pipeline() -> None:
         "OVERREACHING",
         "MAINTENANCE",
     ]
+
+
+# ============================================================================
+# 6. Default Working RPE for Unrated Sets
+# ============================================================================
+
+def test_unrated_working_sets_banister_stimulus() -> None:
+    """Verifies that unrated working sets return 0 stimulus without fallback, but calculate stimulus when fallback RPE is set."""
+    unrated_set = {
+        "reps": 8,
+        "weight": 100.0,
+        "set_type": "working",
+    }
+    warmup_set = {
+        "reps": 8,
+        "weight": 60.0,
+        "set_type": "warmup",
+    }
+
+    # Without default_working_rpe: unrated set returns 0 stimulus
+    assert calculate_set_stimulus(unrated_set, default_working_rpe=None) == 0.0
+
+    # Warmup set always returns 0 stimulus even with default_working_rpe
+    assert calculate_set_stimulus(warmup_set, default_working_rpe=8.0) == 0.0
+
+    # With default_working_rpe=8.0: returns valid positive stimulus
+    stim = calculate_set_stimulus(unrated_set, default_working_rpe=8.0)
+    assert stim > 0.0
+
+    # In full series
+    workouts = [
+        Workout(id="w-01", date="2026-10-01", name="Leg Day", started_at="2026-10-01T10:00:00Z", status="completed")
+    ]
+    sets = [
+        WorkoutSet(
+            id="s-01",
+            workout_id="w-01",
+            exercise_id="squat",
+            set_number=1,
+            weight=120.0,
+            raw_input_weight=120.0,
+            reps=6,
+            set_type="working",
+            created_at="2026-10-01T10:05:00Z",
+        )
+    ]
+    series_no_fallback = compute_daily_banister_series(workouts, sets, default_working_rpe=None)
+    assert len(series_no_fallback) == 1
+    assert series_no_fallback[0].stimulus == 0.0
+
+    series_with_fallback = compute_daily_banister_series(workouts, sets, default_working_rpe=8.0)
+    assert len(series_with_fallback) == 1
+    assert series_with_fallback[0].stimulus > 0.0
+
+
+def test_amrap_sets_banister_maximum_stimulus() -> None:
+    """Verifies that AMRAP sets are treated as RPE 10.0 (maximum 2.0 exertion scalar)."""
+    amrap_set = {
+        "reps": 10,
+        "weight": 100.0,
+        "set_type": "working",
+        "notes": "AMRAP set",
+    }
+    # Evaluated at RPE 10 even without default_working_rpe
+    stim_amrap = calculate_set_stimulus(amrap_set, known_1rm=120.0, default_working_rpe=None)
+    # At RPE 10: exertion_scalar = 1.0 + (10 - 7)/3 = 2.0; intensity_ratio = 100/120 = 0.8333 -> 1.6667
+    assert stim_amrap == pytest.approx(2.0 * (100.0 / 120.0), rel=1e-3)
+
+
+def test_calculate_hypertrophic_effective_reps() -> None:
+    """Verifies that hypertrophic effective reps match physiological model specifications."""
+    # Warmup yields 0.0
+    warmup_set = {"reps": 10, "weight": 60.0, "set_type": "warmup", "rpe": 10.0}
+    assert calculate_hypertrophic_effective_reps(warmup_set) == 0.0
+
+    # Unrated working set yields 0.0
+    unrated_set = {"reps": 10, "weight": 80.0, "set_type": "working"}
+    assert calculate_hypertrophic_effective_reps(unrated_set) == 0.0
+
+    # AMRAP yields min(reps, 5) even without RPE/RIR
+    amrap_set = {"reps": 8, "weight": 90.0, "set_type": "amrap"}
+    assert calculate_hypertrophic_effective_reps(amrap_set) == 5.0
+
+    amrap_low_reps = {"reps": 3, "weight": 110.0, "set_type": "amrap"}
+    assert calculate_hypertrophic_effective_reps(amrap_low_reps) == 3.0
+
+    # Regular set at 2 RIR -> 5 - 2 = 3 eReps
+    set_2rir = {"reps": 10, "weight": 80.0, "set_type": "working", "rir": 2.0}
+    assert calculate_hypertrophic_effective_reps(set_2rir) == 3.0
+
+    # Regular set at RPE 8.0 -> 2 RIR -> 3 eReps
+    set_rpe8 = {"reps": 10, "weight": 80.0, "set_type": "working", "rpe": 8.0}
+    assert calculate_hypertrophic_effective_reps(set_rpe8) == 3.0
+
+    # Heavy load (>= 85% 1RM)
+    heavy_set = {"reps": 4, "weight": 100.0, "set_type": "working", "rir": 2.0}
+    # 100 / 110 = 90.9% 1RM >= 85% -> all 4 reps effective
+    assert calculate_hypertrophic_effective_reps(heavy_set, known_1rm=110.0) == 4.0
+
+
+# ============================================================================
+# 7. Diminishing Returns per Exercise & Session Saturation
+# ============================================================================
+
+def test_diminishing_returns_per_exercise_and_session() -> None:
+    """Verifies that 20 sets of an exercise saturate per movement (kappa_ex = 4.0)
+
+    and session totals do not exceed MAX_DAILY_IMPULSE (100.0).
+    """
+    workouts = [
+        Workout(id="w-01", date="2026-10-01", name="Marathon Session", started_at="2026-10-01T10:00:00Z", status="completed")
+    ]
+    # 20 hard sets of squat at RPE 10 (stimulus ~1.6 per set => ~32 raw stimulus)
+    sets = [
+        WorkoutSet(
+            id=f"s-{i}",
+            workout_id="w-01",
+            exercise_id="squat",
+            set_number=i,
+            weight=100.0,
+            raw_input_weight=100.0,
+            reps=5,
+            rpe=10.0,
+            set_type="working",
+            created_at=f"2026-10-01T10:{i:02d}:00Z",
+        )
+        for i in range(1, 21)
+    ]
+
+    series = compute_daily_banister_series(workouts, sets, known_1rms={"squat": 100.0})
+    assert len(series) == 1
+    day_state = series[0]
+
+    # Effective exercise stimulus must saturate near kappa_ex = 4.0:
+    # S_ex = 4.0 * (1 - exp(-32/4)) = 4.0 * (1 - exp(-8)) ~ 3.9986
+    # S_session_fitness = 100 * (1 - exp(-3.9986 / 10.0)) ~ 32.96 AU
+    assert day_state.stimulus < 40.0
+    assert day_state.stimulus <= MAX_DAILY_IMPULSE
+
+
+# ============================================================================
+# 8. Scale-Invariant Unit-Gain EWMA Boundedness [0, 100]
+# ============================================================================
+
+def test_unit_gain_ewma_boundedness_over_multi_year_simulation() -> None:
+    """Mathematical Proof of Scale Invariance:
+
+    Even with maximum daily impulse (100 AU) applied every single day for 365 days,
+    both Fitness P(t) and Fatigue F(t) are strictly bounded <= 100.0 for all t.
+    """
+    base_date = date(2025, 1, 1)
+    workouts = []
+    sets = []
+
+    # 365 consecutive days of training
+    for day in range(365):
+        d_str = (base_date + timedelta(days=day)).isoformat()
+        wid = f"w-{day}"
+        workouts.append(Workout(id=wid, date=d_str, name="Daily Grind", started_at=f"{d_str}T10:00:00Z", status="completed"))
+        # 10 heavy sets daily
+        for s_idx in range(10):
+            sets.append(
+                WorkoutSet(
+                    id=f"s-{day}-{s_idx}",
+                    workout_id=wid,
+                    exercise_id="deadlift",
+                    set_number=s_idx + 1,
+                    weight=200.0,
+                    raw_input_weight=200.0,
+                    reps=5,
+                    rpe=10.0,
+                    set_type="working",
+                    created_at=f"{d_str}T10:00:00Z",
+                )
+            )
+
+    series = compute_daily_banister_series(workouts, sets, known_1rms={"deadlift": 200.0})
+    assert len(series) == 365
+
+    # Check bounds across entire timeline
+    for pt in series:
+        assert 0.0 <= pt.fitness <= 100.0
+        assert 0.0 <= pt.fatigue <= 100.0
+        assert -100.0 <= pt.preparedness <= 100.0
+
+
+# ============================================================================
+# 9. Normalized Readiness Score via Logistic Z-Transform
+# ============================================================================
+
+def test_readiness_score_logistic_z_transform() -> None:
+    """Verifies that Readiness score behaves as a well-calibrated [0, 100] index."""
+    # 1. Neutral baseline (prep = 0.0) -> exactly 50.0
+    assert calculate_readiness_score(preparedness=0.0, fitness=20.0) == 50.0
+
+    # 2. High Fatigue / Heavy Deload Needed (prep = -20.0) -> < 35.0
+    fatigued_score = calculate_readiness_score(preparedness=-20.0, fitness=20.0)
+    assert fatigued_score < 35.0
+
+    # 3. Peak Readiness / Optimal Overload (prep = +8.0) -> > 60.0
+    fresh_score = calculate_readiness_score(preparedness=8.0, fitness=20.0)
+    assert fresh_score > 60.0
+
+    # 4. Verified on DailyPreparedness object post-init
+    dp = DailyPreparedness(
+        date="2026-10-15",
+        stimulus=25.0,
+        fitness=30.0,
+        fatigue=10.0,
+        preparedness=15.0,
+        tau2=11.0,
+        energy_balance="MAINTENANCE",
+    )
+    assert dp.readiness is not None
+    assert dp.readiness > 60.0
+
+
+
+
