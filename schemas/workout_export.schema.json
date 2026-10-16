@@ -19,7 +19,8 @@
     "body_metrics",
     "user_settings",
     "user_profiles",
-    "calibrated_params"
+    "calibrated_params",
+    "pain_reports"
   ],
   "additionalProperties": false,
   "properties": {
@@ -122,6 +123,13 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/CalibratedParam"
+      }
+    },
+    "pain_reports": {
+      "description": "Collection of in-gym or post-workout pain and discomfort reports.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PainReport"
       }
     }
   },
@@ -791,6 +799,56 @@
           "type": "string",
           "format": "date-time",
           "description": "ISO 8601 UTC timestamp recording when calibration was computed."
+        }
+      }
+    },
+    "PainReport": {
+      "type": "object",
+      "required": [
+        "id",
+        "workout_id",
+        "exercise_id",
+        "pain_type",
+        "severity",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the pain report."
+        },
+        "workout_id": {
+          "type": "string",
+          "description": "Foreign key referencing workouts.id."
+        },
+        "exercise_id": {
+          "type": "string",
+          "description": "Foreign key referencing exercises.id."
+        },
+        "set_id": {
+          "type": ["string", "null"],
+          "description": "Optional foreign key referencing workout_sets.id where discomfort occurred."
+        },
+        "pain_type": {
+          "type": "string",
+          "enum": ["joint", "muscle"],
+          "description": "Clinical category: joint (articular/tendon) vs muscle (belly strain)."
+        },
+        "severity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Self-reported pain intensity on 1-10 numerical scale."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Optional notes describing symptoms or sensations."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp recording when pain was reported."
         }
       }
     }

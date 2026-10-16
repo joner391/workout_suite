@@ -27,6 +27,7 @@ GearType = Literal[
 WorkoutStatus = Literal["in_progress", "completed", "discarded"]
 SetType = Literal["warmup", "working", "drop", "myorep", "dc", "amrap"]
 Gender = Literal["male", "female"]
+PainType = Literal["joint", "muscle"]
 TrainingMentality = Literal["fury", "precision", "get_out"]
 TrainingEnjoyment = Literal["enthusiast", "neutral", "minimalist"]
 IntensityStyle = Literal[
@@ -519,6 +520,33 @@ class CalibratedParam(StrictSchemaModel):
     )
 
 
+class PainReport(StrictSchemaModel):
+    """In-gym or post-workout pain and discomfort report."""
+
+    id: str = Field(description="Unique identifier for the pain report.")
+    workout_id: str = Field(description="Foreign key referencing workouts.id.")
+    exercise_id: str = Field(description="Foreign key referencing exercises.id.")
+    set_id: Optional[str] = Field(
+        default=None,
+        description="Optional foreign key referencing workout_sets.id where discomfort occurred.",
+    )
+    pain_type: PainType = Field(
+        description="Clinical category: joint (articular/tendon) vs muscle (belly strain).",
+    )
+    severity: int = Field(
+        ge=1,
+        le=10,
+        description="Self-reported pain intensity on 1-10 numerical scale.",
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="Optional notes describing symptoms or sensations.",
+    )
+    created_at: str = Field(
+        description="ISO 8601 UTC timestamp recording when pain was reported.",
+    )
+
+
 class WorkoutExportPayload(StrictSchemaModel):
     """Complete Workout Suite relational export payload."""
 
@@ -540,6 +568,7 @@ class WorkoutExportPayload(StrictSchemaModel):
     user_settings: Dict[str, str] = Field(default_factory=dict)
     user_profiles: List[UserProfile] = Field(default_factory=list)
     calibrated_params: List[CalibratedParam] = Field(default_factory=list)
+    pain_reports: List[PainReport] = Field(default_factory=list)
 
 
 # ============================================================================

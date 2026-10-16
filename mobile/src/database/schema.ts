@@ -2,7 +2,7 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { DEFAULT_EXERCISES, DEFAULT_GEAR } from './seeds/defaultExercises';
 
 export const DATABASE_NAME = 'workout_suite.db';
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 /**
  * Minimal abstraction matching the modern expo-sqlite async interface.
@@ -186,12 +186,26 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     updated_at TEXT NOT NULL
 );
 
+-- Pain & Discomfort Reports (logged in-gym or post-workout)
+CREATE TABLE IF NOT EXISTS pain_reports (
+    id TEXT PRIMARY KEY,
+    workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+    exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+    set_id TEXT REFERENCES workout_sets(id) ON DELETE SET NULL,
+    pain_type TEXT NOT NULL,
+    severity INTEGER NOT NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL
+);
+
 -- Indices for rapid query performance and ghost set lookups
 CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_id ON workout_sets(workout_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sets_ex_created ON workout_sets(exercise_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_workouts_status ON workouts(status);
 CREATE INDEX IF NOT EXISTS idx_workouts_date ON workouts(date);
 CREATE INDEX IF NOT EXISTS idx_exercises_parent_id ON exercises(parent_exercise_id);
+CREATE INDEX IF NOT EXISTS idx_pain_reports_workout_id ON pain_reports(workout_id);
+CREATE INDEX IF NOT EXISTS idx_pain_reports_exercise_id ON pain_reports(exercise_id);
 `;
 
 /**
@@ -327,6 +341,33 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
       } catch {
         // Index may already exist
       }
+      await db.execAsync('PRAGMA user_version = 3;');
+      await db.execAsync('COMMIT;');
+      currentVersion = 3;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  if (currentVersion < 4) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      // Migration v3 -> v4: Create pain_reports table and indexes
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS pain_reports (
+            id TEXT PRIMARY KEY,
+            workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+            exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+            set_id TEXT REFERENCES workout_sets(id) ON DELETE SET NULL,
+            pain_type TEXT NOT NULL,
+            severity INTEGER NOT NULL,
+            notes TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_pain_reports_workout_id ON pain_reports(workout_id);
+        CREATE INDEX IF NOT EXISTS idx_pain_reports_exercise_id ON pain_reports(exercise_id);
+      `);
       await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
       await db.execAsync('COMMIT;');
       currentVersion = CURRENT_SCHEMA_VERSION;
@@ -359,6 +400,7 @@ export async function getDatabase(dbName: string = DATABASE_NAME): Promise<SQLit
 export async function resetDatabase(db: ISQLiteDatabase): Promise<void> {
   await db.execAsync('PRAGMA foreign_keys = OFF;');
   const tables = [
+    'pain_reports',
     'user_profiles',
     'user_settings',
     'calibrated_params',

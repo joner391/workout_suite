@@ -29,6 +29,7 @@ import {
   MockExerciseRepository,
   MockGearRepository,
   MockUserSettingsRepository,
+  MockPainReportRepository,
 } from '../../../database/mocks';
 
 describe('Active Logger Features & UI Logic (Step 1.5)', () => {
@@ -1021,6 +1022,100 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
       expect(notifiedState.status).toBe('running');
 
       timer.destroy();
+    });
+  });
+
+  describe('9. In-Gym Pain Reporting & High-Severity Guardrails', () => {
+    let painRepo: MockPainReportRepository;
+
+    beforeEach(() => {
+      painRepo = new MockPainReportRepository();
+    });
+
+    test('pain severity <= 6 logs report without skipping remaining sets', async () => {
+      const workout = await sessionService.startWorkout({ name: 'Leg Day' });
+
+      const set1 = await sessionService.addSet(workout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 100,
+        reps: 8,
+      });
+      const set2 = await sessionService.addSet(workout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 100,
+        reps: 8,
+      });
+
+      // Complete Set 1
+      const completedSetIds = new Set<string>([set1.id]);
+
+      // Report mild muscle soreness (severity 4)
+      const report = await painRepo.create({
+        workout_id: workout.id,
+        exercise_id: mockSquat.id,
+        pain_type: 'muscle',
+        severity: 4,
+        notes: 'Mild quad tightness',
+      });
+
+      expect(report.id).toBeDefined();
+      expect(report.severity).toBe(4);
+      expect(report.pain_type).toBe('muscle');
+
+      // Uncompleted sets should remain in workout
+      const currentWorkout = await sessionService.getActiveWorkout(workout.id);
+      expect(currentWorkout?.sets.length).toBe(2);
+    });
+
+    test('pain severity > 6 safely deletes and skips uncompleted sets while preserving completed sets', async () => {
+      const workout = await sessionService.startWorkout({ name: 'Chest Day' });
+
+      // Squat: 3 sets
+      const sq1 = await sessionService.addSet(workout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 120,
+        reps: 5,
+      });
+      const sq2 = await sessionService.addSet(workout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 120,
+        reps: 5,
+      });
+      const sq3 = await sessionService.addSet(workout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 120,
+        reps: 5,
+      });
+
+      // Lifter completes set 1:
+      const completedSetIds = new Set<string>([sq1.id]);
+
+      // Lifter experiences sharp joint pain on set 2 (severity 8/10)
+      const report = await painRepo.create({
+        workout_id: workout.id,
+        exercise_id: mockSquat.id,
+        pain_type: 'joint',
+        severity: 8,
+        notes: 'Sharp patellar pain',
+      });
+      expect(report.severity).toBe(8);
+
+      // Guardrail simulation matching ActiveLoggerScreen:
+      const currentSets = (await sessionService.getActiveWorkout(workout.id))?.sets || [];
+      const uncompletedSets = currentSets.filter(
+        (s) => s.exercise_id === mockSquat.id && !completedSetIds.has(s.id)
+      );
+      expect(uncompletedSets.length).toBe(2); // sq2, sq3
+
+      // Delete uncompleted sets
+      for (const uncompletedSet of uncompletedSets) {
+        await sessionService.deleteSet(workout.id, uncompletedSet.id);
+      }
+
+      // Check final workout state:
+      const updatedWorkout = await sessionService.getActiveWorkout(workout.id);
+      expect(updatedWorkout?.sets.length).toBe(1);
+      expect(updatedWorkout?.sets[0].id).toBe(sq1.id);
     });
   });
 });

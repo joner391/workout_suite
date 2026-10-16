@@ -40,6 +40,7 @@ def calibrate_exercise_stream(
     workouts: Sequence[Workout],
     sets: Sequence[WorkoutSet],
     default_working_rir: Optional[float] = 2.0,
+    max_session_sets: int = 1,
 ) -> Optional[CalibratedParameter]:
     """Runs the Adaptive1RMKalmanFilter on chronological sessions for a single exercise.
 
@@ -66,6 +67,7 @@ def calibrate_exercise_stream(
                 session_sets,
                 default_working_rir=default_working_rir,
                 session_date=w.date,
+                max_session_sets=max_session_sets,
             )
 
     if kf.state.step_count == 0:
@@ -88,6 +90,7 @@ def export_calibrated_parameters(
     payload: WorkoutExportPayload,
     target_exercise_ids: Optional[Sequence[str]] = None,
     default_working_rir: Optional[float] = 2.0,
+    max_session_sets: int = 1,
 ) -> CalibratedParametersEnvelope:
     """Calibrates all exercises present in the payload and returns the validated envelope."""
     exercise_map = {e.id: e for e in payload.exercises}
@@ -118,6 +121,7 @@ def export_calibrated_parameters(
             workouts=payload.workouts,
             sets=ex_sets,
             default_working_rir=default_working_rir,
+            max_session_sets=max_session_sets,
         )
         if param is not None:
             parameters.append(param)
@@ -135,6 +139,7 @@ def export_calibrated_parameters_file(
     input_path: Union[str, Path],
     output_path: Union[str, Path],
     default_working_rir: Optional[float] = 2.0,
+    max_session_sets: int = 1,
 ) -> CalibratedParametersEnvelope:
     """Reads a workout export JSON file, executes calibration, and writes calibrated_parameters.json."""
     in_file = Path(input_path)
@@ -144,7 +149,11 @@ def export_calibrated_parameters_file(
         raw_json = json.load(f)
 
     payload = WorkoutExportPayload.model_validate(raw_json)
-    envelope = export_calibrated_parameters(payload, default_working_rir=default_working_rir)
+    envelope = export_calibrated_parameters(
+        payload,
+        default_working_rir=default_working_rir,
+        max_session_sets=max_session_sets,
+    )
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
     with open(out_file, "w", encoding="utf-8") as f:

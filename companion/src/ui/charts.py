@@ -10,7 +10,7 @@ Implements Step 6.4:
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, List, Optional, Sequence, Tuple, Union
+from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import plotly.graph_objects as go  # type: ignore[import-untyped]
@@ -19,6 +19,7 @@ from plotly.subplots import make_subplots  # type: ignore[import-untyped]
 from src.ingestion.schemas import BodyMetric
 from src.models.fatigue_banister import DailyPreparedness
 from src.models.kalman_1rm import KalmanState
+from src.models.mesocycle_analyzer import MesocycleRecommendation
 from src.models.recovery_modifier import RecoveryState
 
 
@@ -36,11 +37,45 @@ DARK_LAYOUT_TEMPLATE = dict(
 )
 
 
+def _parse_observation(
+    obs: Any,
+) -> Tuple[str, float, float, int, bool, Optional[float], Optional[float]]:
+    """Normalizes raw observation into (date_str, weight, r_eff, reps, is_actual_1rm, rir, rpe)."""
+    if hasattr(obs, "date") and hasattr(obs, "weight") and hasattr(obs, "r_eff"):
+        date_str = str(obs.date)
+        weight = float(obs.weight)
+        r_eff = float(obs.r_eff)
+        reps = int(getattr(obs, "reps", 1 if r_eff <= 1.0 else 0))
+        is_actual = bool(getattr(obs, "is_actual_1rm", reps == 1 or r_eff <= 1.0))
+        rir = getattr(obs, "rir", None)
+        rpe = getattr(obs, "rpe", None)
+        return date_str, weight, r_eff, reps, is_actual, rir, rpe
+    if isinstance(obs, Mapping):
+        date_str = str(obs.get("date", ""))
+        weight = float(obs.get("weight", 0.0))
+        r_eff = float(obs.get("r_eff", 1.0))
+        reps = int(obs.get("reps", 1 if r_eff <= 1.0 else 0))
+        is_actual = bool(obs.get("is_actual_1rm", reps == 1 or r_eff <= 1.0))
+        rir = obs.get("rir")
+        rpe = obs.get("rpe")
+        return date_str, weight, r_eff, reps, is_actual, rir, rpe
+    if isinstance(obs, (tuple, list)):
+        date_str = str(obs[0])
+        weight = float(obs[1])
+        r_eff = float(obs[2])
+        reps = int(obs[3]) if len(obs) >= 4 else (1 if r_eff <= 1.0 else 0)
+        is_actual = bool(obs[4]) if len(obs) >= 5 else (reps == 1 or r_eff <= 1.0)
+        rir = float(obs[5]) if len(obs) >= 6 and obs[5] is not None else None
+        rpe = float(obs[6]) if len(obs) >= 7 and obs[6] is not None else None
+        return date_str, weight, r_eff, reps, is_actual, rir, rpe
+    raise TypeError(f"Unsupported observation format: {type(obs)}")
+
+
 def build_kalman_trajectory_chart(
     exercise_name: str,
     dates: Sequence[Union[str, date]],
     states: Sequence[KalmanState],
-    observations: Optional[Sequence[Tuple[Union[str, date], float, float]]] = None,
+    observations: Optional[Sequence[Any]] = None,
 ) -> go.Figure:
     """Builds interactive Kalman 1RM trajectory plot with +/- 1 SD uncertainty envelope.
 
@@ -48,7 +83,7 @@ def build_kalman_trajectory_chart(
         exercise_name: Display name of the lift.
         dates: List of dates corresponding to each Kalman update.
         states: Sequence of KalmanState instances.
-        observations: Optional list of tuples (date, weight, r_eff) for raw data points.
+        observations: Optional list of tuples/objects for raw data points (weight, r_eff, reps, etc.).
     """
     fig = go.Figure()
 
@@ -110,28 +145,81 @@ def build_kalman_trajectory_chart(
         )
     )
 
-    # 3. Raw Observed Sets (Submaximal Lombardi e1RM)
+    # 3. Raw Observed Sets (Separated into Actual 1RMs and Submaximal Working Sets)
     if observations:
-        obs_x = [str(o[0]) for o in observations]
-        # w * r_eff^0.10
-        obs_y = [round(o[1] * (o[2] ** 0.10), 1) for o in observations]
-        obs_custom = [f"{o[1]} kg × {o[2]:.1f} r_eff" for o in observations]
-        fig.add_trace(
-            go.Scatter(
-                x=obs_x,
-                y=obs_y,
-                mode="markers",
-                marker=dict(
-                    size=8,
-                    color="#F59E0B",
-                    symbol="diamond",
-                    line=dict(color="#18181B", width=1),
-                ),
-                name="Raw Logged Sets",
-                customdata=obs_custom,
-                hovertemplate="<b>%{x}</b><br>Set: %{customdata}<br>Submaximal e1RM: %{y:.1f} kg<extra></extra>",
+        actual_1rm_x: List[str] = []
+        actual_1rm_y: List[float] = []
+        actual_1rm_custom: List[str] = []
+
+        submax_x: List[str] = []
+        submax_y: List[float] = []
+        submax_custom: List[str] = []
+
+        for o in observations:
+            date_str, weight, r_eff, reps, is_actual, rir, rpe = _parse_observation(o)
+
+            if is_actual:
+                actual_1rm_x.append(date_str)
+                # Actual 1RM plotted at the exact load achieved on the 1-rep lift
+                actual_1rm_y.append(weight)
+
+                if rir is not None and rir == 0.0:
+                    effort_tag = "1 rep @ 10 RPE / 0 RIR (Maximal Attempt)"
+                elif rpe is not None and rpe == 10.0:
+                    effort_tag = "1 rep @ 10 RPE (Maximal Attempt)"
+                elif rir is not None and rir > 0.0:
+                    proj = round(weight * (r_eff ** 0.10), 1)
+                    effort_tag = f"1 rep @ RIR {rir:.1f} (Submaximal e1RM: {proj:.1f} kg)"
+                elif rpe is not None and rpe < 10.0:
+                    proj = round(weight * (r_eff ** 0.10), 1)
+                    effort_tag = f"1 rep @ RPE {rpe:.1f} (Submaximal e1RM: {proj:.1f} kg)"
+                else:
+                    effort_tag = "1 rep completed"
+
+                actual_1rm_custom.append(f"{weight:.1f} kg — {effort_tag}")
+            else:
+                submax_x.append(date_str)
+                submax_y.append(round(weight * (r_eff ** 0.10), 1))
+                rep_str = f"{reps} reps" if reps > 0 else f"{r_eff:.1f} r_eff"
+                submax_custom.append(f"{weight:.1f} kg × {rep_str} ({r_eff:.1f} r_eff)")
+
+        # 3a. Submaximal Sets Trace (Amber Diamonds)
+        if submax_x:
+            fig.add_trace(
+                go.Scatter(
+                    x=submax_x,
+                    y=submax_y,
+                    mode="markers",
+                    marker=dict(
+                        size=8,
+                        color="#F59E0B",
+                        symbol="diamond",
+                        line=dict(color="#18181B", width=1),
+                    ),
+                    name="Submaximal Sets (e1RM)",
+                    customdata=submax_custom,
+                    hovertemplate="<b>%{x}</b><br>Submaximal e1RM: %{y:.1f} kg<br>Set: %{customdata}<extra></extra>",
+                )
             )
-        )
+
+        # 3b. Actual 1RM Trace (Distinct High-Visibility Crimson Stars with Crisp White Outline)
+        if actual_1rm_x:
+            fig.add_trace(
+                go.Scatter(
+                    x=actual_1rm_x,
+                    y=actual_1rm_y,
+                    mode="markers",
+                    marker=dict(
+                        size=15,
+                        color="#EF4444",
+                        symbol="star",
+                        line=dict(color="#FFFFFF", width=1.5),
+                    ),
+                    name="Actual 1RM (Tested)",
+                    customdata=actual_1rm_custom,
+                    hovertemplate="<b>%{x}</b><br>🎯 <b>Actual 1RM: %{y:.1f} kg</b><br>%{customdata}<extra></extra>",
+                )
+            )
 
     fig.update_layout(
         title=f"<b>{exercise_name}</b> — Adaptive 1RM Trajectory & Uncertainty",
@@ -396,3 +484,178 @@ def build_bodyweight_recovery_chart(
     fig.update_xaxes(gridcolor="#27272A")
     fig.update_yaxes(gridcolor="#27272A")
     return fig
+
+
+def build_mesocycle_inflection_chart(
+    recommendation: MesocycleRecommendation,
+) -> go.Figure:
+    """Builds 2-panel Mesocycle Survival & Fatigue Curve grouped by Week of Block.
+
+    - Panel 1 (Top): Marginal e1RM gain velocity (%/wk) bars (green/red) + trendline.
+    - Panel 2 (Bottom): Iso-load RPE drift and CUSUM systemic exhaustion curve.
+    - Shaded 90% Bayesian credible interval band marking the Optimal Deload Window.
+    """
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.12,
+        subplot_titles=(
+            "Marginal e1RM Gain Velocity (% / week)",
+            "Iso-Load RPE Drift & CUSUM Systemic Underperformance",
+        ),
+    )
+
+    if not recommendation.weekly_profile:
+        fig.add_annotation(
+            text="No historical mesocycle accumulation data available to plot.",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=14, color="#A1A1AA"),
+        )
+        fig.update_layout(**DARK_LAYOUT_TEMPLATE)
+        return fig
+
+    weeks = [p.week_index for p in recommendation.weekly_profile]
+    slopes = [p.e1rm_weekly_slope_pct for p in recommendation.weekly_profile]
+    gains = [p.mean_e1rm_pct_change for p in recommendation.weekly_profile]
+    drifts = [p.mean_rpe_drift for p in recommendation.weekly_profile]
+    cusums = [p.standardized_cusum_neg for p in recommendation.weekly_profile]
+    samples = [p.sample_count for p in recommendation.weekly_profile]
+
+    # Panel 1: Bar Chart of Marginal e1RM Velocity
+    bar_colors = ["#10B981" if s >= 0 else "#EF4444" for s in slopes]
+    fig.add_trace(
+        go.Bar(
+            x=weeks,
+            y=slopes,
+            marker=dict(color=bar_colors),
+            name="Marginal e1RM Velocity (%/wk)",
+            customdata=list(zip(gains, samples)),
+            hovertemplate=(
+                "<b>Week %{x}</b><br>"
+                "Velocity: %{y:+.2f}% / week<br>"
+                "Cumulative Gain: %{customdata[0]:+.2f}%<br>"
+                "Cycles Reaching Week: %{customdata[1]}<extra></extra>"
+            ),
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=weeks,
+            y=slopes,
+            mode="lines+markers",
+            line=dict(color="#34D399", width=2),
+            marker=dict(size=6, color="#A7F3D0"),
+            name="Velocity Trend",
+            hoverinfo="skip",
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_hline(
+        y=0.0,
+        line_dash="dash",
+        line_color="#71717A",
+        annotation_text="Adaptation Plateau (0.0%/wk)",
+        annotation_position="bottom right",
+        row=1,
+        col=1,
+    )
+
+    # Panel 2: Iso-Load RPE Drift & CUSUM Underperformance
+    fig.add_trace(
+        go.Scatter(
+            x=weeks,
+            y=drifts,
+            mode="lines+markers",
+            line=dict(color="#F59E0B", width=2.5),
+            marker=dict(size=7, color="#FCD34D"),
+            name="Iso-Load RPE Drift",
+            hovertemplate="<b>Week %{x}</b><br>RPE Drift: %{y:+.2f} RPE<extra></extra>",
+        ),
+        row=2,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=weeks,
+            y=cusums,
+            mode="lines+markers",
+            line=dict(color="#818CF8", width=2.5, dash="dot"),
+            marker=dict(size=7, color="#C7D2FE"),
+            name="CUSUM Exhaustion (C-)",
+            hovertemplate="<b>Week %{x}</b><br>CUSUM Negative Shift: %{y:.2f}<extra></extra>",
+        ),
+        row=2,
+        col=1,
+    )
+
+    fig.add_hline(
+        y=0.75,
+        line_dash="dot",
+        line_color="#F59E0B",
+        annotation_text="Fatigue Drift Threshold (+0.75 RPE)",
+        annotation_position="top right",
+        row=2,
+        col=1,
+    )
+
+    # 90% Bayesian Credible Interval Deload Window Shading
+    ci_low = recommendation.ci_lower_weeks
+    ci_high = recommendation.ci_upper_weeks
+    fig.add_vrect(
+        x0=ci_low,
+        x1=ci_high,
+        fillcolor="rgba(16, 185, 129, 0.12)",
+        line=dict(color="#10B981", dash="dash", width=1.5),
+        annotation_text="Optimal Deload Window (90% CI)",
+        annotation_position="top left",
+        annotation_font=dict(color="#10B981", size=11),
+    )
+
+    fig.add_vline(
+        x=recommendation.optimal_accumulation_weeks,
+        line_dash="solid",
+        line_color="#10B981",
+        line_width=2,
+        annotation_text=f"L_opt = {recommendation.optimal_accumulation_weeks:.1f} wks",
+        annotation_position="bottom left",
+        annotation_font=dict(color="#34D399", size=11),
+    )
+
+    if recommendation.deficit_adjusted_weeks != recommendation.optimal_accumulation_weeks:
+        fig.add_vline(
+            x=recommendation.deficit_adjusted_weeks,
+            line_dash="dot",
+            line_color="#38BDF8",
+            line_width=1.5,
+            annotation_text=f"Deficit L_opt = {recommendation.deficit_adjusted_weeks:.1f} wks",
+            annotation_position="top left",
+            annotation_font=dict(color="#38BDF8", size=10),
+        )
+
+    fig.update_layout(
+        **DARK_LAYOUT_TEMPLATE,
+        height=680,
+        showlegend=True,
+    )
+    fig.update_xaxes(
+        title_text="Week of Mesocycle (u)",
+        tickmode="linear",
+        tick0=1,
+        dtick=1,
+        gridcolor="#27272A",
+    )
+    fig.update_yaxes(title_text="e1RM Velocity (%/wk)", gridcolor="#27272A", row=1, col=1)
+    fig.update_yaxes(title_text="RPE Drift & CUSUM", gridcolor="#27272A", row=2, col=1)
+    return fig
+

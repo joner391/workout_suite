@@ -40,6 +40,7 @@ import { IExerciseRepository } from '../../domain/repositories/IExerciseReposito
 import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
 import { IProgramRepository } from '../../domain/repositories/IProgramRepository';
+import { IPainReportRepository } from '../../domain/repositories/IPainReportRepository';
 import { ActiveSessionService } from '../../services/activeSessionService';
 import { RestTimerService } from '../../services/restTimerService';
 import { ExerciseSubstitutionService } from '../../services/exerciseSubstitutionService';
@@ -53,6 +54,7 @@ import { SetRowComponent } from './SetRowComponent';
 import { RestTimerBanner, formatTimeRemaining } from './RestTimerBanner';
 import { PlateCalculatorModal } from './PlateCalculatorModal';
 import { ExerciseSubstitutionModal } from './ExerciseSubstitutionModal';
+import { PainReportModal } from './PainReportModal';
 import { CrashRecoveryDialog } from './CrashRecoveryDialog';
 import { SupersetBracketGroup } from './SupersetBracketGroup';
 import { ProgressionProposalBanner } from './ProgressionProposalBanner';
@@ -120,6 +122,7 @@ export interface ActiveLoggerScreenProps {
   gearRepo?: IGearRepository;
   userSettingsRepo?: IUserSettingsRepository;
   programRepo?: IProgramRepository;
+  painReportRepo?: IPainReportRepository;
   activeSessionService?: ActiveSessionService;
   restTimerService?: RestTimerService;
   exerciseSubstitutionService?: ExerciseSubstitutionService;
@@ -135,6 +138,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   gearRepo,
   userSettingsRepo,
   programRepo,
+  painReportRepo,
   activeSessionService: propSessionService,
   restTimerService: propTimerService,
   exerciseSubstitutionService: propSubService,
@@ -201,6 +205,16 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     visible: false,
     exercise: null,
   });
+
+  const [painModalTarget, setPainModalTarget] = useState<{
+    visible: boolean;
+    exercise: Exercise | null;
+  }>({
+    visible: false,
+    exercise: null,
+  });
+
+  const [painAlertBanner, setPainAlertBanner] = useState<string | null>(null);
 
   const [showAddExerciseModal, setShowAddExerciseModal] = useState<boolean>(false);
   const [showFullLibraryModal, setShowFullLibraryModal] = useState<boolean>(false);
@@ -711,6 +725,91 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     await loadWorkout(activeWorkout.id);
   };
 
+  // Open Pain Report Modal
+  const handleOpenPainReport = (exercise: Exercise) => {
+    setPainModalTarget({
+      visible: true,
+      exercise,
+    });
+  };
+
+  // Close Pain Report Modal
+  const handleClosePainReport = () => {
+    setPainModalTarget({
+      visible: false,
+      exercise: null,
+    });
+  };
+
+  // Submit Pain Report and Execute Guardrail Logic
+  const handleSubmitPainReport = async ({
+    painType,
+    severity,
+    notes,
+    shouldSkipRemainingSets,
+  }: {
+    painType: 'joint' | 'muscle';
+    severity: number;
+    notes?: string;
+    shouldSkipRemainingSets: boolean;
+  }) => {
+    if (!activeWorkout || !painModalTarget.exercise) return;
+    const targetExercise = painModalTarget.exercise;
+
+    // 1. Persist pain report to database if repository available
+    if (painReportRepo) {
+      await painReportRepo.create({
+        workout_id: activeWorkout.id,
+        exercise_id: targetExercise.id,
+        pain_type: painType,
+        severity,
+        notes,
+      });
+    }
+
+    setPainModalTarget({ visible: false, exercise: null });
+
+    // 2. If severity > 6, skip all remaining uncompleted sets for this exercise
+    if (shouldSkipRemainingSets) {
+      const uncompletedSets = sets.filter(
+        (s) => s.exercise_id === targetExercise.id && !completedSetIds.has(s.id)
+      );
+
+      for (const uncompletedSet of uncompletedSets) {
+        await sessionService.deleteSet(activeWorkout.id, uncompletedSet.id);
+      }
+
+      // Refresh workout sets
+      await loadWorkout(activeWorkout.id);
+
+      // Auto-advance accordion to next exercise with incomplete sets
+      const distinctExIds = Array.from(new Set(sets.map((s) => s.exercise_id)));
+      const currentIndex = distinctExIds.indexOf(targetExercise.id);
+      let nextExId: string | null = null;
+
+      for (let i = 1; i < distinctExIds.length; i++) {
+        const candidateId = distinctExIds[(currentIndex + i) % distinctExIds.length];
+        if (candidateId === targetExercise.id) continue;
+        const candidateSets = sets.filter(
+          (s) => s.exercise_id === candidateId && !completedSetIds.has(s.id)
+        );
+        if (candidateSets.length > 0) {
+          nextExId = candidateId;
+          break;
+        }
+      }
+
+      if (nextExId) {
+        setExpandedExerciseId(nextExId);
+      }
+
+      setPainAlertBanner(
+        `Skipped ${uncompletedSets.length} remaining set(s) on ${targetExercise.name} due to severe pain score (${severity}/10).`
+      );
+      setTimeout(() => setPainAlertBanner(null), 6000);
+    }
+  };
+
   // Add Exercise from Catalog
   const handleAddExerciseToWorkout = async (exercise: Exercise) => {
     if (!activeWorkout) return;
@@ -997,6 +1096,16 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               <Text style={styles.swapButtonText}>SWAP</Text>
             </TouchableOpacity>
 
+            {/* In-Gym Pain Report Action */}
+            <TouchableOpacity
+              testID={`report-pain-button-${exercise.id}`}
+              style={styles.painButton}
+              onPress={() => handleOpenPainReport(exercise)}
+              accessibilityLabel={`Report pain for ${exercise.name}`}
+            >
+              <Text style={styles.painButtonText}>🩹 PAIN</Text>
+            </TouchableOpacity>
+
             <Text
               style={[
                 styles.expandChevron,
@@ -1121,6 +1230,13 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         onAccept={handleAcceptProgressionProposal}
         onDismiss={handleDismissProgressionProposal}
       />
+
+      {/* Dynamic Pain Alert Banner */}
+      {painAlertBanner && (
+        <View testID="pain-alert-banner" style={styles.painAlertBanner}>
+          <Text style={styles.painAlertBannerText}>⚠️ {painAlertBanner}</Text>
+        </View>
+      )}
 
       {/* Main Exercise & Sets Scrollable List */}
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -1254,6 +1370,17 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           exerciseRepo={exerciseRepo}
           onApplySubstitution={handleApplySubstitution}
           onClose={() => setSubModalTarget({ visible: false, exercise: null })}
+        />
+      )}
+
+      {/* Pain & Discomfort Report Modal */}
+      {painModalTarget.visible && (
+        <PainReportModal
+          visible={painModalTarget.visible}
+          exercise={painModalTarget.exercise}
+          workoutId={activeWorkout?.id ?? ''}
+          onDismiss={handleClosePainReport}
+          onSubmit={handleSubmitPainReport}
         />
       )}
 
@@ -1753,6 +1880,37 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#D4D4D8',
+  },
+  painButton: {
+    backgroundColor: '#1E1B1B',
+    borderWidth: 1,
+    borderColor: '#7F1D1D',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    marginLeft: 4,
+  },
+  painButtonText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#F87171',
+  },
+  painAlertBanner: {
+    backgroundColor: '#450A0A',
+    borderWidth: 1,
+    borderColor: '#DC2626',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  painAlertBannerText: {
+    color: '#FEE2E2',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
   },
   tableHeaderRow: {
     flexDirection: 'row',

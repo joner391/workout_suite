@@ -176,13 +176,12 @@ def test_export_calibrated_parameters_file(calibrated_schema: Dict[str, Any]) ->
 
 
 def test_export_calibrated_parameters_on_dummy_data(calibrated_schema: Dict[str, Any]) -> None:
-    dummy_path = (
-        Path(__file__).resolve().parents[2]
-        / "dummy_data"
-        / "workout_suite_export_2026-10-15T21-13-03-987Z.json"
-    )
-    if not dummy_path.exists():
+    dummy_dir = Path(__file__).resolve().parents[2] / "dummy_data"
+    dummy_files = sorted(dummy_dir.glob("workout_suite_export_*.json"), reverse=True)
+    if not dummy_files:
         pytest.skip("dummy_data export not found")
+
+    dummy_path = dummy_files[0]
 
     with tempfile.TemporaryDirectory() as tmpdir:
         out_file = Path(tmpdir) / "calibrated_parameters.json"

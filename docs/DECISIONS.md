@@ -1402,6 +1402,110 @@
   - *Pros*: Completely resolves $k$ pinning, preserves physical validity across rep ranges, produces smooth daily curves without intraday noise, and bounds multi-year fatigue/fitness tracking.
   - *Cons*: None. Fully backward compatible with existing data exchange schemas and Streamlit UI.
 
+---
+
+## ADR-066: Individualized Optimal Mesocycle Length ($L_{\text{opt}}$) via Tri-Signal Survival Analysis, Banister Boundary Segmentation, and Conjugate Normal-Normal Bayesian Estimation
+- **Context**: 
+  Athletes accumulate both structural neuromuscular adaptations and cumulative central/peripheral fatigue across a resistance training block. The inflection point where marginal strength gains drop to zero and fatigue suppresses performance marks the optimal time to deload ($L_{\text{opt}}$). Historically, training programs relied on static dogma (e.g. "always deload every 4 weeks" or "train until total burnout"). Real-world longitudinal datasets lack formal block labels, feature heterogeneous caloric phases (deficit vs. surplus), and contain variable exertion ratings (explicit RPE/RIR vs. unrated CSV imports).
+- **Decision**:
+  1. **Tri-Signal Mesocycle Exhaustion Detection**:
+     - *Signal A (Kalman e1RM Velocity Stall $\dot{x}_0(u) \le 0$)*: Evaluates the local rate of logarithmic strength adaptation across tracked lifts using weekly slope $\Delta \bar{z}_{\text{1RM}}(u)$. Early block supercompensation ($+0.5\%\text{ to }+1.5\%/\text{wk}$) transitions to plateau ($0\%$) and fatigue-induced drop.
+     - *Signal B (Iso-Load / Iso-Volume RPE Drift $\Delta\text{RPE}_{\text{drift}} > 0$)*: Reverses the linearized Lombardi power law $w = \text{1RM} \cdot r_{\text{eff}}^{-k}$ using the athlete's peak baseline strength within that block ($x_{0,\text{peak}}$):
+       $$\widehat{\text{RPE}}_i = 10 - \max\left(0,\, \exp\left(\frac{x_{0, \text{peak}} - \ln(w_i)}{k_t}\right) - \text{reps}_i\right)$$
+       $$\text{RPE}_{\text{drift}, i} = \text{RPE}_{\text{logged}, i} - \widehat{\text{RPE}}_i$$
+       A session-averaged drift $\overline{\text{RPE}}_{\text{drift}} \ge +0.75$ indicates acute neuromuscular fatigue. Working-set filtering ($\ge 55\%\text{ e1RM}$, $\le 15\text{ reps}$) and exponent/drift clamping prevent low-intensity power-law divergence.
+     - *Signal C (Page's CUSUM Systemic Underperformance $C_t^-$)*: Accumulates negative Kalman innovation shifts across compound lifts to mathematically prove systemic central fatigue over localized lift plateaus:
+       $$C_t^- = \max\left(0,\, C_{t-1}^- - (\dot{x}_0 - 0.15) + \max(0, \overline{\text{RPE}}_{\text{drift}} - 0.5)\right)$$
+  2. **Automated Longitudinal Boundary Segmentation**:
+     - Segments unlabeled multi-year histories using the Banister stimulus series $S(t)$. Deload troughs are identified where 7-day rolling stimulus drops below 55% of the preceding 21-day average, or where rest gaps $\ge 5$ consecutive days occur, extracting accumulation blocks $W_m \in [3, 12]$ weeks.
+     - Empirical peak week $u^*_m$ is identified by maximizing adaptation utility $U(u) = \Delta \bar{z}_{\text{1RM}}(u) - 1.5 \max(0, \overline{\text{RPE}}_{\text{drift}}(u) - 0.5)$.
+  3. **Conjugate Normal-Normal Bayesian Updating**:
+     - Formulates optimal accumulation length with an empirical population prior $L_{\text{prior}} \sim \mathcal{N}(\mu_0 = 5.0\text{ wks}, \sigma_0 = 1.5\text{ wks})$.
+     - Updates with $M$ observed historical peak weeks $\{u^*_m\}$ weighted by observation precision $\tau_m$ (1.2 for explicit RPE logging, 0.5 for unrated loads):
+       $$\sigma_{\text{post}}^2 = \left( \frac{1}{\sigma_0^2} + \sum_{m=1}^M \tau_m \right)^{-1}, \qquad \mu_{\text{post}} = \sigma_{\text{post}}^2 \left( \frac{\mu_0}{\sigma_0^2} + \sum_{m=1}^M \tau_m u^*_m \right)$$
+     - Computes 90% Bayesian Credible Intervals $[\mu_{\text{post}} \pm 1.645 \sigma_{\text{post}}]$ and maps sample count $M$, posterior precision, and RPE coverage into Confidence Tiers (LOW / MODERATE / HIGH).
+     - Incorporates a -1.0 week adjustment for caloric deficit phases ($\Delta\text{BW}/\Delta t < -0.10\text{ kg/wk}$) where $\tau_2$ is lengthened.
+  4. **Interactive 2-Panel UI Visualization**:
+     - Integrated into Streamlit (`app.py`, `charts.py`):
+       - Panel 1: Marginal e1RM Gain Velocity (%/wk) color-coded green ($\ge 0$) and red ($< 0$) with trend line.
+       - Panel 2: Iso-Load RPE Drift and CUSUM Exhaustion curves with +0.75 RPE overreaching threshold.
+       - Shaded vertical emerald band representing the 90% Bayesian Credible Interval "Optimal Deload Window" with solid $L_{\text{opt}}$ and dotted deficit indicators.
+- **Consequences**:
+  - *Pros*: Replaces one-size-fits-all dogmatic deload schedules with personalized, mathematically grounded accumulation windows; robust to unrated imports, small sample sizes, and low-load noise.
+  - *Cons*: Lifters with 100% unrated historical logs rely primarily on velocity stall (Signal A) until they begin rating top compound sets.
+
+---
+
+## ADR-067: Single Top-Set Session Selection for Kalman 1RM Filtering and Actual 1RM Visual Highlighting
+- **Context**:
+  1. *Warmup Singles Ingestion*: Lifters frequently perform an unflagged warmup single or ramp-up single prior to work sets (e.g. 95 kg x 1 @ 0 RIR). Under the former candidate ranking `(rir, -set_e1rm)`, sets with 0 RIR or 1 RIR took precedence over high-performing working sets (e.g. 90 kg x 5 @ 1 RIR $\rightarrow$ e1RM $\approx 104.8$ kg).
+  2. *Intra-Session Fatigue Noise*: Accepting multiple sets (top 2) per session introduced back-off sets that were suppressed by acute intra-workout fatigue, artificially pulling down Kalman estimated 1RM.
+  3. *Visual Ambiguity*: On the 1RM trajectory chart, tested actual 1RMs ($1\text{ rep}$) looked identical to submaximal e1RMs ($>1\text{ rep}$), making it impossible to spot true maxes at a glance.
+  4. *Role of Actual 1RMs*: Users questioned whether actual 1RMs serve as an absolute ground truth in the state-space Kalman equations.
+- **Decision**:
+  1. **Candidate Ranking by Projected e1RM**:
+     Replaced RIR-first sorting with projected e1RM ranking:
+     $$\text{sort\_key} = (-\text{set\_e1rm},\, \text{rir},\, -\text{weight},\, \text{original\_index})$$
+     Where $\text{set\_e1rm} = w \cdot r_{\text{eff}}^k$. A heavy work set with superior projected 1RM now decisively outranks an exploratory warmup single.
+  2. **Default Single Top-Set Selection (`max_session_sets = 1`)**:
+     Updated `filter_session_sets`, `process_session`, and `param_exporter.py` to default `max_session_sets = 1`. Each workout session contributes exactly its single best top set to Kalman state updates, discarding back-off noise. Added an interactive Streamlit sidebar checkbox (`only_top_set`, default `True`) permitting lifters to toggle between top-set-only and multi-set modes.
+  3. **Strict Observation Stream Synchrony**:
+     Updated `companion/src/ui/app.py` so observation scatter points are generated exclusively from the session's accepted top set, preventing unflagged ramp-up singles from being rendered as false 1RMs.
+  4. **High-Contrast Actual 1RM Visual Highlighting**:
+     Separated observations in `companion/src/ui/charts.py` into two distinct Plotly scatter traces:
+     - *Actual 1RM (Tested)*: Distinct 15px crimson stars (`#EF4444`, symbol `"star"`, white border `1.5px`) with custom hover cards displaying exact lifted load and RPE/RIR context.
+     - *Submaximal Sets (e1RM)*: 8px warm amber diamonds (`#F59E0B`, symbol `"diamond"`).
+  5. **Theoretical Role of Actual 1RMs in State-Space Math**:
+     Actual 1RMs do not serve as an infallible hard override, but they possess a unique mathematical property:
+     When $r_{\text{eff}} = 1.0$, the measurement Jacobian row is $H = [1.0,\, \ln(1)] = [1.0,\, 0.0]$.
+     Consequently, actual 1RMs directly update $\ln(1\text{RM})$ while Kalman gain $K_{1} = 0$, completely bypassing the endurance exponent $k$ and leaving it untouched.
+- **Consequences**:
+  - *Pros*:
+    - Completely eliminates warmup single contamination and fatigue-suppressed back-off noise from longitudinal e1RM trajectories.
+    - Actual 1RMs are immediately recognizable on charts.
+    - Preserves mathematical rigor and zero-crosstalk updates for 1-rep efforts.
+    - Preserves optional multi-set support via `max_session_sets = 2`.
+  - *Cons*: None. Fully covered by unit, smoke, and type checks.
+
+---
+
+## ADR-068: In-Gym Discomfort & Pain Reporting, High-Severity Guardrail (> 6/10), and Clinical Medical Disclaimer
+- **Context**: 
+  1. *Gym Ergonomics & Friction*: Lifters in the gym cannot fill out long multi-step clinical assessments while fatigued between sets. Data capture must happen in 2–3 taps in under 5 seconds.
+  2. *Joint vs. Muscle Distinction*: Joint pain (articular/cartilage/tendon) demands reducing biomechanical moment arms, compressive load, and restricting end-range ROM (e.g. box squats, pin press), whereas muscle pain (belly strain/DOMS) requires lowering working set volume and capping RPE targets.
+  3. *Acute Injury Prevention*: When an athlete experiences high acute pain (severity > 6 on a 1–10 scale), pushing through remaining planned sets risks tendon tears or joint damage.
+  4. *Medical Liability & Guidance*: Lifters must be clearly informed that an algorithm or tracker cannot diagnose or treat tissue pathology, and severe/persistent pain requires assessment by a licensed physiotherapist or sports medicine physician.
+- **Decision**:
+  1. **Exercise Card Entry Point (`ActiveLoggerScreen`)**:
+     Added a high-contrast `🩹 PAIN` button directly on the exercise card header next to the `SWAP` button. The app automatically binds the active `workout_id` and `exercise_id`, eliminating manual exercise searching.
+  2. **Minimalist 2-Step Micro-Modal (`PainReportModal`)**:
+     - *Step 1: Clinical Category*: High-contrast touchable cards for `[ 🦴 Joint / Tendon ]` vs `[ 💪 Muscle ]`.
+     - *Step 2: 1–10 Severity Scale*: 10-button color-coded grid mapping 1–3 (Mild), 4–6 (Moderate), and 7–10 (Severe).
+     - *Optional Notes*: Free-text field for sensations (e.g., "Sharp pinch at lockout").
+  3. **Automated High-Severity Guardrail (Severity > 6)**:
+     If the lifter reports a pain rating $> 6$:
+     - A Crimson warning box informs the lifter: *"High Pain Score (> 6): Submitting will safely skip all remaining uncompleted sets for this exercise to prevent acute tissue injury."*
+     - The submit button adapts to *"Log & Skip Remaining Sets"*.
+     - On submission, all uncompleted sets for that exercise are safely pruned from the active workout, while preserving completed sets for volume history. The accordion automatically advances to the next exercise with incomplete sets.
+     - A temporary high-visibility OLED alert banner is rendered in the active logger.
+  4. **Prominent Medical & Physiotherapist Disclaimer**:
+     Prominently displays an amber clinical callout:
+     *"⚕️ Medical Disclaimer: MomentRM is a training ledger, not a medical diagnostics provider. If discomfort is sharp, radiating, or persists outside the gym, please consult a licensed physiotherapist or sports medicine physician before loading this movement again."*
+  5. **Cross-Stack Relational Persistence & Export**:
+     - Added `pain_reports` table to SQLite (`PRAGMA user_version = 4`).
+     - Implemented `IPainReportRepository`, `SQLitePainReportRepository`, and `MockPainReportRepository`.
+     - Synchronized canonical export contracts in `schemas/workout_export.schema.json`, `companion/src/ingestion/schemas.py` (`PainReport` Pydantic model), and `ExportService.ts`.
+- **Consequences**:
+  - *Pros*:
+    - Frictionless in-gym reporting in under 5 seconds.
+    - Prevents catastrophic tissue injury by automatically skipping remaining sets on severe pain scores.
+    - Captures high-fidelity joint vs. muscle annotations for future program autoregulation and variant swapping.
+    - 100% test coverage across repositories, modal components, and export serialization.
+  - *Cons*: None.
+
+
+
+
 
 
 

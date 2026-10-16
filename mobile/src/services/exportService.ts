@@ -27,6 +27,7 @@ import {
   UserProfile,
   TrainingMentality,
   CalibratedParam,
+  PainReport,
 } from '../core/types';
 
 export const EXPORT_SCHEMA_VERSION = '1.0.0';
@@ -345,6 +346,28 @@ export class ExportService {
       calibrated_at: String(r.calibrated_at),
     }));
 
+    // 14. Pain Reports
+    let pain_reports: PainReport[] = [];
+    try {
+      const rawPainReports = await db.getAllAsync<any>(
+        `SELECT id, workout_id, exercise_id, set_id, pain_type, severity, notes, created_at
+         FROM pain_reports
+         ORDER BY created_at ASC;`
+      );
+      pain_reports = (rawPainReports || []).map((r) => ({
+        id: String(r.id),
+        workout_id: String(r.workout_id),
+        exercise_id: String(r.exercise_id),
+        set_id: r.set_id != null ? String(r.set_id) : null,
+        pain_type: r.pain_type,
+        severity: Number(r.severity),
+        notes: r.notes != null ? String(r.notes) : null,
+        created_at: String(r.created_at),
+      }));
+    } catch {
+      // Table might not exist in un-migrated databases
+    }
+
     return {
       version: EXPORT_SCHEMA_VERSION,
       exported_at: new Date().toISOString(),
@@ -361,6 +384,7 @@ export class ExportService {
       user_settings,
       user_profiles,
       calibrated_params,
+      pain_reports,
     };
   }
 

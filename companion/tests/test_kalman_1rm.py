@@ -91,40 +91,74 @@ def test_filter_session_sets_discards_warmups_and_failed() -> None:
     assert len(accepted) == 0
 
 
-def test_filter_session_sets_top_two_lowest_rir() -> None:
-    """Verifies that the 2 sets with the lowest RIR are accepted."""
+def test_filter_session_sets_selects_top_set() -> None:
+    """Verifies that by default only the session top set (highest projected e1RM) is accepted,
+
+    and that passing max_session_sets=2 preserves the top two sets chronologically.
+    """
     raw_sets = [
         {"reps": 5, "weight": 100.0, "rir": 3.0, "set_number": 1},
         {"reps": 5, "weight": 105.0, "rir": 2.0, "set_number": 2},
         {"reps": 5, "weight": 110.0, "rir": 1.0, "set_number": 3},
         {"reps": 3, "weight": 115.0, "rir": 0.0, "set_number": 4},
     ]
-    accepted = filter_session_sets(raw_sets)
-    assert len(accepted) == 2
-    # Lowest RIRs are set 4 (RIR 0) and set 3 (RIR 1)
-    # Order preserved chronologically: set 3, then set 4
-    assert accepted[0].set_number == 3
-    assert accepted[0].rir == 1.0
-    assert accepted[1].set_number == 4
-    assert accepted[1].rir == 0.0
+    # Set 3: 110 kg x 5 @ 1 RIR -> r_eff = 6 -> e1RM ≈ 128.1 kg
+    # Set 4: 115 kg x 3 @ 0 RIR -> r_eff = 3 -> e1RM ≈ 126.3 kg
+    accepted_top = filter_session_sets(raw_sets, max_session_sets=1)
+    assert len(accepted_top) == 1
+    assert accepted_top[0].set_number == 3
+    assert accepted_top[0].rir == 1.0
+
+    # With max_session_sets=2: accepts top 2 (sets 3 and 4), sorted chronologically
+    accepted_two = filter_session_sets(raw_sets, max_session_sets=2)
+    assert len(accepted_two) == 2
+    assert accepted_two[0].set_number == 3
+    assert accepted_two[1].set_number == 4
+
+
+def test_filter_session_sets_discards_warmup_single_in_favor_of_top_set() -> None:
+    """Proves that a last warmup single before a top work set is discarded.
+
+    In training, lifters often perform an unflagged warmup single (e.g. 95 kg x 1 @ 0 RIR).
+    Even though its RIR is 0.0, its projected e1RM (95 kg) is lower than the actual work set
+    (e.g. 90 kg x 5 @ 1 RIR -> e1RM ≈ 104.8 kg). The filter must select the work set.
+    """
+    raw_sets = [
+        {"reps": 5, "weight": 60.0, "set_type": "warmup", "set_number": 1},
+        {"reps": 3, "weight": 80.0, "set_type": "warmup", "set_number": 2},
+        {"reps": 1, "weight": 95.0, "rir": 0.0, "set_type": "working", "set_number": 3},  # Warmup single
+        {"reps": 5, "weight": 90.0, "rir": 1.0, "set_type": "working", "set_number": 4},  # Top work set
+        {"reps": 8, "weight": 82.5, "rir": 2.0, "set_type": "working", "set_number": 5},  # Back-off set
+    ]
+    accepted = filter_session_sets(raw_sets, max_session_sets=1)
+    assert len(accepted) == 1
+    # Must select set 4 (90 kg x 5), NOT the warmup single (set 3)
+    assert accepted[0].set_number == 4
+    assert accepted[0].weight == 90.0
+    assert accepted[0].reps == 5
 
 
 def test_filter_session_sets_tie_breaker_highest_load() -> None:
-    """When >2 sets share the lowest RIR, chooses the 2 sets with highest loads."""
+    """When multiple sets are evaluated, selects the top set by e1RM/load, or top 2 if requested."""
     raw_sets = [
         {"reps": 8, "weight": 90.0, "rir": 1.0, "set_number": 1},
         {"reps": 6, "weight": 105.0, "rir": 1.0, "set_number": 2},
         {"reps": 7, "weight": 100.0, "rir": 1.0, "set_number": 3},
         {"reps": 5, "weight": 95.0, "rir": 1.0, "set_number": 4},
     ]
-    accepted = filter_session_sets(raw_sets)
-    assert len(accepted) == 2
-    # Highest loads are 105 kg (set 2) and 100 kg (set 3)
-    # Chronological order preserved: set 2, then set 3
-    assert accepted[0].set_number == 2
-    assert accepted[0].weight == 105.0
-    assert accepted[1].set_number == 3
-    assert accepted[1].weight == 100.0
+    # Default (max_session_sets=1): highest e1RM is 105 kg x 6 (set 2)
+    accepted_single = filter_session_sets(raw_sets)
+    assert len(accepted_single) == 1
+    assert accepted_single[0].set_number == 2
+    assert accepted_single[0].weight == 105.0
+
+    # With max_session_sets=2: accepts sets 2 (105 kg) and 3 (100 kg), preserving chronological order
+    accepted_two = filter_session_sets(raw_sets, max_session_sets=2)
+    assert len(accepted_two) == 2
+    assert accepted_two[0].set_number == 2
+    assert accepted_two[0].weight == 105.0
+    assert accepted_two[1].set_number == 3
+    assert accepted_two[1].weight == 100.0
 
 
 def test_filter_session_sets_pydantic_models() -> None:
@@ -153,10 +187,16 @@ def test_filter_session_sets_pydantic_models() -> None:
         set_type="working",
         created_at="2026-10-15T10:05:00Z",
     )
+    # Default top set: ws1 has 140 * 6.5^0.085 ≈ 164.3 kg vs ws2 145 * 3.5^0.085 ≈ 161.3 kg
     accepted = filter_session_sets([ws1, ws2])
-    assert len(accepted) == 2
+    assert len(accepted) == 1
     assert accepted[0].weight == 140.0
-    assert accepted[1].weight == 145.0
+
+    # With max_session_sets=2: both accepted in order
+    accepted_two = filter_session_sets([ws1, ws2], max_session_sets=2)
+    assert len(accepted_two) == 2
+    assert accepted_two[0].weight == 140.0
+    assert accepted_two[1].weight == 145.0
 
 
 # ============================================================================
@@ -413,14 +453,18 @@ def test_unrated_working_sets_with_fallback_rir() -> None:
     # Without fallback: 0 sets accepted because RIR is missing
     assert filter_session_sets(unrated_sets, default_working_rir=None) == []
 
-    # With fallback RIR = 2.0: warmups discarded, top 2 working sets accepted with eff_rir = 2.0
+    # With fallback RIR = 2.0: warmups discarded, top working set accepted with eff_rir = 2.0
     accepted = filter_session_sets(unrated_sets, default_working_rir=2.0)
-    assert len(accepted) == 2
-    assert accepted[0].weight == 140.0
+    assert len(accepted) == 1
+    assert accepted[0].weight == 145.0
     assert accepted[0].rir == 2.0
     assert accepted[0].r_eff == 10.0  # 8 reps + 2.0 RIR
-    assert accepted[1].weight == 145.0
-    assert accepted[1].rir == 2.0
+
+    # With max_session_sets = 2: accepts top 2 working sets
+    accepted_two = filter_session_sets(unrated_sets, default_working_rir=2.0, max_session_sets=2)
+    assert len(accepted_two) == 2
+    assert accepted_two[0].weight == 140.0
+    assert accepted_two[1].weight == 145.0
 
     # Ensure Adaptive1RMKalmanFilter processes session with default_working_rir
     kf = Adaptive1RMKalmanFilter(exercise_id="squat", standard_lift_type="squat")
@@ -448,12 +492,18 @@ def test_amrap_sets_evaluated_as_zero_rir() -> None:
     assert accepted_strict[0].rir == 0.0
     assert accepted_strict[0].r_eff == 12.0  # 12 reps + 0 RIR
 
-    # With default_working_rir = 2.0: AMRAP set has 0 RIR, regular set has 2.0 RIR
+    # With default_working_rir = 2.0: default max_session_sets=1 selects top AMRAP set
     accepted_fb = filter_session_sets(session_sets, default_working_rir=2.0)
-    assert len(accepted_fb) == 2
-    amrap_item = next(s for s in accepted_fb if s.original_index == 1)
+    assert len(accepted_fb) == 1
+    assert accepted_fb[0].rir == 0.0
+    assert accepted_fb[0].reps == 12
+
+    # With max_session_sets = 2: accepts both AMRAP and regular sets
+    accepted_fb_two = filter_session_sets(session_sets, default_working_rir=2.0, max_session_sets=2)
+    assert len(accepted_fb_two) == 2
+    amrap_item = next(s for s in accepted_fb_two if s.original_index == 1)
     assert amrap_item.rir == 0.0
-    reg_item = next(s for s in accepted_fb if s.original_index == 0)
+    reg_item = next(s for s in accepted_fb_two if s.original_index == 0)
     assert reg_item.rir == 2.0
 
 
@@ -472,12 +522,19 @@ def test_intra_session_peak_reference_rejection() -> None:
         {"reps": 5, "weight": 95.0, "rir": 1.5, "set_number": 3},    # Working set (95% of max weight)
         {"reps": 3, "weight": 100.0, "rir": 1.0, "set_number": 4},   # Top set (100% of max weight)
     ]
+    # Default (max_session_sets=1): accepts top set (100 kg x 3)
     accepted = filter_session_sets(raw_sets)
-    assert len(accepted) == 2
-    assert accepted[0].set_number == 3
-    assert accepted[0].weight == 95.0
-    assert accepted[1].set_number == 4
-    assert accepted[1].weight == 100.0
+    assert len(accepted) == 1
+    assert accepted[0].set_number == 4
+    assert accepted[0].weight == 100.0
+
+    # With max_session_sets=2: accepts top 2 sets chronologically
+    accepted_two = filter_session_sets(raw_sets, max_session_sets=2)
+    assert len(accepted_two) == 2
+    assert accepted_two[0].set_number == 3
+    assert accepted_two[0].weight == 95.0
+    assert accepted_two[1].set_number == 4
+    assert accepted_two[1].weight == 100.0
 
 
 def test_intra_session_filter_with_historical_e1rm() -> None:

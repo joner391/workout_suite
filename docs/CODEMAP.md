@@ -71,7 +71,8 @@ c:/Programmering/Eget/Workout_suite/
 │       │       ├── IUserSettingsRepository.ts
 │       │       ├── IProgramRepository.ts
 │       │       ├── IUserProfileRepository.ts
-│       │       └── IBodyMetricsRepository.ts
+│       │       ├── IBodyMetricsRepository.ts
+│       │       └── IPainReportRepository.ts
 │       ├── services/
 │       │   ├── index.ts
 │       │   ├── activeSessionService.ts
@@ -114,6 +115,7 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   ├── CrashRecoveryDialog.tsx
 │       │   │   ├── SupersetBracketGroup.tsx
 │       │   │   ├── ProgressionProposalBanner.tsx
+│       │   │   ├── PainReportModal.tsx
 │       │   │   └── __tests__/
 │       │   │       ├── loggerComponents.test.ts
 │       │   │       └── progressionProposalBanner.test.ts
@@ -195,6 +197,7 @@ c:/Programmering/Eget/Workout_suite/
 │           │   ├── SQLiteProgramRepository.ts
 │           │   ├── SQLiteUserProfileRepository.ts
 │           │   ├── SQLiteBodyMetricsRepository.ts
+│           │   ├── SQLitePainReportRepository.ts
 │           │   └── __tests__/
 │           │       ├── SQLiteExerciseRepository.test.ts
 │           │       ├── SQLiteWorkoutRepository.test.ts
@@ -202,7 +205,8 @@ c:/Programmering/Eget/Workout_suite/
 │           │       ├── SQLiteUserSettingsRepository.test.ts
 │           │       ├── SQLiteProgramRepository.test.ts
 │           │       ├── SQLiteUserProfileRepository.test.ts
-│           │       └── SQLiteBodyMetricsRepository.test.ts
+│           │       ├── SQLiteBodyMetricsRepository.test.ts
+│           │       └── SQLitePainReportRepository.test.ts
 │           ├── mocks/
 │           │   ├── index.ts
 │           │   ├── MockExerciseRepository.ts
@@ -212,6 +216,7 @@ c:/Programmering/Eget/Workout_suite/
 │           │   ├── MockProgramRepository.ts
 │           │   ├── MockUserProfileRepository.ts
 │           │   ├── MockBodyMetricsRepository.ts
+│           │   ├── MockPainReportRepository.ts
 │           │   └── __tests__/
 │           │       ├── MockExerciseRepository.test.ts
 │           │       ├── MockWorkoutRepository.test.ts
@@ -219,7 +224,8 @@ c:/Programmering/Eget/Workout_suite/
 │           │       ├── MockUserSettingsRepository.test.ts
 │           │       ├── MockProgramRepository.test.ts
 │           │       ├── MockUserProfileRepository.test.ts
-│           │       └── MockBodyMetricsRepository.test.ts
+│           │       ├── MockBodyMetricsRepository.test.ts
+│           │       └── MockPainReportRepository.test.ts
 │           └── __tests__/
 │               ├── MockSQLiteDatabase.ts
 │               └── schema.test.ts
@@ -362,12 +368,12 @@ When code generation begins in subsequent phases, components must be placed into
   - `generator/programSynthesizer.ts` — Pure profile-driven program synthesizer mapping user demographics, schedule, exertion intensity, and equipment access to complete multi-day splits with antagonist supersets and progression rules.
   - `rules/progressionRuleEngine.ts` — Pure side-effect-free evaluator for declarative progression rules, supporting condition matching, priority sorting, DDP set-level proposals, and LP/DP/DDP presets.
   - `parsers/csvImportParser.ts` — Pure zero-dependency RFC 4180 CSV tokenizer and format auto-detector.
-  - `types/` — Shared domain types (Exercise, Set, SetType, Unit, RPE/RIR, ProgressionRule, UserProfile, StrengthStandard, LiftType, GearItem).
+  - `types/` — Shared domain types (Exercise, Set, SetType, Unit, RPE/RIR, ProgressionRule, UserProfile, StrengthStandard, LiftType, GearItem, PainType, PainReport).
 - `mobile/src/domain/repositories/` — Abstract repository interfaces (Ports).
-  - `IProgramRepository.ts`, `IWorkoutRepository.ts`, `IExerciseRepository.ts`, `IGearRepository.ts`, `IBodyMetricsRepository.ts`, `IProgramBlockRepository.ts`, `IProgressionRuleRepository.ts`, `ICalibratedParamRepository.ts`, `IUserProfileRepository.ts`.
+  - `IProgramRepository.ts`, `IWorkoutRepository.ts`, `IExerciseRepository.ts`, `IGearRepository.ts`, `IBodyMetricsRepository.ts`, `IProgramBlockRepository.ts`, `IProgressionRuleRepository.ts`, `ICalibratedParamRepository.ts`, `IUserProfileRepository.ts`, `IPainReportRepository.ts`.
 - `mobile/src/features/` — Vertical feature slices (encapsulated screens, hooks, and local components).
   - `features/home/` — `HomeScreen.tsx`, Quick Status Dashboard (active program, next workout quick card, weekly metrics: workouts this week, tonnage, streak), interactive calendar agenda, reserved analytics mount point.
-  - `features/logger/` — `WorkoutTabRouter.tsx` (resolving State A active logger, State B circular template pre-flight screen, State C empty state), `ActiveLoggerScreen.tsx` (with on-the-fly implement switcher `GearPickerModal` and PlateCalculator tare synchronization), `PlateCalculatorModal.tsx`, `ExerciseSubstitutionModal.tsx`, ghosting logic, set checklist, spelled-out set type selector (`Reg`, `Warm`, `Drop`, `Myo`, `DC`), per-set notes, superset bracket UI, set-type-specific rest timer triggers (0s drop, 10s myo, 30s dc), crash recovery Resume/Discard prompt.
+  - `features/logger/` — `WorkoutTabRouter.tsx` (resolving State A active logger, State B circular template pre-flight screen, State C empty state), `ActiveLoggerScreen.tsx` (with on-the-fly implement switcher `GearPickerModal` and PlateCalculator tare synchronization), `PlateCalculatorModal.tsx`, `ExerciseSubstitutionModal.tsx`, `PainReportModal.tsx` (in-session joint vs muscle discomfort modal, 1–10 severity rating, automatic pruning of uncompleted sets when severity > 6, and physiotherapist disclaimer banner), ghosting logic, set checklist, spelled-out set type selector (`Reg`, `Warm`, `Drop`, `Myo`, `DC`), per-set notes, superset bracket UI, set-type-specific rest timer triggers (0s drop, 10s myo, 30s dc), crash recovery Resume/Discard prompt.
   - `features/calendar/` — `CalendarScreen.tsx`, monthly agenda, meso-cycle swap indicators.
   - `features/inspection/` — `ExerciseDetailScreen.tsx`, Rep-Max Record PR board (all-time / per-program toggle), SBD Strength Standards tier badge, progress bar to next tier, set e1RM benchmarks, variant hierarchy display.
   - `features/progression/` — `ProgramOverviewScreen.tsx` (full CRUD builder with cloning protection, template CRUD/reordering, exercise CRUD/reordering/swap/superset), `ProgressionBuilderModal.tsx` (visual IF/THEN/ELSE condition-action rule builder with LP/DP/DDP presets), `CatalogPickerModal.tsx`, `PrescriptionEditorModal.tsx` (with implement/gear assignment chips), `EditTemplateModal.tsx`.
@@ -395,9 +401,9 @@ When code generation begins in subsequent phases, components must be placed into
   - `programBlockService.ts` — Meso-cycle date interval resolver and color band calculator.
 - `mobile/src/database/` — Infrastructure Layer (Adapters).
   - `index.ts` — Production barrel exporting schema and repositories (decoupled from mocks to guarantee tree-shaking).
-  - `schema.ts` — SQLite table DDL (11 tables) and transactional `PRAGMA user_version = 3` migration framework (`expo-sqlite`), featuring composite index `idx_workout_sets_ex_created` and cascading constraints.
-  - `repositories/` — Concrete SQLite implementations of domain repository interfaces (`SQLiteProgramRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserProfileRepository.ts`, `SQLiteBodyMetricsRepository.ts` with `imported_from` provenance, `SQLiteUserSettingsRepository.ts`, etc.).
-  - `mocks/` — In-memory test repositories (`MockProgramRepository.ts`, `MockWorkoutRepository.ts`, `MockGearRepository.ts`, `MockUserProfileRepository.ts`, `MockBodyMetricsRepository.ts`, `MockUserSettingsRepository.ts`, etc.), consumed strictly within unit tests.
+  - `schema.ts` — SQLite table DDL (12 tables) and transactional `PRAGMA user_version = 4` migration framework (`expo-sqlite`), featuring composite index `idx_workout_sets_ex_created`, `pain_reports` table with workout/exercise foreign keys and indexes, and cascading constraints.
+  - `repositories/` — Concrete SQLite implementations of domain repository interfaces (`SQLiteProgramRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserProfileRepository.ts`, `SQLiteBodyMetricsRepository.ts` with `imported_from` provenance, `SQLiteUserSettingsRepository.ts`, `SQLitePainReportRepository.ts`, etc.).
+  - `mocks/` — In-memory test repositories (`MockProgramRepository.ts`, `MockWorkoutRepository.ts`, `MockGearRepository.ts`, `MockUserProfileRepository.ts`, `MockBodyMetricsRepository.ts`, `MockUserSettingsRepository.ts`, `MockPainReportRepository.ts`, etc.), consumed strictly within unit tests.
 
 ### 3.3 Companion Analysis Suite (`companion/`)
 > **Workspace Execution Rule**: All Python commands (`pip`, `pytest`, `mypy`, `streamlit`) MUST be executed within the virtual environment `companion/.venv`.
@@ -409,13 +415,23 @@ When code generation begins in subsequent phases, components must be placed into
   - `parser.py` — File reader for `workout_data_export.json`.
   - `schemas.py` — Pydantic v2 data models enforcing schema conformity.
 - `companion/src/models/` — Headless scientific modeling engine (pure NumPy/SciPy math).
-  - `kalman_1rm.py` — Linear Kalman Filter updating $(1\text{RM}_t, k_t)$ per exercise via single consolidated daily batch evaluation, 3-stage gating pipeline (intra-session reference, Huber M-estimation, physical load floor), Joseph stabilized covariance form, soft Tikhonov prior anchor, and Simon's covariance-weighted boundary projection.
+  - `kalman_1rm.py` — Linear Kalman Filter updating $(1\text{RM}_t, k_t)$ per exercise via single top-set selection (`max_session_sets=1`) ranked by projected e1RM ($w \cdot r_{\text{eff}}^k$), single consolidated daily batch evaluation, 3-stage gating pipeline (intra-session reference, Huber M-estimation, physical load floor), Joseph stabilized covariance form, soft Tikhonov prior anchor, and Simon's covariance-weighted boundary projection.
   - `fatigue_banister.py` — Two-component impulse-response ODE solver with per-exercise and session-level diminishing returns saturation ($\kappa_{\text{ex}} = 4.0$) and scale-invariant unit-gain EWMA discretization bounding $P(t), F(t) \in [0, 100]$.
+  - `mesocycle_analyzer.py` — Survival analysis and change-point detection engine for individual optimal mesocycle length ($L_{\text{opt}}$). Combines Kalman e1RM gain velocity stall, iso-load RPE drift, and Page's CUSUM systemic exhaustion with empirical Banister boundary segmentation and conjugate Normal-Normal Bayesian updating.
   - `recovery_modifier.py` — 14-day rolling bodyweight slope ($\Delta BW / \Delta t$) fatigue scaler.
   - `recommendations.py` — ACWR calculation, deload trigger, and progressive overload advisory engine.
 - `companion/src/export/` — Calibrated parameter output.
   - `param_exporter.py` — Serializes per-exercise $(1\text{RM}, k)$ to `calibrated_parameters.json` for mobile import with configurable `default_working_rir`.
 - `companion/src/ui/` — Presentation Layer.
-  - `app.py` — Streamlit / Plotly interactive web dashboard with exercise coverage strip, unrated working set toggles, and round-trip export.
+  - `app.py` — Streamlit / Plotly interactive web dashboard with exercise coverage strip, actual 1RM performance tracking callouts, unrated working set toggles, Mesocycle Optimizer tab ($L_{\text{opt}}$ and deload window), and round-trip export.
+  - `charts.py` — Interactive Plotly chart builders: Kalman 1RM trajectory with ±1 SD uncertainty envelope and distinct crimson star markers (★) for tested actual 1RMs vs amber diamonds for submaximal sets, repetition endurance drift ($k_t$), Banister impulse-response curves (Fitness/Fatigue/Readiness), longitudinal bodyweight OLS slope, and 2-panel Mesocycle Survival & Fatigue Curve with shaded 90% Bayesian credible interval deload window.
+- `companion/tests/` — Test suite for companion analytics.
+  - `test_banister.py` — Tests for Banister fitness-fatigue ODE integration, saturation, and ACWR alerts.
+  - `test_exporter.py` — Tests for calibrated parameter export conformity.
+  - `test_kalman_1rm.py` — Tests for Tier 2 adaptive Kalman filtering and endurance estimation.
+  - `test_mesocycle_analyzer.py` — Tests for boundary segmentation, RPE drift clamping, and Bayesian mesocycle updates.
+  - `test_schemas.py` — Tests for Pydantic v2 schemas.
+  - `test_ui_smoke.py` — Headless smoke tests for Streamlit UI and Plotly chart generators.
+
 
 

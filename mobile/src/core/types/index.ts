@@ -90,6 +90,8 @@ export type StrengthStandardTier =
   | 'advanced'
   | 'elite';
 
+export type PainType = 'joint' | 'muscle';
+
 // ============================================================================
 // Relational SQLite Domain Entities
 // ============================================================================
@@ -277,6 +279,20 @@ export interface CalibratedParam {
   cov_p00: number;
   cov_p11: number;
   calibrated_at: string;
+}
+
+/**
+ * Pain and discomfort report logged during training or active sessions.
+ */
+export interface PainReport {
+  id: string;
+  workout_id: string;
+  exercise_id: string;
+  set_id: string | null;
+  pain_type: PainType;
+  severity: number; // 1 to 10
+  notes: string | null;
+  created_at: string;
 }
 
 /**
@@ -578,5 +594,6 @@ export interface WorkoutExportPayload {
   user_settings: Record<string, string>;
   user_profiles: UserProfile[];
   calibrated_params: CalibratedParam[];
+  pain_reports?: PainReport[];
 }
 

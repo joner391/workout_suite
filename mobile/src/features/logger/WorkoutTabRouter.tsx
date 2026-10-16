@@ -24,6 +24,7 @@ import {
   IGearRepository,
   IUserSettingsRepository,
   IProgramRepository,
+  IPainReportRepository,
 } from '../../domain/repositories';
 import {
   ProgramBlockService,
@@ -45,6 +46,7 @@ export interface WorkoutTabRouterProps {
   gearRepo?: IGearRepository;
   userSettingsRepo?: IUserSettingsRepository;
   programRepo?: IProgramRepository;
+  painReportRepo?: IPainReportRepository;
   programBlockService?: ProgramBlockService;
   hasActiveWorkout: boolean;
   currentWorkoutId?: string;
@@ -60,6 +62,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
   gearRepo,
   userSettingsRepo,
   programRepo,
+  painReportRepo,
   programBlockService,
   hasActiveWorkout,
   currentWorkoutId,
@@ -192,6 +195,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
           gearRepo={gearRepo}
           userSettingsRepo={userSettingsRepo}
           programRepo={programRepo}
+          painReportRepo={painReportRepo}
           onFinishSession={onFinishSession}
           onDiscardSession={onDiscardSession}
         />

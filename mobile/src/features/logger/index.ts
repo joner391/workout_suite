@@ -11,3 +11,4 @@ export * from './SupersetBracketGroup';
 export * from './ProgressionProposalBanner';
 export * from './ActiveLoggerScreen';
 export * from './WorkoutTabRouter';
+export * from './PainReportModal';

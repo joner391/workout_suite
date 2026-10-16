@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "exported_at": "2026-10-16T09:52:13.557Z",
+  "exported_at": "2026-10-16T12:51:39.522Z",
   "programs": [
     {
       "id": "prog-hypertrophy-01",
@@ -235,5 +235,6 @@
       "cov_p11": 0.001,
       "calibrated_at": "2026-10-13T20:00:00.000Z"
     }
-  ]
+  ],
+  "pain_reports": []
 }

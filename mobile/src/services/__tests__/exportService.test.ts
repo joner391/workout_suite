@@ -390,6 +390,7 @@ describe('ExportService (Step 2.3)', () => {
       expect(payload.user_settings).toEqual({});
       expect(payload.user_profiles).toEqual([]);
       expect(payload.calibrated_params).toEqual([]);
+      expect(payload.pain_reports).toEqual([]);
     });
 
     it('throws when no database is provided', async () => {

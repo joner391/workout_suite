@@ -30,6 +30,7 @@ import {
   IProgramRepository,
   IUserProfileRepository,
   IBodyMetricsRepository,
+  IPainReportRepository,
 } from './src/domain/repositories';
 import {
   getDatabase,
@@ -41,6 +42,7 @@ import {
   SQLiteProgramRepository,
   SQLiteUserProfileRepository,
   SQLiteBodyMetricsRepository,
+  SQLitePainReportRepository,
 } from './src/database';
 import { ProgramBlockService } from './src/services/programBlockService';
 import { WorkoutTabRouter } from './src/features/logger';
@@ -61,6 +63,7 @@ export interface AppProps {
   programRepo?: IProgramRepository;
   userProfileRepo?: IUserProfileRepository;
   bodyMetricsRepo?: IBodyMetricsRepository;
+  painReportRepo?: IPainReportRepository;
   programBlockService?: ProgramBlockService;
   db?: ISQLiteDatabase;
   [key: string]: unknown;
@@ -76,6 +79,7 @@ export default function App({
   programRepo: propProgramRepo,
   userProfileRepo: propUserProfileRepo,
   bodyMetricsRepo: propBodyMetricsRepo,
+  painReportRepo: propPainReportRepo,
   programBlockService: propProgramBlockService,
   db: propDb,
 }: AppProps = {}) {
@@ -104,12 +108,14 @@ export default function App({
     programRepo: IProgramRepository;
     userProfileRepo: IUserProfileRepository;
     bodyMetricsRepo: IBodyMetricsRepository;
+    painReportRepo: IPainReportRepository;
     programBlockService: ProgramBlockService;
   } | null>(() => {
     if (propWorkoutRepo && propExerciseRepo && propUserSettingsRepo) {
       const pRepo = propProgramRepo || ({} as IProgramRepository);
       const upRepo = propUserProfileRepo || ({} as IUserProfileRepository);
       const bmRepo = propBodyMetricsRepo || ({} as IBodyMetricsRepository);
+      const painRepo = propPainReportRepo || ({} as IPainReportRepository);
       const pbService =
         propProgramBlockService ||
         (propProgramRepo ? new ProgramBlockService(propProgramRepo) : ({} as ProgramBlockService));
@@ -121,6 +127,7 @@ export default function App({
         programRepo: pRepo,
         userProfileRepo: upRepo,
         bodyMetricsRepo: bmRepo,
+        painReportRepo: painRepo,
         programBlockService: pbService,
       };
     }
@@ -149,6 +156,7 @@ export default function App({
         const pRepo = new SQLiteProgramRepository(db);
         const upRepo = new SQLiteUserProfileRepository(db);
         const bmRepo = new SQLiteBodyMetricsRepository(db);
+        const painRepo = new SQLitePainReportRepository(db);
         const pbService = new ProgramBlockService(pRepo);
 
         setRepos({
@@ -159,6 +167,7 @@ export default function App({
           programRepo: pRepo,
           userProfileRepo: upRepo,
           bodyMetricsRepo: bmRepo,
+          painReportRepo: painRepo,
           programBlockService: pbService,
         });
 
@@ -280,6 +289,7 @@ export default function App({
               gearRepo={repos.gearRepo}
               userSettingsRepo={repos.userSettingsRepo}
               programRepo={repos.programRepo}
+              painReportRepo={repos.painReportRepo}
               programBlockService={repos.programBlockService}
               hasActiveWorkout={hasActiveWorkout}
               currentWorkoutId={currentWorkoutId}

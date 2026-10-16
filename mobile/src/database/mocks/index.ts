@@ -5,3 +5,4 @@ export * from './MockUserSettingsRepository';
 export * from './MockProgramRepository';
 export * from './MockUserProfileRepository';
 export * from './MockBodyMetricsRepository';
+export * from './MockPainReportRepository';

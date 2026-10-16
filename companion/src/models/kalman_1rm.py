@@ -148,8 +148,13 @@ def filter_session_sets(
     default_working_rir: Optional[float] = None,
     current_e1rm: Optional[float] = None,
     prior_k: float = 0.095,
+    max_session_sets: int = 1,
 ) -> List[FilteredSet]:
-    """Filters workout sets within a session with warmup & relative-load outlier rejection."""
+    """Filters workout sets within a session to extract the session's top set(s).
+
+    By default (max_session_sets=1), selects strictly the single top set with the highest
+    projected 1RM (e1RM = weight * r_eff^k), eliminating warmup singles and fatigue backoff sets.
+    """
     raw_valid: List[FilteredSet] = []
 
     for idx, s in enumerate(sets):
@@ -192,7 +197,8 @@ def filter_session_sets(
         elif is_amrap_set(s):
             eff_rir = 0.0
         elif default_working_rir is not None and set_type_val != "warmup":
-            eff_rir = max(0.0, float(default_working_rir))
+            # Single-rep working sets without explicit exertion ratings represent tested 1RMs (0 RIR / 1.0 r_eff)
+            eff_rir = 0.0 if reps == 1 else max(0.0, float(default_working_rir))
 
         if eff_rir is None or eff_rir > max_rir_threshold:
             continue
@@ -221,7 +227,7 @@ def filter_session_sets(
     max_session_weight = max(fs.weight for fs in raw_valid)
     max_session_e1rm = max(fs.weight * (fs.r_eff ** prior_k) for fs in raw_valid)
 
-    candidates: List[Tuple[float, float, int, FilteredSet]] = []
+    candidates: List[Tuple[float, float, float, int, FilteredSet]] = []
     for fs in raw_valid:
         set_e1rm = fs.weight * (fs.r_eff ** prior_k)
         # Reject sets < 65% of max session weight or < 82% of session peak heuristic 1RM
@@ -231,15 +237,22 @@ def filter_session_sets(
         if current_e1rm is not None and current_e1rm > 0 and fs.weight < 0.55 * current_e1rm:
             continue
 
-        candidates.append((fs.rir or 0.0, -set_e1rm, fs.original_index, fs))
+        candidates.append((
+            -set_e1rm,
+            fs.rir if fs.rir is not None else 0.0,
+            -fs.weight,
+            fs.original_index,
+            fs,
+        ))
 
     if not candidates:
         return []
 
-    candidates.sort(key=lambda item: (item[0], item[1]))
-    top_candidates = candidates[:2]
-    top_candidates.sort(key=lambda item: item[2])
-    return [item[3] for item in top_candidates]
+    # Rank primarily by highest projected e1RM, tie-breaking by lowest RIR and highest load
+    candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+    top_candidates = candidates[:max_session_sets]
+    top_candidates.sort(key=lambda item: item[3])
+    return [item[4] for item in top_candidates]
 
 
 def _project_constrained_state(
@@ -508,14 +521,16 @@ class Adaptive1RMKalmanFilter:
         sets: Sequence[Union[WorkoutSet, Mapping[str, Any], Any]],
         default_working_rir: Optional[float] = None,
         session_date: Optional[Union[str, date]] = None,
+        max_session_sets: int = 1,
     ) -> List[KalmanState]:
-        """Filters session sets and executes a single consolidated batch update."""
+        """Filters session sets down to the session's top set and executes a consolidated batch update."""
         curr_e1rm = self.state.e1rm if self._has_explicit_1rm else None
         accepted_sets = filter_session_sets(
             sets,
             default_working_rir=default_working_rir,
             current_e1rm=curr_e1rm,
             prior_k=self.k_prior,
+            max_session_sets=max_session_sets,
         )
         if not accepted_sets:
             return []
@@ -540,6 +555,7 @@ class Adaptive1RMKalmanFilter:
         workouts: Sequence[Workout],
         workout_sets: Sequence[WorkoutSet],
         default_working_rir: Optional[float] = None,
+        max_session_sets: int = 1,
     ) -> List[KalmanState]:
         workout_meta: Dict[str, Tuple[str, str]] = {}
         for w in workouts:
@@ -565,6 +581,7 @@ class Adaptive1RMKalmanFilter:
                 group_sets,
                 default_working_rir=default_working_rir,
                 session_date=w_date,
+                max_session_sets=max_session_sets,
             )
             all_states.extend(states)
 

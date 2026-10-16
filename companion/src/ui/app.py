@@ -40,7 +40,16 @@ from src.models.fatigue_banister import (
     DailyPreparedness,
     compute_daily_banister_series,
 )
-from src.models.kalman_1rm import Adaptive1RMKalmanFilter, KalmanState, is_amrap_set
+from src.models.kalman_1rm import (
+    Adaptive1RMKalmanFilter,
+    KalmanState,
+    filter_session_sets,
+    is_amrap_set,
+)
+from src.models.mesocycle_analyzer import (
+    analyze_optimal_mesocycle_length,
+    compute_all_kalman_histories,
+)
 from src.models.recommendations import get_latest_advisory
 from src.models.recovery_modifier import (
     compute_recovery_modifier,
@@ -51,7 +60,9 @@ from src.ui.charts import (
     build_bodyweight_recovery_chart,
     build_endurance_k_chart,
     build_kalman_trajectory_chart,
+    build_mesocycle_inflection_chart,
 )
+
 
 
 def load_payload_from_bytes(file_bytes: bytes) -> WorkoutExportPayload:
@@ -75,7 +86,8 @@ def run_kalman_on_exercise(
     workouts: List[Workout],
     sets: List[WorkoutSet],
     default_working_rir: Optional[float] = None,
-) -> Tuple[List[str], List[KalmanState], List[Tuple[str, float, float]]]:
+    max_session_sets: int = 1,
+) -> Tuple[List[str], List[KalmanState], List[Tuple[Any, ...]]]:
     """Runs Kalman filter step-by-step and collects history for plotting."""
     sets_by_workout: Dict[str, List[WorkoutSet]] = defaultdict(list)
     for s in sets:
@@ -89,28 +101,28 @@ def run_kalman_on_exercise(
 
     dates: List[str] = []
     states: List[KalmanState] = []
-    observations: List[Tuple[str, float, float]] = []
+    observations: List[Tuple[Any, ...]] = []
 
     for w in sorted_workouts:
         if w.id in sets_by_workout:
             session_sets = sets_by_workout[w.id]
-            for s in session_sets:
-                eff_rir = s.rir
-                if eff_rir is None and s.rpe is not None:
-                    eff_rir = max(0.0, 10.0 - s.rpe)
-                elif eff_rir is None and is_amrap_set(s):
-                    eff_rir = 0.0
-                elif eff_rir is None and default_working_rir is not None and s.set_type != "warmup":
-                    eff_rir = default_working_rir
-
-                if s.reps > 0 and s.weight > 0 and eff_rir is not None and eff_rir <= 3.0:
-                    r_eff = s.reps + eff_rir
-                    observations.append((w.date, s.weight, r_eff))
+            curr_e1rm = kf.state.e1rm if kf._has_explicit_1rm else None
+            accepted_sets = filter_session_sets(
+                session_sets,
+                default_working_rir=default_working_rir,
+                current_e1rm=curr_e1rm,
+                prior_k=kf.k_prior,
+                max_session_sets=max_session_sets,
+            )
+            for fs in accepted_sets:
+                is_actual_1rm = (fs.reps == 1)
+                observations.append((w.date, fs.weight, fs.r_eff, fs.reps, is_actual_1rm, fs.rir, fs.rpe))
 
             new_states = kf.process_session(
                 session_sets,
                 default_working_rir=default_working_rir,
                 session_date=w.date,
+                max_session_sets=max_session_sets,
             )
             for state in new_states:
                 dates.append(w.date)
@@ -219,6 +231,13 @@ def main() -> None:
     else:
         st.sidebar.caption("Only sets with explicit RIR/RPE will be evaluated.")
 
+    only_top_set = st.sidebar.checkbox(
+        "Use session top set only",
+        value=True,
+        help="Restricts e1RM updates and observation tracking to each session's highest-performing top set, discarding warmup singles and back-off fatigue noise.",
+    )
+    max_session_sets = 1 if only_top_set else 2
+
     # -------------------------------------------------------------------------
     # Overview KPI Cards
     # -------------------------------------------------------------------------
@@ -237,15 +256,25 @@ def main() -> None:
         )
         st.metric("Bodyweight Logs", bw_count)
 
+    # Precompute daily Banister series (shared across Banister and Mesocycle tabs)
+    daily_series = compute_daily_banister_series(
+        workouts=payload.workouts,
+        workout_sets=payload.workout_sets,
+        body_metrics=payload.body_metrics,
+        default_working_rpe=fallback_rpe,
+    )
+
     # -------------------------------------------------------------------------
     # Tabs
     # -------------------------------------------------------------------------
-    tab_kalman, tab_banister, tab_recovery, tab_export = st.tabs([
+    tab_kalman, tab_banister, tab_mesocycle, tab_recovery, tab_export = st.tabs([
         "📈 1RM Trajectory & Endurance (k)",
         "⚡ Banister Fitness-Fatigue",
+        "🎯 Mesocycle Optimizer (L_opt)",
         "⚖️ Bodyweight & Recovery Modifiers",
         "💾 Export Calibrated Parameters",
     ])
+
 
     # -------------------------------------------------------------------------
     # Tab 1: Kalman 1RM Trajectory & Endurance Exponent k
@@ -319,6 +348,7 @@ def main() -> None:
                 workouts=payload.workouts,
                 sets=exercise_sets,
                 default_working_rir=fallback_rir,
+                max_session_sets=max_session_sets,
             )
 
             if states:
@@ -345,6 +375,23 @@ def main() -> None:
                 with mcol4:
                     std_label = std_lift.upper() if std_lift else "CUSTOM / ISOLATION"
                     st.metric("Lift Biomechanics", std_label)
+
+                # Actual 1RM performance record callout
+                actual_1rm_pts = [
+                    o for o in obs
+                    if (len(o) >= 5 and o[4]) or (len(o) >= 3 and o[2] <= 1.0)
+                ]
+                if actual_1rm_pts:
+                    best_1rm = max(o[1] for o in actual_1rm_pts)
+                    best_date = next(o[0] for o in actual_1rm_pts if o[1] == best_1rm)
+                    latest_1rm = actual_1rm_pts[-1][1]
+                    latest_date = actual_1rm_pts[-1][0]
+                    st.info(
+                        f"🎯 **Actual 1RM Performance Record:** {len(actual_1rm_pts)} tested 1-rep single(s) logged. "
+                        f"All-time actual 1RM PR: **{best_1rm:.1f} kg** ({best_date}) | "
+                        f"Latest actual single: **{latest_1rm:.1f} kg** ({latest_date}). "
+                        f"Actual 1RMs are highlighted with **distinct crimson stars (★)** on the trajectory chart."
+                    )
 
                 fig_traj = build_kalman_trajectory_chart(
                     exercise_name=selected_name,
@@ -419,7 +466,122 @@ def main() -> None:
             st.info("No training data available for Banister modeling.")
 
     # -------------------------------------------------------------------------
-    # Tab 3: Bodyweight & Dynamic Recovery
+    # Tab 3: Mesocycle Length & Deload Inflection Analysis
+    # -------------------------------------------------------------------------
+    with tab_mesocycle:
+        st.subheader("🎯 Individualized Mesocycle Length & Deload Optimizer")
+        st.markdown(
+            "Detects the individual inflection point $L_{\\text{opt}}$ where marginal strength adaptations stall "
+            "and fatigue-induced performance suppression begins. Combines three mathematical signals: "
+            "**Kalman e1RM gain velocity** ($\\dot{x}_0(u) \\le 0$), **Iso-Load RPE drift** ($\\Delta \\text{RPE}_{\\text{drift}} > 0$), "
+            "and **Page's CUSUM systemic underperformance** ($C_t^-$), calibrated across historical blocks via conjugate Bayesian updating."
+        )
+
+        all_kalman_histories = compute_all_kalman_histories(
+            workouts=payload.workouts,
+            workout_sets=payload.workout_sets,
+            exercises=payload.exercises,
+            default_working_rir=fallback_rir,
+        )
+
+        meso_rec = analyze_optimal_mesocycle_length(
+            workouts=payload.workouts,
+            workout_sets=payload.workout_sets,
+            kalman_histories=all_kalman_histories,
+            banister_series=daily_series,
+        )
+
+        # Top KPI Cards
+        mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+        with mcol1:
+            st.metric(
+                "Optimal Accumulation",
+                f"{meso_rec.optimal_accumulation_weeks:.1f} Weeks",
+                f"90% CI: {meso_rec.ci_lower_weeks:.1f}–{meso_rec.ci_upper_weeks:.1f} wks",
+            )
+        with mcol2:
+            st.metric(
+                "Caloric Deficit Target",
+                f"{meso_rec.deficit_adjusted_weeks:.1f} Weeks",
+                "-1.0 wk for impaired recovery",
+            )
+        with mcol3:
+            st.metric(
+                "Model Confidence",
+                f"{meso_rec.confidence_score:.0f}% ({meso_rec.confidence_tier})",
+                f"{meso_rec.detected_blocks_count} historical blocks",
+            )
+        with mcol4:
+            rated_count = len([s for s in payload.workout_sets if s.rir is not None or s.rpe is not None])
+            st.metric(
+                "Explicit RPE Coverage",
+                f"{meso_rec.explicit_rpe_coverage:.1%}",
+                f"{rated_count} rated sets",
+            )
+
+        # Diagnostic summary banner
+        if meso_rec.confidence_tier == "HIGH":
+            st.success(meso_rec.summary_message)
+        elif meso_rec.confidence_tier == "MODERATE":
+            st.info(meso_rec.summary_message)
+        else:
+            st.warning(meso_rec.summary_message)
+
+        if meso_rec.explicit_rpe_coverage < 0.20:
+            st.caption(
+                "💡 **Pro-Tip for Precision Calibration:** Over 80% of historical sets lack explicit RIR/RPE ratings. "
+                "Logging exertion ratings on primary compound movements allows the engine to detect subtle "
+                "iso-load fatigue drift before physical bar speed stalls."
+            )
+
+        # 2-Panel Plotly Visualization
+        fig_meso = build_mesocycle_inflection_chart(meso_rec)
+        st.plotly_chart(fig_meso, use_container_width=True)
+
+        # Weekly Inflection Profile Table
+        if meso_rec.weekly_profile:
+            st.markdown("### 📊 Weekly Block Progression Profile")
+            profile_rows = [
+                {
+                    "Week of Mesocycle": f"Week {p.week_index}",
+                    "Cumulative e1RM Gain (%)": f"{p.mean_e1rm_pct_change:+.2f}%",
+                    "Marginal Weekly Velocity": f"{p.e1rm_weekly_slope_pct:+.2f}% / wk",
+                    "Iso-Load RPE Drift": f"{p.mean_rpe_drift:+.2f} RPE",
+                    "CUSUM Negative Shift": f"{p.standardized_cusum_neg:.2f}",
+                    "Historical Sample Cycles": p.sample_count,
+                }
+                for p in meso_rec.weekly_profile
+            ]
+            st.dataframe(pd.DataFrame(profile_rows), use_container_width=True)
+
+        with st.expander("🔬 Mathematical Foundations & Multi-Signal Survival Analysis"):
+            st.markdown(
+                r"""
+
+                **1. Signal A: Kalman e1RM Velocity Stall ($\dot{x}_0(u) \le 0$)**
+                Tracks the local rate of logarithmic strength gain $\\beta_{\\text{gain}}(u)$ across tracked primary lifts. 
+                During early weeks of a block, supercompensation yields positive velocity ($+0.5\\%\\text{ to }+1.5\\%/\\text{wk}$). 
+                As cumulative central and structural fatigue accumulates, the velocity curve flattens and drops below zero.
+
+                **2. Signal B: Iso-Load / Iso-Volume RPE Drift ($\Delta \\text{RPE}_{\\text{drift}} > 0$)**
+                Isolates internal exertion creep by comparing logged RPE against the expected RPE predicted by the lifter's 
+                peak strength and endurance exponent $k$:
+                $$\\widehat{\\text{RPE}}_i = 10 - \\max\\left(0,\, \\exp\\left(\\frac{x_{0, \\text{peak}} - \\ln(w_i)}{k_t}\\right) - \\text{reps}_i\\right)$$
+                An average drift $\\overline{\\text{RPE}}_{\\text{drift}} \\ge +0.75$ indicates acute neuromuscular fatigue.
+
+                **3. Signal C: Page's Cumulative Sum (CUSUM) Exhaustion**
+                Monitors Kalman innovation surprises across compound lifts. When the cumulative underperformance 
+                $C_t^-$ crosses threshold $h$, systemic fatigue is statistically confirmed over localized lift plateaus.
+
+                **4. Conjugate Bayesian Normal-Normal Updating**
+                Combines an empirical population prior $\\mathcal{N}(\\mu_0 = 5.0\\text{ wks}, \\sigma_0^2 = 1.5^2)$ with 
+                $M$ historical mesocycle observations weighted by RPE precision $\\tau_m$:
+                $$\\sigma_{\\text{post}}^2 = \\left( \\frac{1}{\\sigma_0^2} + \\sum_{m=1}^M \\tau_m \\right)^{-1}, \\qquad \\mu_{\\text{post}} = \\sigma_{\\text{post}}^2 \\left( \\frac{\\mu_0}{\\sigma_0^2} + \\sum_{m=1}^M \\tau_m u^*_m \\right)$$
+                """
+            )
+
+    # -------------------------------------------------------------------------
+    # Tab 4: Bodyweight & Dynamic Recovery
     # -------------------------------------------------------------------------
     with tab_recovery:
         st.subheader("Longitudinal Body Composition & Recovery Scaling")
@@ -461,7 +623,11 @@ def main() -> None:
             "for all exercises into `calibrated_parameters.json` to import back into your mobile app."
         )
 
-        envelope = export_calibrated_parameters(payload, default_working_rir=fallback_rir)
+        envelope = export_calibrated_parameters(
+            payload,
+            default_working_rir=fallback_rir,
+            max_session_sets=max_session_sets,
+        )
 
         if envelope.parameters:
             table_data = [

@@ -53,6 +53,13 @@ from src.models.recovery_modifier import (
     compute_bodyweight_slope,
     compute_recovery_modifier,
 )
+from src.models.mesocycle_analyzer import (
+    MesocycleRecommendation,
+    WeeklyBlockMetrics,
+    analyze_optimal_mesocycle_length,
+    compute_all_kalman_histories,
+    detect_mesocycle_boundaries,
+)
 
 __all__ = [
     # Kalman 1RM
@@ -97,4 +104,11 @@ __all__ = [
     "compute_training_advisories",
     "generate_advisory_for_day",
     "get_latest_advisory",
+    # Mesocycle Optimizer
+    "MesocycleRecommendation",
+    "WeeklyBlockMetrics",
+    "analyze_optimal_mesocycle_length",
+    "compute_all_kalman_histories",
+    "detect_mesocycle_boundaries",
 ]
+
