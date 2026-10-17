@@ -1499,14 +1499,36 @@
   - *Pros*:
     - Frictionless in-gym reporting in under 5 seconds.
     - Prevents catastrophic tissue injury by automatically skipping remaining sets on severe pain scores.
-    - Captures high-fidelity joint vs. muscle annotations for future program autoregulation and variant swapping.
     - 100% test coverage across repositories, modal components, and export serialization.
   - *Cons*: None.
 
+---
 
-
-
-
-
-
-
+## ADR-069: Tiered Ingestion Architecture, Pseudonymous Telemetry, and Batched Cloud Sync
+- **Context**: In defining the data flow specification (`description_of_dataflow.md`), several operational and architectural challenges arose:
+  1. Risk of ballooning cloud database IOPS and hosting bills if mobile clients synchronize individual set updates or frequent imports.
+  2. The need to collect large-scale, population-level training data (repetition endurance exponents $k$, volume-recovery responses) to establish normative baselines without storing PII or incurring high transactional database costs.
+  3. Seamless data continuity when a Free tier user upgrades to Premium, avoiding data loss or complex reconciliation.
+  4. The operational boundary between Free, Premium, and Business (Coach) tiers.
+  5. Legal and trademark constraints surrounding popular pre-built workout programs (e.g., 5/3/1, PHAT, GBR).
+- **Decision**:
+  1. **Batched Post-Workout Sync**: Mobile remains 100% offline-first. Zero network requests occur during workout execution. Completed sessions are serialized into a single transactional JSON payload (`POST /api/v1/sessions`) upon completion or when Wi-Fi is restored, reducing database write IOPS by over 95%.
+  2. **Dual-Path Data Storage**:
+     - *Normative Baseline Pool (Free Tier Telemetry)*: With transparent onboarding consent, Free users transmit raw mathematical tuples `(exercise_id, weight_kg, reps, rpe, user_sex, bodyweight_kg)` tagged with a rotating random device token directly to an ultra-cheap columnar data lake (ClickHouse/Parquet/S3), bypassing the transactional relational database entirely.
+     - *Relational Account Storage (Premium/Business)*: Full user-linked relational logs (`workouts`, `sets`, `pain_reports`, `body_metrics`) are stored in PostgreSQL for multi-device sync and longitudinal tracking.
+  3. **Local SQLite Authoritative Backfill**: Because local SQLite is the source of truth, upgrading from Free to Premium triggers a one-time historical backfill sync, uploading the device's entire historical training ledger directly to their newly provisioned cloud account.
+  4. **Tier Entitlements & Background Tuning**:
+     - *Free*: Full local tracker, unlimited routines with Active/Archived filtering, and reactive in-gym pain mitigations (set pruning and live substitutions).
+     - *Premium*: Post-workout asynchronous companion worker executes Tier 2 Kalman 1RM and Banister fatigue analysis, writing calibrated parameters $(1\text{RM}, k)$ back to the mobile client with a subtle Home screen banner notice.
+     - *Business*: Multi-athlete coach portal with live fatigue/readiness analytics and two-way direct program assignment overwrite to client devices.
+  5. **Educational Presets Attribution Framework**: Pre-built popular routines are provided as Educational Presets with prominent attribution to original authors (Wendler, Norton, McDonald), ensuring full legal and trademark compliance.
+- **Consequences**:
+  - *Pros*:
+    - Prevents cloud database cost explosion.
+    - Preserves sub-millisecond local app responsiveness in gym basements.
+    - Zero data loss when users upgrade to Premium.
+    - Protects user privacy while building massive population-level normative curves.
+    - Streamlines coach workflows with frictionless direct remote program pushes.
+  - *Cons*:
+    - Requires maintaining two data pipelines (columnar analytical lake for pseudonymous points vs transactional relational DB for accounts).
+    - Requires one-time backfill orchestration upon subscription upgrade.

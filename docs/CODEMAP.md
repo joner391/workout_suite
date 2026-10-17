@@ -261,7 +261,8 @@ c:/Programmering/Eget/Workout_suite/
 └── docs/                       # Architecture documentation and decision records
     ├── ARCHITECTURE.md         # Subsystem responsibilities, data flow, and build commands
     ├── CODEMAP.md              # Current navigation index and symbol directory
-    └── DECISIONS.md            # Architecture Decision Records (ADRs)
+    ├── DECISIONS.md            # Architecture Decision Records (ADRs)
+    └── TRAINING_AND_BODY_DATA.md # Training & body data specifications, companion calculations & gap analysis
 ```
 
 ### 1.1 Workspace Boundary & Execution Invariants
@@ -342,6 +343,7 @@ c:/Programmering/Eget/Workout_suite/
 | [AGENTS.md](file:///c:/Programmering/Eget/Workout_suite/AGENTS.md) | Governance | Project architecture rules, exploration protocol, and documentation maintenance requirements. |
 | [docs/ARCHITECTURE.md](file:///c:/Programmering/Eget/Workout_suite/docs/ARCHITECTURE.md) | Architecture | Subsystem boundaries, runtime execution flows, and build/test commands. |
 | [docs/DECISIONS.md](file:///c:/Programmering/Eget/Workout_suite/docs/DECISIONS.md) | Architecture Decisions | Documented design rationales (ADRs) explaining technical trade-offs. |
+| [docs/TRAINING_AND_BODY_DATA.md](file:///c:/Programmering/Eget/Workout_suite/docs/TRAINING_AND_BODY_DATA.md) | Data & Metrics Spec | Detailed description of saved training/body metrics, Companion calculations, and gap analysis. |
 
 ---
 

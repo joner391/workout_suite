@@ -126,6 +126,11 @@ To balance real-time gym responsiveness with rigorous statistical modeling:
    - JSON data ingested into Pandas DataFrames $\rightarrow$ Kalman filter updates $(1\text{RM}_t, k_t)$ per exercise $\rightarrow$ Stimulus computed $\rightarrow$ Bodyweight slope computed $\rightarrow$ Banister differential equations integrated $\rightarrow$ Readiness & deload signals rendered on dashboard.
 5. **Calibrated Parameter Sync**:
    - Companion exports `calibrated_parameters.json` $\rightarrow$ User transfers file to mobile $\rightarrow$ `CalibratedParamService` writes per-exercise $(1\text{RM}, k)$ and covariance parameters to `calibrated_params` table $\rightarrow$ Tier 1 heuristic upgrades from default $k = 0.10$ to individualized $k$.
+6. **Tiered Cloud Ingestion & Direct Coach Overwrite (Phase 7 & ADR-069)**:
+   - **Batched Session Ingestion**: Local-first workout logging writes exclusively to SQLite during training; completed sessions are batched and uploaded in a single compressed transaction (`POST /api/v1/sessions`).
+   - **Dual Storage Path**: Free tier transmits pseudonymous statistical tuples `(exercise_id, weight_kg, reps, rpe, user_sex, bodyweight_kg)` directly into an analytical data lake for global baseline calibration; Premium/Business tiers sync full relational accounts in PostgreSQL.
+   - **One-Time Upgrade Backfill**: Upgrading from Free to Premium triggers an automated bulk sync of the user's complete local SQLite history to their new cloud account.
+   - **Coach Direct Overwrite**: Business tier coaches can push programs and prescription adjustments directly to an athlete's device, automatically updating the active program without manual confirmation steps.
 
 ---
 
