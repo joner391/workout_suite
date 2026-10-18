@@ -20,6 +20,8 @@ from src.ui.charts import (
     build_endurance_k_chart,
     build_kalman_trajectory_chart,
     build_mesocycle_inflection_chart,
+    build_muscle_landmarks_chart,
+    build_sfr_matrix_chart,
 )
 
 
@@ -262,4 +264,94 @@ def test_build_mesocycle_inflection_chart_populated() -> None:
     assert "Marginal e1RM Velocity (%/wk)" in trace_names
     assert "Iso-Load RPE Drift" in trace_names
     assert "CUSUM Exhaustion (C-)" in trace_names
+
+
+def test_build_muscle_landmarks_chart() -> None:
+    from src.analysis.muscle_landmarks import MuscleLandmarkResult
+
+    # Test empty
+    fig_empty = build_muscle_landmarks_chart({})
+    assert fig_empty is not None
+    assert len(fig_empty.layout.annotations) > 0
+
+    # Test populated
+    landmarks = {
+        "Chest": MuscleLandmarkResult(
+            muscle_group="Chest",
+            mev=8.0,
+            mav=16.0,
+            mrv=22.0,
+            readiness_pct=85.0,
+            is_empirical=True,
+            weeks_analyzed=8,
+            energy_balance="MAINTENANCE",
+        ),
+        "Back": MuscleLandmarkResult(
+            muscle_group="Back",
+            mev=10.0,
+            mav=18.0,
+            mrv=24.0,
+            readiness_pct=90.0,
+            is_empirical=False,
+            weeks_analyzed=4,
+            energy_balance="MAINTENANCE",
+        ),
+    }
+    volumes = {"Chest": 14.0, "Back": 20.0}
+
+    fig = build_muscle_landmarks_chart(landmarks, volumes)
+    assert fig is not None
+    assert len(fig.data) == 4  # Bar (current), Scatter MEV, Scatter MAV, Scatter MRV
+    trace_names = [t.name for t in fig.data]
+    assert "Current Weekly Volume (Sets)" in trace_names
+    assert "MEV (Maintenance / Min Gain)" in trace_names
+    assert "MAV (Optimal Hypertrophy)" in trace_names
+    assert "MRV (Fatigue Ceiling)" in trace_names
+
+
+def test_build_sfr_matrix_chart() -> None:
+    from src.analysis.sfr_evaluator import ExerciseSFRResult
+
+    # Test empty
+    fig_empty = build_sfr_matrix_chart({})
+    assert fig_empty is not None
+    assert len(fig_empty.layout.annotations) > 0
+
+    # Test populated
+    sfr_results = {
+        "bench": ExerciseSFRResult(
+            exercise_id="bench",
+            sfr_score=75.0,
+            sfr_tier="OPTIMAL",
+            is_evaluable=True,
+            sessions_evaluated=5,
+            mean_effective_reps=4.2,
+            intra_session_dropoff=0.08,
+            e10rm_slope_28d=0.02,
+            joint_pain_sum=0,
+            muscle_pain_sum=1,
+            has_severe_joint_pain=False,
+            recommended_swap_exercise_id=None,
+        ),
+        "squat": ExerciseSFRResult(
+            exercise_id="squat",
+            sfr_score=35.0,
+            sfr_tier="POOR_SWAP_RECOMMENDED",
+            is_evaluable=True,
+            sessions_evaluated=4,
+            mean_effective_reps=3.0,
+            intra_session_dropoff=0.22,
+            e10rm_slope_28d=-0.01,
+            joint_pain_sum=6,
+            muscle_pain_sum=2,
+            has_severe_joint_pain=True,
+            recommended_swap_exercise_id="leg_press",
+        ),
+    }
+    names = {"bench": "Bench Press", "squat": "Barbell Squat", "leg_press": "Leg Press"}
+
+    fig = build_sfr_matrix_chart(sfr_results, names)
+    assert fig is not None
+    assert len(fig.data) == 2  # Traces for OPTIMAL and POOR_SWAP_RECOMMENDED
+
 

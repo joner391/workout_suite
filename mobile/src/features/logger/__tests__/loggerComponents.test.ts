@@ -31,6 +31,8 @@ import {
   MockUserSettingsRepository,
   MockPainReportRepository,
 } from '../../../database/mocks';
+import { CalibratedParamService } from '../../../services/calibratedParamService';
+import { MockSQLiteDatabase } from '../../../database/__tests__/MockSQLiteDatabase';
 
 describe('Active Logger Features & UI Logic (Step 1.5)', () => {
   let workoutRepo: MockWorkoutRepository;
@@ -1116,6 +1118,54 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
       const updatedWorkout = await sessionService.getActiveWorkout(workout.id);
       expect(updatedWorkout?.sets.length).toBe(1);
       expect(updatedWorkout?.sets[0].id).toBe(sq1.id);
+    });
+  });
+
+  describe('SFR Warning Badge & In-Logger Substitution Trigger (ADR-072 / Phase 6)', () => {
+    it('identifies exercises with POOR_SWAP_RECOMMENDED tier from calibrated parameters', async () => {
+      const mockDb = new MockSQLiteDatabase();
+      const calibService = new CalibratedParamService(mockDb);
+
+      await calibService.importParameters({
+        version: '2.0.0',
+        exported_at: '2026-10-18T12:00:00Z',
+        parameters: [
+          {
+            exercise_id: mockSquat.id,
+            calibrated_1rm: 140,
+            calibrated_k: 0.10,
+            cov_p00: 0.001,
+            cov_p11: 0.0005,
+            calibrated_at: '2026-10-18T12:00:00Z',
+            sfr_score: 28.5,
+            sfr_tier: 'POOR_SWAP_RECOMMENDED',
+            recommended_swap_exercise_id: 'ex-leg-press',
+          },
+        ],
+      });
+
+      mockDb.mockData.set('FROM calibrated_params', [
+        {
+          id: 'calib_1',
+          exercise_id: mockSquat.id,
+          calibrated_1rm: 140,
+          calibrated_k: 0.10,
+          cov_p00: 0.001,
+          cov_p11: 0.0005,
+          calibrated_at: '2026-10-18T12:00:00Z',
+          sfr_score: 28.5,
+          sfr_tier: 'POOR_SWAP_RECOMMENDED',
+          recommended_swap_exercise_id: 'ex-leg-press',
+          optimal_rest_seconds: 180,
+          asymmetry_ratio: null,
+        },
+      ]);
+
+      const params = await calibService.getAllCalibratedParams();
+      const pMap = new Map(params.map((p) => [p.exercise_id, p]));
+
+      expect(pMap.get(mockSquat.id)?.sfr_tier).toBe('POOR_SWAP_RECOMMENDED');
+      expect(pMap.get(mockSquat.id)?.recommended_swap_exercise_id).toBe('ex-leg-press');
     });
   });
 });

@@ -13,25 +13,131 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
+import math
 from pathlib import Path
 import sys
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
+import numpy as np
 
 # Ensure companion root directory is in sys.path
 _COMPANION_ROOT = str(Path(__file__).resolve().parents[2])
 if _COMPANION_ROOT not in sys.path:
     sys.path.insert(0, _COMPANION_ROOT)
 
+from src.analysis.hypertrophy_signals import project_e10rm
+from src.analysis.muscle_landmarks import (
+    CANONICAL_MUSCLE_GROUPS,
+    compute_muscle_partitioned_readiness,
+    route_muscle_volume_credit,
+    solve_all_muscle_landmarks,
+)
+from src.analysis.sfr_evaluator import (
+    evaluate_all_exercises_sfr,
+    evaluate_all_unilateral_asymmetries,
+)
 from src.ingestion.schemas import (
     CalibratedParameter,
     CalibratedParametersEnvelope,
+    Exercise,
+    MuscleLandmarkPayload,
+    ProgramAuditPayload,
     Workout,
     WorkoutExportPayload,
     WorkoutSet,
 )
 from src.models.kalman_1rm import Adaptive1RMKalmanFilter
+from src.models.recovery_modifier import compute_recovery_modifier
+from src.models.recommendations import generate_parameter_audits
+
+
+def compute_weekly_volumes_and_slopes_by_muscle(
+    workouts: Sequence[Workout],
+    sets: Sequence[WorkoutSet],
+    exercises: Sequence[Exercise],
+) -> Tuple[Dict[str, List[float]], Dict[str, List[float]]]:
+    """Aggregates weekly fractional set volumes and e10RM log-slopes per canonical muscle group."""
+    ex_map = {str(getattr(e, "id", "")): e for e in exercises if getattr(e, "id", "")}
+
+    workout_dates: Dict[str, date] = {}
+    for w in workouts:
+        wid = str(getattr(w, "id", ""))
+        d_val = getattr(w, "date", None)
+        if wid and d_val:
+            try:
+                dt = datetime.strptime(str(d_val)[:10], "%Y-%m-%d").date()
+                workout_dates[wid] = dt
+            except ValueError:
+                pass
+
+    if not workout_dates:
+        return (
+            {m: [] for m in CANONICAL_MUSCLE_GROUPS},
+            {m: [] for m in CANONICAL_MUSCLE_GROUPS},
+        )
+
+    min_date = min(workout_dates.values())
+    max_date = max(workout_dates.values())
+    total_days = (max_date - min_date).days
+    num_weeks = max(1, (total_days // 7) + 1)
+
+    weekly_volumes: Dict[str, List[float]] = {m: [0.0] * num_weeks for m in CANONICAL_MUSCLE_GROUPS}
+    weekly_e10rms: Dict[str, List[List[float]]] = {m: [[] for _ in range(num_weeks)] for m in CANONICAL_MUSCLE_GROUPS}
+
+    for s in sets:
+        st = str(getattr(s, "set_type", "working")).strip().lower()
+        if st == "warmup":
+            continue
+        reps = int(getattr(s, "reps", 0) or 0)
+        if reps <= 0:
+            continue
+
+        wid = str(getattr(s, "workout_id", ""))
+        w_dt = workout_dates.get(wid)
+        if not w_dt:
+            continue
+
+        week_idx = (w_dt - min_date).days // 7
+        if week_idx < 0 or week_idx >= num_weeks:
+            continue
+
+        eid = str(getattr(s, "exercise_id", ""))
+        ex_obj = ex_map.get(eid)
+
+        credit = route_muscle_volume_credit(s, ex_obj)
+        for m, (frac_sets, _) in credit.credits.items():
+            if m in weekly_volumes:
+                weekly_volumes[m][week_idx] += frac_sets
+
+        weight = float(getattr(s, "weight", 0.0) or 0.0)
+        if weight > 0.0:
+            rir_raw = getattr(s, "rir", None)
+            rpe_raw = getattr(s, "rpe", None)
+            rir = float(rir_raw) if rir_raw is not None else (10.0 - float(rpe_raw) if rpe_raw is not None else 2.0)
+            e1rm = weight * ((reps + rir) ** 0.10)
+            e10rm = e1rm * (10.0 ** (-0.10))
+            primary_m = credit.primary_muscle
+            if primary_m in weekly_e10rms:
+                weekly_e10rms[primary_m][week_idx].append(e10rm)
+
+    weekly_slopes: Dict[str, List[float]] = {m: [] for m in CANONICAL_MUSCLE_GROUPS}
+    for m in CANONICAL_MUSCLE_GROUPS:
+        m_e10rms = weekly_e10rms[m]
+        for week_i in range(num_weeks):
+            if week_i == 0:
+                weekly_slopes[m].append(0.0)
+            else:
+                prev_vals = m_e10rms[week_i - 1]
+                curr_vals = m_e10rms[week_i]
+                if prev_vals and curr_vals:
+                    slope = math.log(max(1.0, float(np.mean(curr_vals)))) - math.log(max(1.0, float(np.mean(prev_vals))))
+                    weekly_slopes[m].append(slope)
+                else:
+                    weekly_slopes[m].append(0.0)
+
+    return (weekly_volumes, weekly_slopes)
 
 
 def calibrate_exercise_stream(
@@ -124,13 +230,108 @@ def export_calibrated_parameters(
             max_session_sets=max_session_sets,
         )
         if param is not None:
+            # 1. Projected true 10RM
+            param.calibrated_10rm = round(
+                project_e10rm(e1rm=param.calibrated_1rm, k=param.calibrated_k),
+                2,
+            )
             parameters.append(param)
+
+    # 2. Evaluate SFR for all exercises
+    user_prof = payload.user_profiles[0] if payload.user_profiles else None
+    sfr_map = evaluate_all_exercises_sfr(
+        workout_sets=payload.workout_sets,
+        pain_reports=payload.pain_reports,
+        workouts=payload.workouts,
+        exercises=payload.exercises,
+        user_profile=user_prof,
+        gear_inventory=payload.gear_inventory,
+    )
+    for p in parameters:
+        if p.exercise_id in sfr_map:
+            sfr_res = sfr_map[p.exercise_id]
+            p.sfr_score = round(sfr_res.sfr_score, 1) if sfr_res.sfr_score is not None else None
+            p.sfr_tier = sfr_res.sfr_tier
+            p.recommended_swap_exercise_id = sfr_res.recommended_swap_exercise_id
+
+    # 3. Evaluate Unilateral Asymmetries
+    asym_map = evaluate_all_unilateral_asymmetries(
+        workout_sets=payload.workout_sets,
+        workouts=payload.workouts,
+        exercises=payload.exercises,
+    )
+    for p in parameters:
+        if p.exercise_id in asym_map:
+            asym_res = asym_map[p.exercise_id]
+            if asym_res.sessions_evaluated > 0 and asym_res.asymmetry_ratio is not None:
+                p.asymmetry_ratio = round(asym_res.asymmetry_ratio, 4)
+
+    # 4. Solve Muscle Landmarks & Localized Readiness
+    rec_state = compute_recovery_modifier(payload.body_metrics)
+    muscle_readiness = compute_muscle_partitioned_readiness(
+        workouts=payload.workouts,
+        workout_sets=payload.workout_sets,
+        exercises=payload.exercises,
+        body_metrics=payload.body_metrics,
+    )
+    weekly_vols, weekly_slopes = compute_weekly_volumes_and_slopes_by_muscle(
+        workouts=payload.workouts,
+        sets=payload.workout_sets,
+        exercises=payload.exercises,
+    )
+    landmarks_res = solve_all_muscle_landmarks(
+        weekly_volumes_by_muscle=weekly_vols,
+        weekly_e10rm_slopes_by_muscle=weekly_slopes,
+        energy_balance=rec_state.energy_balance,
+        current_readiness_by_muscle=muscle_readiness,
+    )
+    muscle_landmarks_payload: Dict[str, MuscleLandmarkPayload] = {
+        m: MuscleLandmarkPayload(
+            mev=lm.mev,
+            mav=lm.mav,
+            mrv=lm.mrv,
+            readiness_pct=lm.readiness_pct,
+        )
+        for m, lm in landmarks_res.items()
+    }
+
+    # 5. Program Parameter Audits
+    audits_raw = generate_parameter_audits(
+        workout_sets=payload.workout_sets,
+        workouts=payload.workouts,
+        exercises=payload.exercises,
+        landmarks_by_muscle=landmarks_res,
+    )
+    program_audit_payloads: List[ProgramAuditPayload] = []
+    for audit in audits_raw:
+        if audit.parameter_adjustments:
+            param_name, param_val = next(iter(audit.parameter_adjustments.items()))
+        else:
+            param_name, param_val = "action", audit.recommended_action
+
+        program_audit_payloads.append(
+            ProgramAuditPayload(
+                rule_code=audit.audit_type,
+                target_id=audit.target_id,
+                message=audit.message,
+                suggested_parameter=param_name,
+                suggested_value=param_val,
+            )
+        )
+
+        # Wire REST_TOO_SHORT to exercise optimal_rest_seconds
+        if audit.audit_type == "REST_TOO_SHORT" and audit.target_type == "exercise":
+            for p in parameters:
+                if p.exercise_id == audit.target_id:
+                    p.optimal_rest_seconds = int(audit.parameter_adjustments.get("optimal_rest_seconds", 180))
 
     now_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     envelope = CalibratedParametersEnvelope(
         version="1.0.0",
         exported_at=now_utc,
         parameters=parameters,
+        muscle_landmarks=muscle_landmarks_payload,
+        program_audits=program_audit_payloads if program_audit_payloads else None,
     )
     return envelope
 

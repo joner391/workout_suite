@@ -124,6 +124,42 @@ describe('Database Schema & Migrations', () => {
       mockDb.execQueries.some((q) => q.includes('CREATE INDEX IF NOT EXISTS idx_workout_sets_ex_created'))
     ).toBe(true);
 
+    // Should run v3 -> v4
+    expect(
+      mockDb.execQueries.some((q) => q.includes('CREATE TABLE IF NOT EXISTS pain_reports'))
+    ).toBe(true);
+
+    // Should run v4 -> v5
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE calibrated_params ADD COLUMN calibrated_10rm'))
+    ).toBe(true);
+
+    expect(mockDb.execQueries).toContain(
+      `PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`
+    );
+  });
+
+  it('runs v4 -> v5 migration when user_version is 4', async () => {
+    mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 4 }]);
+
+    await migrateDatabase(mockDb);
+
+    // Should NOT re-run v1 -> v4
+    expect(
+      mockDb.execQueries.some((q) => q.includes('CREATE TABLE IF NOT EXISTS pain_reports'))
+    ).toBe(false);
+
+    // Should run v4 -> v5
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE calibrated_params ADD COLUMN calibrated_10rm'))
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE calibrated_params ADD COLUMN sfr_score'))
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE calibrated_params ADD COLUMN sfr_tier'))
+    ).toBe(true);
+
     expect(mockDb.execQueries).toContain(
       `PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`
     );

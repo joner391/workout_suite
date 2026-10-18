@@ -2,7 +2,7 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { DEFAULT_EXERCISES, DEFAULT_GEAR } from './seeds/defaultExercises';
 
 export const DATABASE_NAME = 'workout_suite.db';
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 /**
  * Minimal abstraction matching the modern expo-sqlite async interface.
@@ -161,6 +161,12 @@ CREATE TABLE IF NOT EXISTS calibrated_params (
     cov_p00 REAL NOT NULL DEFAULT 0.0,
     cov_p11 REAL NOT NULL DEFAULT 0.0,
     calibrated_at TEXT NOT NULL,
+    calibrated_10rm REAL,
+    sfr_score REAL,
+    sfr_tier TEXT,
+    recommended_swap_exercise_id TEXT,
+    optimal_rest_seconds INTEGER,
+    asymmetry_ratio REAL,
     UNIQUE(exercise_id)
 );
 
@@ -368,6 +374,34 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
         CREATE INDEX IF NOT EXISTS idx_pain_reports_workout_id ON pain_reports(workout_id);
         CREATE INDEX IF NOT EXISTS idx_pain_reports_exercise_id ON pain_reports(exercise_id);
       `);
+      await db.execAsync('PRAGMA user_version = 4;');
+      await db.execAsync('COMMIT;');
+      currentVersion = 4;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  if (currentVersion < 5) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      // Migration v4 -> v5: Add hypertrophy fields to calibrated_params
+      const columns = [
+        'ALTER TABLE calibrated_params ADD COLUMN calibrated_10rm REAL;',
+        'ALTER TABLE calibrated_params ADD COLUMN sfr_score REAL;',
+        'ALTER TABLE calibrated_params ADD COLUMN sfr_tier TEXT;',
+        'ALTER TABLE calibrated_params ADD COLUMN recommended_swap_exercise_id TEXT;',
+        'ALTER TABLE calibrated_params ADD COLUMN optimal_rest_seconds INTEGER;',
+        'ALTER TABLE calibrated_params ADD COLUMN asymmetry_ratio REAL;',
+      ];
+      for (const colSql of columns) {
+        try {
+          await db.execAsync(colSql);
+        } catch {
+          // Column may already exist
+        }
+      }
       await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
       await db.execAsync('COMMIT;');
       currentVersion = CURRENT_SCHEMA_VERSION;

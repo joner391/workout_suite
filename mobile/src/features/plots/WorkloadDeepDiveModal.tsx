@@ -53,6 +53,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
+      let customLandmarks: Record<string, { mev: number; mav: number; mrv: number }> | undefined;
       if (userSettingsRepo) {
         try {
           const u = await userSettingsRepo.get('unit_system');
@@ -60,10 +61,20 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
         } catch {
           // Fall back to kg
         }
+
+        try {
+          const raw = await userSettingsRepo.get('calibrated_muscle_landmarks');
+          if (raw) {
+            customLandmarks = JSON.parse(raw);
+          }
+        } catch {
+          // Fall back to static constants
+        }
       }
 
       const result = await computeWeeklyWorkloadDeepDive(workoutRepo, exerciseRepo, {
         weekOffset,
+        customLandmarks,
       });
       setDeepDive(result);
     } catch {

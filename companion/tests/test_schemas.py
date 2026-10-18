@@ -407,6 +407,86 @@ def test_valid_calibrated_envelope() -> None:
     assert envelope.parameters[0].calibrated_1rm == 125.0
 
 
+def test_calibrated_parameters_compatibility_v1_and_v2() -> None:
+    """Verifies 100% backwards and forwards compatibility between legacy v1 and enriched v2 schemas."""
+    import json
+    from pathlib import Path
+    import jsonschema  # type: ignore[import-untyped]
+
+    schema_path = Path(__file__).resolve().parents[2] / "schemas" / "calibrated_parameters.schema.json"
+    with open(schema_path, "r", encoding="utf-8") as f:
+        schema = json.load(f)
+
+    # 1. Legacy v1 payload (no hypertrophy extensions)
+    v1_dict = {
+        "version": "1.0.0",
+        "exported_at": "2026-10-13T20:00:00Z",
+        "parameters": [
+            {
+                "exercise_id": "ex-squat",
+                "calibrated_1rm": 180.0,
+                "calibrated_k": 0.092,
+                "cov_p00": 0.0008,
+                "cov_p11": 0.0004,
+                "calibrated_at": "2026-10-13T20:00:00Z",
+            }
+        ],
+    }
+    jsonschema.validate(instance=v1_dict, schema=schema)
+    v1_model = CalibratedParametersEnvelope.model_validate(v1_dict)
+    assert v1_model.parameters[0].calibrated_10rm is None
+    assert v1_model.muscle_landmarks is None
+    assert v1_model.program_audits is None
+
+    # 2. Enriched v2 payload (full hypertrophy signals, landmarks, and audits)
+    v2_dict = {
+        "version": "2.0.0",
+        "exported_at": "2026-10-18T18:00:00Z",
+        "parameters": [
+            {
+                "exercise_id": "ex-squat",
+                "calibrated_1rm": 180.0,
+                "calibrated_k": 0.092,
+                "cov_p00": 0.0008,
+                "cov_p11": 0.0004,
+                "calibrated_at": "2026-10-18T18:00:00Z",
+                "calibrated_10rm": 145.6,
+                "sfr_score": 78.5,
+                "sfr_tier": "OPTIMAL",
+                "recommended_swap_exercise_id": None,
+                "optimal_rest_seconds": 180,
+                "asymmetry_ratio": 0.045,
+            }
+        ],
+        "muscle_landmarks": {
+            "Quads": {
+                "mev": 8.0,
+                "mav": 16.0,
+                "mrv": 22.0,
+                "readiness_pct": 85.5,
+            }
+        },
+        "program_audits": [
+            {
+                "rule_code": "REST_TOO_SHORT",
+                "target_id": "ex-squat",
+                "message": "Compound movement demonstrates excessive intra-session fatigue drop-off.",
+                "suggested_parameter": "optimal_rest_seconds",
+                "suggested_value": 180,
+            }
+        ],
+    }
+    jsonschema.validate(instance=v2_dict, schema=schema)
+    v2_model = CalibratedParametersEnvelope.model_validate(v2_dict)
+    assert v2_model.parameters[0].calibrated_10rm == 145.6
+    assert v2_model.parameters[0].sfr_tier == "OPTIMAL"
+    assert v2_model.muscle_landmarks is not None
+    assert v2_model.muscle_landmarks["Quads"].mav == 16.0
+    assert v2_model.program_audits is not None
+    assert v2_model.program_audits[0].rule_code == "REST_TOO_SHORT"
+
+
+
 # ============================================================================
 # Tests: Step 2.3 Generated Fixture Contract Verification
 # ============================================================================
@@ -415,7 +495,7 @@ def test_sample_workout_export_fixture() -> None:
     """Verifies that the mobile SQLite export fixture conforms to both the Draft-07 JSON Schema and Companion Pydantic v2 models."""
     import json
     from pathlib import Path
-    import jsonschema  # type: ignore[import-untyped]
+    import jsonschema
 
     repo_root = Path(__file__).resolve().parent.parent.parent
     fixture_path = repo_root / "schemas" / "fixtures" / "sample_workout_export.json"

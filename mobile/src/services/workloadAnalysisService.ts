@@ -120,11 +120,22 @@ export function getWeekBoundaries(
  * - High Volume: 19 - 24 sets
  * - Peak / Overreaching: > 24 sets
  */
-export function classifyVolumeTier(sets: number): {
+export function classifyVolumeTier(
+  sets: number,
+  customLandmark?: { mev: number; mav: number; mrv: number }
+): {
   tier: VolumeLandmarkTier;
   targetMinSets: number;
   targetMaxSets: number;
 } {
+  if (customLandmark) {
+    const { mev, mav, mrv } = customLandmark;
+    if (sets < mev) return { tier: 'low', targetMinSets: mev, targetMaxSets: mav };
+    if (sets <= mav) return { tier: 'optimal', targetMinSets: mev, targetMaxSets: mav };
+    if (sets <= mrv) return { tier: 'high', targetMinSets: mev, targetMaxSets: mav };
+    return { tier: 'peak', targetMinSets: mev, targetMaxSets: mav };
+  }
+
   const targetMinSets = 8;
   const targetMaxSets = 18;
 
@@ -227,9 +238,10 @@ export async function computeWeeklyWorkloadDeepDive(
   options: {
     refDate?: Date;
     weekOffset?: number;
+    customLandmarks?: Record<string, { mev: number; mav: number; mrv: number }>;
   } = {}
 ): Promise<WeeklyWorkloadDeepDive> {
-  const { refDate = new Date(), weekOffset = 0 } = options;
+  const { refDate = new Date(), weekOffset = 0, customLandmarks } = options;
   const { mondayIso, sundayIso, mondayDate } = getWeekBoundaries(refDate, weekOffset);
 
   // 1. Fetch workouts and exercises
@@ -434,7 +446,8 @@ export async function computeWeeklyWorkloadDeepDive(
     muscleSetCounts.entries()
   )
     .map(([group, data]) => {
-      const setsLandmark = classifyVolumeTier(data.sets);
+      const custom = customLandmarks?.[group];
+      const setsLandmark = classifyVolumeTier(data.sets, custom);
       const eRepsLandmark = classifyEffectiveRepsTier(data.effectiveReps);
       return {
         muscleGroup: group,

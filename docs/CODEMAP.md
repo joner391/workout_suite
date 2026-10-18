@@ -234,7 +234,11 @@ c:/Programmering/Eget/Workout_suite/
 │   ├── requirements.txt
 │   ├── README.md
 │   ├── src/
-│   │   ├── __init__.py
+│   │   ├── analysis/
+│   │   │   ├── __init__.py
+│   │   │   ├── hypertrophy_signals.py  # eReps, implicit rest kinetics, delta_drop, e10RM
+│   │   │   ├── muscle_landmarks.py     # Partitioned Banister, volume routing, [MEV, MAV, MRV]
+│   │   │   └── sfr_evaluator.py        # Empirical SFR score, variant tree substitutions, asymmetry
 │   │   ├── ingestion/
 │   │   │   ├── __init__.py
 │   │   │   └── schemas.py      # Pydantic v2 export & calibration models
@@ -250,12 +254,18 @@ c:/Programmering/Eget/Workout_suite/
 │   │       ├── kalman_1rm.py        # Tier 2 Adaptive Linear Kalman Filter
 │   │       ├── recovery_modifier.py # Dynamic recoverability (Delta BW / Delta t)
 │   │       ├── fatigue_banister.py  # Banister two-component impulse-response ODEs
-│   │       └── recommendations.py   # ACWR and actionable training advisories
+│   │       ├── recommendations.py   # ACWR and actionable training advisories
+│   │       └── mesocycle_analyzer.py # Survival analysis & change-point mesocycle length optimizer
 │   └── tests/
 │       ├── __init__.py
 │       ├── test_schemas.py          # Schema validation and boundary test suite
 │       ├── test_kalman_1rm.py       # 1RM Kalman filter mathematical tests
 │       ├── test_banister.py         # Banister & recoverability test suite
+│       ├── test_hypertrophy_signals.py # Effective reps, implicit rest, fatigue drop-off tests
+│       ├── test_muscle_landmarks.py # Volume credit routing, m_sys, and landmark estimation tests
+│       ├── test_sfr_evaluator.py    # Empirical SFR, variant substitutions, and limb asymmetry tests
+│       ├── test_parameter_audit.py  # P-Ratio partitioning and program parameter audit rules tests
+│       ├── test_mesocycle_analyzer.py # Mesocycle optimizer and change-point tests
 │       ├── test_exporter.py         # Calibrated parameter export & schema contract tests
 │       └── test_ui_smoke.py         # Streamlit & Plotly headless smoke test suite
 └── docs/                       # Architecture documentation and decision records
@@ -403,7 +413,7 @@ When code generation begins in subsequent phases, components must be placed into
   - `programBlockService.ts` — Meso-cycle date interval resolver and color band calculator.
 - `mobile/src/database/` — Infrastructure Layer (Adapters).
   - `index.ts` — Production barrel exporting schema and repositories (decoupled from mocks to guarantee tree-shaking).
-  - `schema.ts` — SQLite table DDL (12 tables) and transactional `PRAGMA user_version = 4` migration framework (`expo-sqlite`), featuring composite index `idx_workout_sets_ex_created`, `pain_reports` table with workout/exercise foreign keys and indexes, and cascading constraints.
+  - `schema.ts` — SQLite table DDL (12 tables) and transactional `PRAGMA user_version = 5` migration framework (`expo-sqlite`), featuring composite index `idx_workout_sets_ex_created`, `pain_reports` table with workout/exercise foreign keys and indexes, and `calibrated_params` enriched with hypertrophy columns (`calibrated_10rm`, `sfr_score`, `sfr_tier`, `recommended_swap_exercise_id`, `optimal_rest_seconds`, `asymmetry_ratio`).
   - `repositories/` — Concrete SQLite implementations of domain repository interfaces (`SQLiteProgramRepository.ts`, `SQLiteWorkoutRepository.ts`, `SQLiteGearRepository.ts`, `SQLiteUserProfileRepository.ts`, `SQLiteBodyMetricsRepository.ts` with `imported_from` provenance, `SQLiteUserSettingsRepository.ts`, `SQLitePainReportRepository.ts`, etc.).
   - `mocks/` — In-memory test repositories (`MockProgramRepository.ts`, `MockWorkoutRepository.ts`, `MockGearRepository.ts`, `MockUserProfileRepository.ts`, `MockBodyMetricsRepository.ts`, `MockUserSettingsRepository.ts`, `MockPainReportRepository.ts`, etc.), consumed strictly within unit tests.
 
@@ -415,24 +425,32 @@ When code generation begins in subsequent phases, components must be placed into
 - `companion/tests/` — Test suite for companion schemas, models, and export.
 - `companion/src/ingestion/` — Ingestion & contract validation.
   - `parser.py` — File reader for `workout_data_export.json`.
-  - `schemas.py` — Pydantic v2 data models enforcing schema conformity.
+  - `schemas.py` — Pydantic v2 data models enforcing schema conformity with enriched hypertrophy parameters (`MuscleLandmarkPayload`, `ProgramAuditPayload`, `CalibratedParameter`).
 - `companion/src/models/` — Headless scientific modeling engine (pure NumPy/SciPy math).
   - `kalman_1rm.py` — Linear Kalman Filter updating $(1\text{RM}_t, k_t)$ per exercise via single top-set selection (`max_session_sets=1`) ranked by projected e1RM ($w \cdot r_{\text{eff}}^k$), single consolidated daily batch evaluation, 3-stage gating pipeline (intra-session reference, Huber M-estimation, physical load floor), Joseph stabilized covariance form, soft Tikhonov prior anchor, and Simon's covariance-weighted boundary projection.
   - `fatigue_banister.py` — Two-component impulse-response ODE solver with per-exercise and session-level diminishing returns saturation ($\kappa_{\text{ex}} = 4.0$) and scale-invariant unit-gain EWMA discretization bounding $P(t), F(t) \in [0, 100]$.
   - `mesocycle_analyzer.py` — Survival analysis and change-point detection engine for individual optimal mesocycle length ($L_{\text{opt}}$). Combines Kalman e1RM gain velocity stall, iso-load RPE drift, and Page's CUSUM systemic exhaustion with empirical Banister boundary segmentation and conjugate Normal-Normal Bayesian updating.
-  - `recovery_modifier.py` — 14-day rolling bodyweight slope ($\Delta BW / \Delta t$) fatigue scaler.
-  - `recommendations.py` — ACWR calculation, deload trigger, and progressive overload advisory engine.
+  - `recovery_modifier.py` — 14-day rolling bodyweight slope ($\Delta BW / \Delta t$) fatigue scaler and 28-day anthropometric partitioning ($P$-Ratio proxy: $\beta_{\text{eLBM}} / \beta_{\text{BW}}$) flagging `CALORIC_OVERSHOOT`.
+  - `recommendations.py` — ACWR calculation, deload trigger, and deterministic program parameter audit matrix (`REST_TOO_SHORT`, `JUNK_VOLUME`, `AXIAL_BOTTLENECK`, `REP_MONOTONY`).
+- `companion/src/analysis/` — Hypertrophy & biomechanical analysis modules.
+  - `hypertrophy_signals.py` — Effective reps ($e\text{Reps}$), TUT-adjusted implicit rest kinetics, intra-session drop-off $\delta_{\text{drop}}$, and true e10RM projection.
+  - `muscle_landmarks.py` — 12-muscle volume credit routing, category systemic fatigue multipliers ($m_{\text{sys}}$), local peripheral readiness ($\tau_{2,m}$), and bounded quadratic dose-response landmark regression $[ \text{MEV}, \text{MAV}, \text{MRV} ]$.
+  - `sfr_evaluator.py` — Empirical SFR evaluation, severe joint pain guardrails ($\ge 5 \implies \text{POOR\_SWAP\_RECOMMENDED}$), variant tree substitutions, and unilateral repetition asymmetry index.
 - `companion/src/export/` — Calibrated parameter output.
-  - `param_exporter.py` — Serializes per-exercise $(1\text{RM}, k)$ to `calibrated_parameters.json` for mobile import with configurable `default_working_rir`.
+  - `param_exporter.py` — Serializes per-exercise $(1\text{RM}, k)$, projected 10RM, SFR tiers, swap IDs, asymmetry ratios, 12-muscle volume landmarks, and program audits to `calibrated_parameters.json` for mobile import with configurable `default_working_rir`.
 - `companion/src/ui/` — Presentation Layer.
-  - `app.py` — Streamlit / Plotly interactive web dashboard with exercise coverage strip, actual 1RM performance tracking callouts, unrated working set toggles, Mesocycle Optimizer tab ($L_{\text{opt}}$ and deload window), and round-trip export.
-  - `charts.py` — Interactive Plotly chart builders: Kalman 1RM trajectory with ±1 SD uncertainty envelope and distinct crimson star markers (★) for tested actual 1RMs vs amber diamonds for submaximal sets, repetition endurance drift ($k_t$), Banister impulse-response curves (Fitness/Fatigue/Readiness), longitudinal bodyweight OLS slope, and 2-panel Mesocycle Survival & Fatigue Curve with shaded 90% Bayesian credible interval deload window.
-- `companion/tests/` — Test suite for companion analytics.
+  - `app.py` — Streamlit / Plotly interactive web dashboard with exercise coverage strip, actual 1RM performance tracking callouts, unrated working set toggles, Mesocycle Optimizer tab ($L_{\text{opt}}$ and deload window), Hypertrophy & Program Audit tab, and round-trip export.
+  - `charts.py` — Interactive Plotly chart builders: Kalman 1RM trajectory with ±1 SD uncertainty envelope, repetition endurance drift ($k_t$), Banister impulse-response curves (Fitness/Fatigue/Readiness), longitudinal bodyweight OLS slope, 2-panel Mesocycle Survival & Fatigue Curve with shaded 90% Bayesian credible interval deload window, 12-Muscle Volume Landmarks vs Weekly Sets, and Exercise Stimulus-to-Fatigue Ratio (SFR) Matrix.
+- `companion/tests/` — Test suite for companion analytics (111 passed).
   - `test_banister.py` — Tests for Banister fitness-fatigue ODE integration, saturation, and ACWR alerts.
   - `test_exporter.py` — Tests for calibrated parameter export conformity.
+  - `test_hypertrophy_signals.py` — Tests for effective reps, implicit rest kinetics, intra-session dropoff, and e10RM projection.
   - `test_kalman_1rm.py` — Tests for Tier 2 adaptive Kalman filtering and endurance estimation.
   - `test_mesocycle_analyzer.py` — Tests for boundary segmentation, RPE drift clamping, and Bayesian mesocycle updates.
-  - `test_schemas.py` — Tests for Pydantic v2 schemas.
+  - `test_muscle_landmarks.py` — Tests for volume routing, systemic fatigue scaling, peripheral readiness, and landmark regression.
+  - `test_parameter_audit.py` — Tests for P-Ratio caloric overshoot and parameter audit rules.
+  - `test_schemas.py` — Tests for Pydantic v2 schemas and backwards/forwards contract compatibility.
+  - `test_sfr_evaluator.py` — Tests for empirical SFR scoring, variant substitutions, and unilateral asymmetry index.
   - `test_ui_smoke.py` — Headless smoke tests for Streamlit UI and Plotly chart generators.
 
 

@@ -16,7 +16,7 @@
  */
 
 import { ISQLiteDatabase } from '../database/schema';
-import { CalibratedParam } from '../core/types';
+import { CalibratedParam, MuscleLandmarkPayload, ProgramAuditPayload, SFRTier } from '../core/types';
 import { calculateEffectiveReps, calculateLombardi1RM, IntensityInput } from '../core/math/heuristic1rm';
 
 export interface CalibratedParameterItem {
@@ -26,12 +26,20 @@ export interface CalibratedParameterItem {
   cov_p00: number;
   cov_p11: number;
   calibrated_at: string;
+  calibrated_10rm?: number | null;
+  sfr_score?: number | null;
+  sfr_tier?: SFRTier | null;
+  recommended_swap_exercise_id?: string | null;
+  optimal_rest_seconds?: number | null;
+  asymmetry_ratio?: number | null;
 }
 
 export interface CalibratedParametersEnvelope {
   version: string;
   exported_at: string;
   parameters: CalibratedParameterItem[];
+  muscle_landmarks?: Record<string, MuscleLandmarkPayload> | null;
+  program_audits?: ProgramAuditPayload[] | null;
 }
 
 export interface ImportResult {
@@ -105,6 +113,12 @@ export class CalibratedParamService {
         cov_p00: typeof p.cov_p00 === 'number' && !isNaN(p.cov_p00) ? p.cov_p00 : 0.0,
         cov_p11: typeof p.cov_p11 === 'number' && !isNaN(p.cov_p11) ? p.cov_p11 : 0.0,
         calibrated_at: p.calibrated_at || envelope.exported_at,
+        calibrated_10rm: typeof p.calibrated_10rm === 'number' && !isNaN(p.calibrated_10rm) ? p.calibrated_10rm : null,
+        sfr_score: typeof p.sfr_score === 'number' && !isNaN(p.sfr_score) ? p.sfr_score : null,
+        sfr_tier: typeof p.sfr_tier === 'string' ? (p.sfr_tier as SFRTier) : null,
+        recommended_swap_exercise_id: typeof p.recommended_swap_exercise_id === 'string' ? p.recommended_swap_exercise_id : null,
+        optimal_rest_seconds: typeof p.optimal_rest_seconds === 'number' && !isNaN(p.optimal_rest_seconds) ? p.optimal_rest_seconds : null,
+        asymmetry_ratio: typeof p.asymmetry_ratio === 'number' && !isNaN(p.asymmetry_ratio) ? p.asymmetry_ratio : null,
       });
     }
 
@@ -123,23 +137,55 @@ export class CalibratedParamService {
         const id = `calib_${p.exercise_id}`;
         await this.db.runAsync(
           `INSERT INTO calibrated_params (
-            id, exercise_id, calibrated_1rm, calibrated_k, cov_p00, cov_p11, calibrated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            id, exercise_id, calibrated_1rm, calibrated_k, cov_p00, cov_p11, calibrated_at,
+            calibrated_10rm, sfr_score, sfr_tier, recommended_swap_exercise_id, optimal_rest_seconds, asymmetry_ratio
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(exercise_id) DO UPDATE SET
             calibrated_1rm = excluded.calibrated_1rm,
             calibrated_k = excluded.calibrated_k,
             cov_p00 = excluded.cov_p00,
             cov_p11 = excluded.cov_p11,
-            calibrated_at = excluded.calibrated_at;`,
+            calibrated_at = excluded.calibrated_at,
+            calibrated_10rm = excluded.calibrated_10rm,
+            sfr_score = excluded.sfr_score,
+            sfr_tier = excluded.sfr_tier,
+            recommended_swap_exercise_id = excluded.recommended_swap_exercise_id,
+            optimal_rest_seconds = excluded.optimal_rest_seconds,
+            asymmetry_ratio = excluded.asymmetry_ratio;`,
           id,
           p.exercise_id,
           p.calibrated_1rm,
           p.calibrated_k,
           p.cov_p00,
           p.cov_p11,
-          p.calibrated_at
+          p.calibrated_at,
+          p.calibrated_10rm ?? null,
+          p.sfr_score ?? null,
+          p.sfr_tier ?? null,
+          p.recommended_swap_exercise_id ?? null,
+          p.optimal_rest_seconds ?? null,
+          p.asymmetry_ratio ?? null
         );
       }
+
+      // Persist muscle landmarks if present
+      if (envelope.muscle_landmarks && typeof envelope.muscle_landmarks === 'object') {
+        await this.db.runAsync(
+          `INSERT INTO user_settings (key, value) VALUES ('calibrated_muscle_landmarks', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+          JSON.stringify(envelope.muscle_landmarks)
+        );
+      }
+
+      // Persist program audits if present
+      if (envelope.program_audits && Array.isArray(envelope.program_audits)) {
+        await this.db.runAsync(
+          `INSERT INTO user_settings (key, value) VALUES ('calibrated_program_audits', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+          JSON.stringify(envelope.program_audits)
+        );
+      }
+
       await this.db.execAsync('COMMIT;');
     } catch (err: unknown) {
       await this.db.execAsync('ROLLBACK;');
@@ -162,7 +208,8 @@ export class CalibratedParamService {
    */
   async getCalibratedParam(exerciseId: string): Promise<CalibratedParam | null> {
     const row = await this.db.getFirstAsync<Record<string, unknown>>(
-      `SELECT id, exercise_id, calibrated_1rm, calibrated_k, cov_p00, cov_p11, calibrated_at
+      `SELECT id, exercise_id, calibrated_1rm, calibrated_k, cov_p00, cov_p11, calibrated_at,
+              calibrated_10rm, sfr_score, sfr_tier, recommended_swap_exercise_id, optimal_rest_seconds, asymmetry_ratio
        FROM calibrated_params
        WHERE exercise_id = ?;`,
       [exerciseId]
@@ -178,6 +225,12 @@ export class CalibratedParamService {
       cov_p00: Number(row.cov_p00 ?? 0.0),
       cov_p11: Number(row.cov_p11 ?? 0.0),
       calibrated_at: String(row.calibrated_at),
+      calibrated_10rm: row.calibrated_10rm != null ? Number(row.calibrated_10rm) : null,
+      sfr_score: row.sfr_score != null ? Number(row.sfr_score) : null,
+      sfr_tier: row.sfr_tier != null ? (String(row.sfr_tier) as SFRTier) : null,
+      recommended_swap_exercise_id: row.recommended_swap_exercise_id != null ? String(row.recommended_swap_exercise_id) : null,
+      optimal_rest_seconds: row.optimal_rest_seconds != null ? Number(row.optimal_rest_seconds) : null,
+      asymmetry_ratio: row.asymmetry_ratio != null ? Number(row.asymmetry_ratio) : null,
     };
   }
 
@@ -186,7 +239,8 @@ export class CalibratedParamService {
    */
   async getAllCalibratedParams(): Promise<CalibratedParam[]> {
     const rows = await this.db.getAllAsync<Record<string, unknown>>(
-      `SELECT id, exercise_id, calibrated_1rm, calibrated_k, cov_p00, cov_p11, calibrated_at
+      `SELECT id, exercise_id, calibrated_1rm, calibrated_k, cov_p00, cov_p11, calibrated_at,
+              calibrated_10rm, sfr_score, sfr_tier, recommended_swap_exercise_id, optimal_rest_seconds, asymmetry_ratio
        FROM calibrated_params
        ORDER BY exercise_id ASC;`
     );
@@ -199,7 +253,43 @@ export class CalibratedParamService {
       cov_p00: Number(row.cov_p00 ?? 0.0),
       cov_p11: Number(row.cov_p11 ?? 0.0),
       calibrated_at: String(row.calibrated_at),
+      calibrated_10rm: row.calibrated_10rm != null ? Number(row.calibrated_10rm) : null,
+      sfr_score: row.sfr_score != null ? Number(row.sfr_score) : null,
+      sfr_tier: row.sfr_tier != null ? (String(row.sfr_tier) as SFRTier) : null,
+      recommended_swap_exercise_id: row.recommended_swap_exercise_id != null ? String(row.recommended_swap_exercise_id) : null,
+      optimal_rest_seconds: row.optimal_rest_seconds != null ? Number(row.optimal_rest_seconds) : null,
+      asymmetry_ratio: row.asymmetry_ratio != null ? Number(row.asymmetry_ratio) : null,
     }));
+  }
+
+  /**
+   * Retrieves cached muscle landmarks from user_settings.
+   */
+  async getMuscleLandmarks(): Promise<Record<string, MuscleLandmarkPayload> | null> {
+    const row = await this.db.getFirstAsync<{ value: string }>(
+      `SELECT value FROM user_settings WHERE key = 'calibrated_muscle_landmarks';`
+    );
+    if (!row?.value) return null;
+    try {
+      return JSON.parse(row.value) as Record<string, MuscleLandmarkPayload>;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Retrieves cached program parameter audits from user_settings.
+   */
+  async getProgramAudits(): Promise<ProgramAuditPayload[] | null> {
+    const row = await this.db.getFirstAsync<{ value: string }>(
+      `SELECT value FROM user_settings WHERE key = 'calibrated_program_audits';`
+    );
+    if (!row?.value) return null;
+    try {
+      return JSON.parse(row.value) as ProgramAuditPayload[];
+    } catch {
+      return null;
+    }
   }
 
   /**

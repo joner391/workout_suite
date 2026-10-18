@@ -28,7 +28,19 @@ if _COMPANION_ROOT not in sys.path:
 import pandas as pd  # type: ignore[import-untyped]
 import streamlit as st
 
-from src.export.param_exporter import export_calibrated_parameters
+from src.export.param_exporter import (
+    compute_weekly_volumes_and_slopes_by_muscle,
+    export_calibrated_parameters,
+)
+from src.analysis.muscle_landmarks import (
+    CANONICAL_MUSCLE_GROUPS,
+    compute_muscle_partitioned_readiness,
+    solve_all_muscle_landmarks,
+)
+from src.analysis.sfr_evaluator import (
+    evaluate_all_exercises_sfr,
+    evaluate_all_unilateral_asymmetries,
+)
 from src.ingestion.schemas import (
     BodyMetric,
     Exercise,
@@ -50,7 +62,10 @@ from src.models.mesocycle_analyzer import (
     analyze_optimal_mesocycle_length,
     compute_all_kalman_histories,
 )
-from src.models.recommendations import get_latest_advisory
+from src.models.recommendations import (
+    generate_parameter_audits,
+    get_latest_advisory,
+)
 from src.models.recovery_modifier import (
     compute_recovery_modifier,
     RecoveryState,
@@ -61,6 +76,8 @@ from src.ui.charts import (
     build_endurance_k_chart,
     build_kalman_trajectory_chart,
     build_mesocycle_inflection_chart,
+    build_muscle_landmarks_chart,
+    build_sfr_matrix_chart,
 )
 
 
@@ -267,11 +284,12 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Tabs
     # -------------------------------------------------------------------------
-    tab_kalman, tab_banister, tab_mesocycle, tab_recovery, tab_export = st.tabs([
+    tab_kalman, tab_banister, tab_mesocycle, tab_recovery, tab_hypertrophy, tab_export = st.tabs([
         "📈 1RM Trajectory & Endurance (k)",
         "⚡ Banister Fitness-Fatigue",
         "🎯 Mesocycle Optimizer (L_opt)",
         "⚖️ Bodyweight & Recovery Modifiers",
+        "💪 Hypertrophy & Program Audit",
         "💾 Export Calibrated Parameters",
     ])
 
@@ -614,13 +632,123 @@ def main() -> None:
             st.info("No body metrics logged in this export.")
 
     # -------------------------------------------------------------------------
-    # Tab 4: Export Calibrated Parameters (Round-Trip)
+    # Tab 5: Hypertrophy & Program Audit
+    # -------------------------------------------------------------------------
+    with tab_hypertrophy:
+        st.subheader("💪 Hypertrophy Intelligence & Deterministic Program Audits")
+        st.markdown(
+            "Individualized 12-muscle volume landmarks $[\\text{MEV}, \\text{MAV}, \\text{MRV}]$, "
+            "empirical Stimulus-to-Fatigue Ratio (SFR) matrix, and deterministic parameter audits."
+        )
+
+        rec_state = compute_recovery_modifier(payload.body_metrics)
+        muscle_readiness = compute_muscle_partitioned_readiness(
+            workouts=payload.workouts,
+            workout_sets=payload.workout_sets,
+            exercises=payload.exercises,
+            body_metrics=payload.body_metrics,
+        )
+        weekly_vols, weekly_slopes = compute_weekly_volumes_and_slopes_by_muscle(
+            workouts=payload.workouts,
+            sets=payload.workout_sets,
+            exercises=payload.exercises,
+        )
+        landmarks = solve_all_muscle_landmarks(
+            weekly_volumes_by_muscle=weekly_vols,
+            weekly_e10rm_slopes_by_muscle=weekly_slopes,
+            energy_balance=rec_state.energy_balance,
+            current_readiness_by_muscle=muscle_readiness,
+        )
+        sfr_map = evaluate_all_exercises_sfr(
+            workout_sets=payload.workout_sets,
+            pain_reports=payload.pain_reports,
+            workouts=payload.workouts,
+            exercises=payload.exercises,
+            user_profile=payload.user_profiles[0] if payload.user_profiles else None,
+            gear_inventory=payload.gear_inventory,
+        )
+        asym_map = evaluate_all_unilateral_asymmetries(
+            workout_sets=payload.workout_sets,
+            workouts=payload.workouts,
+            exercises=payload.exercises,
+        )
+        audits = generate_parameter_audits(
+            workout_sets=payload.workout_sets,
+            workouts=payload.workouts,
+            exercises=payload.exercises,
+            landmarks_by_muscle=landmarks,
+            preparedness_series=daily_series,
+        )
+
+        # 1. Volume Landmarks Chart
+        st.markdown("### 📊 12-Muscle Volume Landmarks vs Weekly Sets")
+        st.caption(
+            f"Nutritional Energy Balance: **{rec_state.energy_balance}** "
+            f"({rec_state.slope_kg_per_week:+.2f} kg/wk bodyweight trend). "
+            f"[MAV, MRV] scaled accordingly."
+        )
+        curr_vol_map = {m: weekly_vols[m][-1] if weekly_vols.get(m) else 0.0 for m in CANONICAL_MUSCLE_GROUPS}
+        fig_lm = build_muscle_landmarks_chart(landmarks, curr_vol_map)
+        st.plotly_chart(fig_lm, use_container_width=True)
+
+        # 2. SFR Matrix Chart
+        st.markdown("### 🎯 Exercise Stimulus-to-Fatigue Ratio (SFR) Matrix")
+        ex_name_map = {e.id: e.name for e in payload.exercises}
+        fig_sfr = build_sfr_matrix_chart(sfr_map, ex_name_map)
+        st.plotly_chart(fig_sfr, use_container_width=True)
+
+        # Flagged Swaps & Asymmetries
+        swap_recs = [
+            (res.exercise_id, res.recommended_swap_exercise_id, res.sfr_score, res.has_severe_joint_pain)
+            for res in sfr_map.values()
+            if res.sfr_tier == "POOR_SWAP_RECOMMENDED" and res.recommended_swap_exercise_id
+        ]
+        if swap_recs:
+            st.warning("⚠️ **Exercise Substitution Recommendations (Low SFR / Joint Pain):**")
+            for eid, swap_id, score, severe_joint in swap_recs:
+                orig_name = ex_name_map.get(eid, eid)
+                rep_name = ex_name_map.get(str(swap_id), str(swap_id))
+                reason = "Severe Joint Pain" if severe_joint else f"SFR score {score:.1f}/100"
+                st.markdown(f"- **{orig_name}** ({reason}) ➔ Swap for **{rep_name}** (lower axial fatigue & joint stress)")
+
+        flagged_asym = [
+            (res.exercise_id, res.asymmetry_ratio, res.consecutive_breaches)
+            for res in asym_map.values()
+            if res.is_asymmetry_flagged and res.asymmetry_ratio is not None
+        ]
+        if flagged_asym:
+            st.error("🚨 **Persistent Unilateral Asymmetry Breaches (>12% across ≥3 sessions):**")
+            for eid, asym_ratio, breaches in flagged_asym:
+                ex_name = ex_name_map.get(eid, eid)
+                st.markdown(f"- **{ex_name}**: **{asym_ratio:.1%}** repetition imbalance over {breaches} consecutive workouts")
+
+        # 3. Program Parameter Audits Table
+        st.markdown("### 📋 Program Parameter Audit Matrix")
+        if audits:
+            audit_rows = [
+                {
+                    "Rule Code": a.audit_type,
+                    "Severity": a.severity,
+                    "Target ID": a.target_id,
+                    "Scope": a.target_type,
+                    "Advisory Message": a.message,
+                    "Recommended Action": a.recommended_action,
+                    "Adjustments": str(a.parameter_adjustments),
+                }
+                for a in audits
+            ]
+            st.dataframe(pd.DataFrame(audit_rows), use_container_width=True)
+        else:
+            st.success("✅ No program parameter audit warnings. Rest intervals, volume levels, and movement distributions are balanced.")
+
+    # -------------------------------------------------------------------------
+    # Tab 6: Export Calibrated Parameters (Round-Trip)
     # -------------------------------------------------------------------------
     with tab_export:
         st.subheader("Calibrated Parameters Generator")
         st.markdown(
-            "Export the latest Kalman posterior $(1\\text{RM}_t, k_t, \\mathbf{P}_t)$ "
-            "for all exercises into `calibrated_parameters.json` to import back into your mobile app."
+            "Export the latest Kalman posterior $(1\\text{RM}_t, k_t, \\mathbf{P}_t)$, "
+            "projected 10RM, SFR tiers, volume landmarks, and audits into `calibrated_parameters.json`."
         )
 
         envelope = export_calibrated_parameters(
@@ -639,9 +767,12 @@ def main() -> None:
                         else p.exercise_id
                     ),
                     "Calibrated 1RM (kg)": p.calibrated_1rm,
-                    "Calibrated k": p.calibrated_k,
-                    "Var ln(1RM) (cov_p00)": p.cov_p00,
-                    "Var k (cov_p11)": p.cov_p11,
+                    "Calibrated 10RM (kg)": p.calibrated_10rm,
+                    "Endurance (k)": p.calibrated_k,
+                    "SFR Tier": p.sfr_tier,
+                    "SFR Score": p.sfr_score,
+                    "Optimal Rest (s)": p.optimal_rest_seconds,
+                    "Asymmetry": f"{p.asymmetry_ratio:.1%}" if p.asymmetry_ratio is not None else "N/A",
                     "Calibrated At": p.calibrated_at,
                 }
                 for p in envelope.parameters

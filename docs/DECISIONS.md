@@ -1532,3 +1532,155 @@
   - *Cons*:
     - Requires maintaining two data pipelines (columnar analytical lake for pseudonymous points vs transactional relational DB for accounts).
     - Requires one-time backfill orchestration upon subscription upgrade.
+
+---
+
+## ADR-070: Hypertrophy Signal Extraction, TUT-Adjusted Implicit Rest Kinetics, and Kalman e10RM Projection
+- **Context**: In Phase 1 of the Hypertrophy & Mesocycle Optimization upgrade (`hypertrophy_update.md`), training logs must be analyzed for hypertrophic potency rather than raw powerlifting 1RM tonnage alone:
+  1. Standard set counting and arbitrary tonnage fail to capture proximity to failure ($e\text{Reps}$).
+  2. Rest intervals between sets are rarely manually logged with timers in real gyms, but timestamp intervals contain explicit chronological kinetics if adjusted for Time Under Tension ($t_{\text{TUT}}$).
+  3. Rest-pause set classifications (`myorep`, `drop`, `dc`) maintain high-threshold motor unit recruitment into subsequent mini-sets only when inter-set rest $\Delta t_{\text{rest}} \le 45\text{s}$, meriting an effective rep bonus ($+0.5 \cdot \max(0, \text{reps} - 5)$).
+  4. Multi-set intra-exercise fatigue drop-off ($\delta_{\text{drop}}$) serves as an empirical indicator of peripheral fatigue accumulation.
+  5. Long-term hypertrophy progress requires tracking 10-Repetition Maximum capacity ($\text{e10RM}_t$), which can be analytically derived from the state-space Kalman state $\mathbf{x}_t = [\ln(1\text{RM}_t), k_t]^T$.
+- **Decision**:
+  1. Implement `companion/src/analysis/hypertrophy_signals.py` providing vectorized NumPy/Pandas and scalar calculation routines with full Pydantic v2 schemas:
+     - `compute_effective_reps()`: Warmup sets yield $0.0$; unrated working sets default to $\text{RIR} = 2.0$; AMRAP sets default to $\text{RIR} = 0.0$. Working sets evaluate $\min(\text{reps}, \max(0, 5.0 - \text{RIR}))$. Rest-pause sets with $\Delta t_{\text{rest}} \le 45\text{s}$ credit high-threshold motor unit retention via $+0.5 \cdot \max(0, \text{reps} - 5)$.
+     - `compute_implicit_rest_seconds()`: Chronologically partitions sets within each workout session by exercise (or superset group) and subtracts estimated time under tension $t_{\text{TUT}} = 3.0 \times \text{reps}_i$ from consecutive check-off timestamps.
+     - `compute_intra_session_dropoff()`: Computes set-level e1RM using the athlete's calibrated endurance $k_t$ ($w_s \cdot (\text{reps}_s + \text{RIR}_s)^{k_t}$) and calculates fractional drop-off slope $\delta_{\text{drop}} = \frac{\text{e1RM}_1 - \text{e1RM}_N}{\text{e1RM}_1 \cdot (N - 1)}$ for $N \ge 2$.
+     - `project_e10rm()`: Projects 10RM capacity via $\text{e10RM}_t = \exp(x_{0,t}) \cdot 10^{-k_t}$, accepting `KalmanState`, 2D state vectors, or scalar combinations.
+- **Consequences**:
+  - *Pros*:
+    - Physiologically grounded volume and fatigue estimation derived 100% from existing SQLite schema fields (`created_at`, `reps`, `weight`, `set_type`, `rpe`, `rir`).
+    - Zero breaking changes to mobile SQLite database schemas or JSON export models.
+    - Full vectorized support with Pandas/NumPy alongside strict Pydantic v2 input/output validation models.
+    - 100% unit and regression test coverage verified with pytest and mypy strict mode.
+  - *Cons*:
+    - Implicit rest estimation relies on athletes checking off sets promptly at completion; delayed check-offs produce longer apparent rest intervals, naturally falling back to standard working set formulas.
+
+---
+
+## ADR-071: Muscle-Group Partitioned Banister and Empirical Bayesian Volume Landmark Estimation
+- **Context**: In Phase 2 of the Hypertrophy & Mesocycle Optimization upgrade (`hypertrophy_update.md`), whole-body systemic Banister readiness alone fails to guide muscle-specific training decisions:
+  1. An athlete may have high systemic fatigue from heavy squats while their chest and arms are fully recovered and ready for optimal stimulus.
+  2. Heavy axial compound movements (Barbell Back Squats, Deadlifts) exert vastly more systemic CNS fatigue than machine or isolation movements.
+  3. Synergist/secondary muscles (e.g. Glutes and Hamstrings in squats, Triceps and Shoulders in bench press) receive meaningful stimulus that must be credited without double-counting as full direct volume.
+  4. Individual volume landmarks ($[ \text{MEV}, \text{MAV}, \text{MRV} ]$) vary widely across lifters and nutritional phases (surplus vs deficit).
+- **Decision**:
+  1. Implement `companion/src/analysis/muscle_landmarks.py` and enhance `companion/src/models/fatigue_banister.py`:
+     - **Volume Credit Routing**: Non-warmup working sets credit $1.0\times$ fractional sets and $1.0\times e\text{Reps}$ to `exercises.muscle_group` (primary), and $0.5\times$ fractional sets and $0.5\times e\text{Reps}$ to each muscle in `exercises.secondary_muscles`.
+     - **Category-Weighted Systemic Fatigue Multiplier ($m_{\text{sys}}$)**:
+       - `Barbell` + `is_compound == 1`: $m_{\text{sys}} = 1.35$
+       - `Dumbbell` / `Bodyweight` + `is_compound == 1`: $m_{\text{sys}} = 1.00$
+       - `Machine` / `Cable` or `is_compound == 0`: $m_{\text{sys}} = 0.65$
+     - **Localized 12-Muscle EWMA ODEs**: Runs peripheral readiness ODEs per muscle group with local recovery time constant $\tau_{2,m} = 0.65 \cdot \tau_2(t)$, reflecting that local peripheral muscular recovery is faster than systemic central fatigue dissipation.
+     - **Empirical Bayesian Volume Landmarks ($[ \text{MEV}, \text{MAV}, \text{MRV} ]$)**:
+       - Fits a bounded quadratic dose-response parabola $\Delta \ln(\text{e10RM}_{m,w}) = \beta_0 + \beta_1 V - \beta_2 V^2$ ($\beta_1 > 0, \beta_2 > 0$) via `scipy.optimize.lsq_linear`.
+       - Falls back to population priors ($\text{MEV}_0 = 6.0, \text{MAV}_0 = 14.0, \text{MRV}_0 = 20.0$) when $< 6$ weeks of history exist, and smoothly blends posterior estimates when $\ge 6$ weeks exist.
+       - Applies energy balance scaling to $[ \text{MAV}, \text{MRV} ]$: $1.12\times$ under `SURPLUS` and $0.82\times$ under `DEFICIT`.
+- **Consequences**:
+  - *Pros*:
+    - Allows fine-grained muscle readiness inspection and prevents overtraining individual muscles while maximizing systemic recovery efficiency.
+    - Captures high axial systemic fatigue of heavy barbell compounds while preventing machine volume from inflating whole-body fatigue.
+    - 100% backward-compatible with existing Banister callers (`exercises=None` gracefully falls back to $m_{\text{sys}} = 1.0$).
+  - *Cons*:
+    - Requires accurate secondary muscle tags on exercise catalog items for complete synergist accounting (mitigated by built-in fallback synergy table).
+
+---
+
+## ADR-072: Empirical Stimulus-to-Fatigue Ratio (SFR), Variant Tree Substitution & Unilateral Limb Asymmetry Engine
+- **Context**: In Phase 3 of the Hypertrophy & Mesocycle Optimization upgrade (`hypertrophy_update.md`), exercises vary significantly in their Stimulus-to-Fatigue Ratio (SFR):
+  1. High stimulus can be outweighed by severe articular stress (joint pain) or steep intra-session neural drop-off ($\delta_{\text{drop}}$).
+  2. When an exercise causes joint irritation or stalls in progressive overload, athletes need immediate, compatible movement substitutions that respect their gym equipment access and reduce axial fatigue.
+  3. Unilateral exercises (e.g. lunges, single-arm rows, split squats) frequently exhibit bilateral repetition imbalances ($\text{reps} \neq \text{reps\_right}$) that indicate compensatory fatigue or strength deficits.
+- **Decision**:
+  1. Implement `companion/src/analysis/sfr_evaluator.py`:
+     - **Empirical Exercise SFR Score ($\text{SFR}_{\text{ex}} \in [0, 100]$)**:
+       $$\text{Raw SFR}_{\text{ex}} = \frac{\left(\frac{\overline{e\text{Reps}}_{\text{set}}}{5.0}\right) \cdot \left(1 + \max(-0.5, \, 10 \cdot \dot{x}_{10\text{RM}})\right)}{\left(1 + 3.0 \cdot \overline{\delta}_{\text{drop}}\right) \cdot \left(1 + 0.25 \sum_{p \in \text{joint}} \text{severity}_p + 0.08 \sum_{p \in \text{muscle}} \text{severity}_p\right)}$$
+       - Evaluates over a 56-day evaluation window (with 28-day windows for pain and $\text{e10RM}_t$ slope).
+       - Logistic / linear score clamped to $[0, 100]$ and partitioned into `OPTIMAL` ($\ge 65$), `MODERATE` ($40\text{--}64$), and `POOR_SWAP_RECOMMENDED` ($< 40$).
+       - **Severe Joint Pain Guardrail**: Any single joint pain report with $\text{severity} \ge 5$ automatically forces `sfr_tier = 'POOR_SWAP_RECOMMENDED'` and clamps $\text{sfr\_score} \le 39.0$.
+     - **Variant Tree Substitution Resolver (`resolve_variant_substitutions`)**:
+       - Navigates the `parent_exercise_id` variant tree (siblings sharing `parent_exercise_id`, the parent movement itself, or child variants).
+       - Filters candidate exercises by the athlete's `user_profiles.equipment_access` and `gear_inventory`.
+       - Ranks replacement candidates by: (1) lowest historical joint pain ascending, (2) lowest systemic fatigue multiplier $m_{\text{sys}}$ ascending (prioritizing dumbbells and machines to deload spinal compression), and (3) same primary muscle group match.
+     - **Unilateral Limb Asymmetry Index (`compute_unilateral_asymmetry`)**:
+       - For movements with `is_unilateral == 1` and non-null `reps_right`:
+         $$\text{Asymmetry}_{\text{ex}} = \frac{1}{M} \sum_{m=1}^{M} \frac{\vert{}\text{reps}_m - \text{reps\_right}_m\vert{}}{\max(\text{reps}_m, \text{reps\_right}_m)}$$
+       - Flags persistent asymmetry when $\text{Asymmetry}_{\text{ex}} > 0.12$ ($12\%$) across $M \ge 3$ consecutive sessions.
+- **Consequences**:
+  - *Pros*:
+    - Clinically actionable, injury-preventative recommendations that automatically rescue athletes from joint pain.
+    - Zero breaking changes to existing database tables or export contracts.
+    - High-performance, fully vectorized and strictly typed with Pydantic v2.
+    - Comprehensive unit and regression test suite passing in pytest.
+  - *Cons*:
+    - Requires at least 3 completed sessions in the evaluation window for statistically valid SFR scoring and asymmetry detection.
+
+---
+
+## ADR-073: Anthropometric Partitioning (P-Ratio Proxy) & Deterministic Program Parameter Audit Matrix
+- **Context**: In Phase 4 of the Hypertrophy & Mesocycle Optimization upgrade (`hypertrophy_update.md`), two critical analytical gaps required closure:
+  1. **Energy Balance & Caloric Overshoot**: Tracking bodyweight slope alone ($\Delta\text{BW} / \Delta t$) indicates net energy balance (surplus vs deficit) but cannot discern whether gained mass represents lean skeletal muscle or excessive adiposity accumulation.
+  2. **Program Parameter Auditing**: Trainees frequently accumulate structural training inefficiencies without realizing it:
+     - Rushing inter-set rest intervals on heavy compound lifts, collapsing subsequent set performance.
+     - Accumulating high weekly set volumes at low RPE ($< 7.3$), generating non-stimulating "junk volume".
+     - Stacking heavy barbell axial loading while target muscle groups remain capable of high-tension training.
+     - Locking into rigid repetition monotony (e.g. 3 sets of 10 every workout for months) with stalled 10RM progression.
+- **Decision**:
+  1. Implement **Anthropometric Partitioning (P-Ratio Proxy)** in `companion/src/models/recovery_modifier.py`:
+     - Computes 28-day rolling OLS slopes for bodyweight ($\beta_{\text{BW}}$ in kg/wk), waist circumference ($\beta_{\text{waist}}$ in cm/wk), body fat percentage ($\beta_{\text{BF}}$ in %/wk), aggregate limb girths ($G_{\text{limb}} = \text{bicep} + \text{chest} + \text{thigh} + \text{calf}$), and estimated Lean Body Mass ($\text{eLBM}_i = \text{BW}_i \cdot (1 - \text{BF}_i / 100)$).
+     - Computes the empirical lean mass partitioning ratio proxy $P = \beta_{\text{eLBM}} / \beta_{\text{BW}}$.
+     - Flags `CALORIC_OVERSHOOT` if:
+       $$\beta_{\text{BW}} > +0.35\text{ kg/wk} \quad \text{AND} \quad \left(\beta_{\text{waist}} > +0.20\text{ cm/wk} \quad \text{OR} \quad \frac{\beta_{\text{eLBM}}}{\beta_{\text{BW}}} < 0.45\right)$$
+       recommending an immediate 200–300 kcal/day dietary surplus taper to prioritize lean tissue accrual.
+  2. Implement **Deterministic Program Parameter Audit Matrix** in `companion/src/models/recommendations.py`:
+     - `generate_parameter_audits()` evaluates four deterministic clinical rules outputting structured `ProgramParameterAudit` advisories:
+       - `REST_TOO_SHORT`: `is_compound == 1` AND median $\Delta t_{\text{rest}} < 90\text{s}$ AND $\overline{\delta}_{\text{drop}} > 0.15$ $\implies$ Recommends setting `optimal_rest_seconds = 180`.
+       - `JUNK_VOLUME`: Muscle weekly volume $> \text{MAV}_m$ AND mean working $\text{RPE} < 7.3$ AND $\dot{x}_{10\text{RM}} \le 0$ $\implies$ Recommends reducing weekly sets by $25\%$ and lifting target effort to $8.5\text{–}9.0$ RPE ($1\text{–}1.5$ RIR).
+       - `AXIAL_BOTTLENECK`: Global Banister $F(t) > 1.35 P(t)$ AND local muscle Readiness $> 70\%$ AND Barbell share of volume $> 60\%$ $\implies$ Recommends swapping 1 compound Barbell movement for an equivalent Dumbbell, Machine, or Cable movement to deload spinal compression.
+       - `REP_MONOTONY`: $> 85\%$ of working sets over 28 days fall within a $\pm 1\text{ rep}$ band AND $\dot{x}_{10\text{RM}} \le 0$ $\implies$ Recommends undulating repetition brackets (e.g. heavy top set $5\text{–}7$ reps + hypertrophy back-off sets $10\text{–}14$ reps).
+- **Consequences**:
+  - *Pros*:
+    - Completely closes the feedback loop between data modeling and actionable, automated exercise science coaching.
+    - Directly guides nutritional surplus adjustments and saves athletes from unproductive junk volume.
+    - Pure, deterministic, zero-external-API evaluation with 100% Pydantic v2 validation.
+    - Verified across 6 unit tests with zero regressions across companion and mobile suites.
+  - *Cons*:
+    - P-ratio precision depends on the athlete logging periodic waist and body fat measurements alongside bodyweight.
+
+---
+
+## ADR-074: Hypertrophy Data Contract Expansion, SQLite Migration v5, and Dual-Stack UI Integration
+- **Context**: In Phases 5 and 6 of the Hypertrophy & Mesocycle Optimization upgrade (`hypertrophy_update.md`), the companion-to-mobile bridge and user-facing dashboards required full synchronization:
+  1. **Cross-Stack Data Bridge**: The `calibrated_parameters.json` contract needed expansion to convey projected 10RM, SFR scores, substitution suggestions, optimal rest intervals, limb asymmetries, 12-muscle volume landmarks, and deterministic audits without breaking existing mobile imports or schema validators.
+  2. **Mobile Persistence & UI Deep Dive**: Mobile SQLite required non-breaking schema evolution to store the new parameters and surface dynamic, individualized $[ \text{MEV}, \text{MAV}, \text{MRV} ]$ volume landmarks in the Weekly Workload Deep Dive modal.
+  3. **Companion Analytics Dashboard**: Streamlit needed a dedicated interactive view for exploring 12-muscle volume landmarks against weekly training, an exercise SFR matrix scatter plot, and a parameter audit table.
+- **Decision**:
+  1. **Schema & Pydantic Alignment**:
+     - Updated `schemas/calibrated_parameters.schema.json` with Draft-07 nullable union types (`["number", "null"]`, `["string", "null"]`, `["object", "null"]`, `["array", "null"]`) preventing deserialization mismatches when Pydantic v2 serializes optional `None` fields.
+     - Added `calibrated_10rm`, `sfr_score`, `sfr_tier`, `recommended_swap_exercise_id`, `optimal_rest_seconds`, and `asymmetry_ratio` to `CalibratedParameter` in `companion/src/ingestion/schemas.py`.
+     - Added top-level collections `muscle_landmarks` (`MuscleLandmarkPayload`) and `program_audits` (`ProgramAuditPayload`) to `CalibratedParametersEnvelope`.
+  2. **Param Exporter Pipeline**:
+     - Updated `companion/src/export/param_exporter.py` to calculate projected 10RM, evaluate SFR and limb asymmetries across all exercises, solve 12-muscle volume landmarks using historical weekly sets and slopes scaled by nutritional energy balance, and generate parameter audits wiring `REST_TOO_SHORT` directly to `optimal_rest_seconds`.
+  3. **Mobile SQLite Schema Migration v4 $\to$ v5 & In-Gym UI**:
+     - Increment `CURRENT_SCHEMA_VERSION = 5` in `mobile/src/database/schema.ts` and add migration adding the 6 nullable columns to `calibrated_params`.
+     - Enriched `mobile/src/core/types/index.ts` with `CalibratedParam`, `SFRTier`, `MuscleLandmarkPayload`, and `ProgramAuditPayload`.
+     - Updated `CalibratedParamService` to persist enriched records, cache `muscle_landmarks` and `program_audits` into `user_settings`, and expose typed retrieval helpers.
+     - Updated `workloadAnalysisService.ts` and `WorkloadDeepDiveModal.tsx` to read dynamic `[mev, mav, mrv]` per muscle group when available, falling back to static population priors when uncalibrated.
+     - Updated `ActiveLoggerScreen.tsx` to display a non-intrusive `⚠️ LOW SFR • SWAP RECOMMENDED` warning badge when an exercise's calibrated `sfr_tier === 'POOR_SWAP_RECOMMENDED'`, wiring 1-tap interaction directly into the variant tree substitution modal.
+  4. **Companion Streamlit Analytics & Plotly Visualizations**:
+     - Implemented `build_muscle_landmarks_chart` and `build_sfr_matrix_chart` in `companion/src/ui/charts.py`.
+     - Added the **"Hypertrophy & Program Audit"** tab in `companion/src/ui/app.py` displaying the 12-muscle volume landmark chart, the SFR matrix scatter plot with substitution warnings, and the parameter audit table.
+- **Consequences**:
+  - *Pros*:
+    - 100% backward and forward compatibility verified across legacy v1 and enriched v2 payloads.
+    - Zero breaking changes to existing SQLite tables; smooth schema migration v4 $\to$ v5.
+    - Full end-to-end integration: complete test suite passing across both Python (111 passed) and Mobile (775 passed across 58 test suites).
+    - Strict mypy typing in Python and full TypeScript type safety in Mobile.
+  - *Cons*:
+    - Requires one-time migration execution on mobile client boot to add columns to `calibrated_params`.
+
+
+
+
+

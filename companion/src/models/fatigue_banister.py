@@ -30,7 +30,7 @@ from datetime import date, datetime, timedelta
 import math
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
-from src.ingestion.schemas import BodyMetric, Workout, WorkoutSet
+from src.ingestion.schemas import BodyMetric, Exercise, Workout, WorkoutSet
 from src.models.recovery_modifier import (
     DEFAULT_TAU2_BASE_DAYS,
     RecoveryState,
@@ -83,6 +83,7 @@ class DailyPreparedness:
     tau2: float
     energy_balance: str
     readiness: Optional[float] = None
+    muscle_readiness: Optional[Dict[str, float]] = None
 
     def __post_init__(self) -> None:
         if self.readiness is None:
@@ -273,6 +274,33 @@ def calculate_hypertrophic_effective_reps(
 # Banister Integration Engine
 # ============================================================================
 
+def compute_systemic_fatigue_multiplier(
+    category: Optional[str],
+    is_compound: Union[bool, int, None],
+) -> float:
+    """Calculates category-weighted systemic axial fatigue multiplier m_sys.
+
+    Rules:
+        - Barbell + is_compound == 1: m_sys = 1.35
+        - Dumbbell / Bodyweight + is_compound == 1: m_sys = 1.00
+        - Machine / Cable or is_compound == 0: m_sys = 0.65
+    """
+    cat = str(category or "").strip().lower()
+    compound = bool(is_compound)
+
+    if not compound:
+        return 0.65
+
+    if cat == "barbell":
+        return 1.35
+    if cat in ("dumbbell", "bodyweight"):
+        return 1.00
+    if cat in ("machine", "cable"):
+        return 0.65
+
+    return 1.00
+
+
 def compute_daily_banister_series(
     workouts: Sequence[Union[Workout, Mapping[str, Any], Any]],
     workout_sets: Sequence[Union[WorkoutSet, Mapping[str, Any], Any]],
@@ -285,10 +313,23 @@ def compute_daily_banister_series(
     start_date: Optional[Union[str, date]] = None,
     end_date: Optional[Union[str, date]] = None,
     default_working_rpe: Optional[float] = None,
+    exercises: Optional[Sequence[Union[Exercise, Mapping[str, Any], Any]]] = None,
 ) -> List[DailyPreparedness]:
     """Integrates normalized unit-gain Banister fitness-fatigue differential equations."""
     if not workouts and not workout_sets:
         return []
+
+    # Map exercise metadata for category-weighted systemic fatigue and muscle routing
+    ex_metadata_map: Dict[str, Any] = {}
+    m_sys_map: Dict[str, float] = {}
+    if exercises:
+        for ex in exercises:
+            eid = str(_get_val(ex, "id", ""))
+            if eid:
+                ex_metadata_map[eid] = ex
+                cat = _get_val(ex, "category", "Barbell")
+                compound = _get_val(ex, "is_compound", True)
+                m_sys_map[eid] = compute_systemic_fatigue_multiplier(cat, compound)
 
     workout_dates: Dict[str, str] = {}
     for w in workouts:
@@ -299,6 +340,9 @@ def compute_daily_banister_series(
 
     # Group raw stimulus by (date, exercise_id) for diminishing returns
     daily_ex_stimulus: Dict[str, Dict[str, float]] = {d: {} for d in workout_dates.values()}
+    # Also track daily localized muscle stimulus if exercises provided
+    daily_muscle_stimulus: Dict[str, Dict[str, float]] = {}
+
     for s in workout_sets:
         wid = str(_get_val(s, "workout_id", ""))
         set_date = workout_dates.get(wid)
@@ -319,6 +363,18 @@ def compute_daily_banister_series(
         )
         if stim > 0.0:
             day_map[ex_id] = day_map.get(ex_id, 0.0) + stim
+
+            if exercises and ex_id in ex_metadata_map:
+                ex_obj = ex_metadata_map[ex_id]
+                prim = str(_get_val(ex_obj, "muscle_group", "")).strip()
+                sec_list = _get_val(ex_obj, "secondary_muscles", []) or []
+
+                m_day = daily_muscle_stimulus.setdefault(set_date, {})
+                if prim:
+                    m_day[prim] = m_day.get(prim, 0.0) + stim
+                for sec_m in sec_list:
+                    if sec_m and sec_m != prim:
+                        m_day[sec_m] = m_day.get(sec_m, 0.0) + 0.5 * stim
 
     if not daily_ex_stimulus:
         return []
@@ -346,6 +402,16 @@ def compute_daily_banister_series(
     decay_p = math.exp(-1.0 / tau1)
     alpha_p = 1.0 - decay_p
 
+    # Localized muscle state vectors if exercises provided
+    curr_muscle_fit: Dict[str, float] = {}
+    curr_muscle_fat: Dict[str, float] = {}
+    all_muscles_set: set[str] = set()
+    if exercises:
+        for m_day in daily_muscle_stimulus.values():
+            all_muscles_set.update(m_day.keys())
+        curr_muscle_fit = {m: 0.0 for m in all_muscles_set}
+        curr_muscle_fat = {m: 0.0 for m in all_muscles_set}
+
     total_days = (last_date - first_date).days + 1
     for day_offset in range(total_days):
         curr_dt = first_date + timedelta(days=day_offset)
@@ -358,12 +424,20 @@ def compute_daily_banister_series(
                 EXERCISE_SATURATION_KAPPA * (1.0 - math.exp(-raw / EXERCISE_SATURATION_KAPPA))
                 for raw in ex_map.values()
             )
-            raw_total = sum(ex_map.values())
+            # Apply category-weighted systemic fatigue multiplier m_sys if exercises provided
+            if exercises and m_sys_map:
+                raw_fatigue_total = sum(
+                    raw * m_sys_map.get(ex_id, 1.0)
+                    for ex_id, raw in ex_map.items()
+                )
+            else:
+                raw_fatigue_total = sum(ex_map.values())
+
             fit_impulse = MAX_DAILY_IMPULSE * (
                 1.0 - math.exp(-eff_ex_sum / SESSION_FITNESS_KAPPA)
             )
             fat_impulse = MAX_DAILY_IMPULSE * (
-                1.0 - math.exp(-raw_total / SESSION_FATIGUE_KAPPA)
+                1.0 - math.exp(-raw_fatigue_total / SESSION_FATIGUE_KAPPA)
             )
         else:
             fit_impulse = 0.0
@@ -383,6 +457,26 @@ def compute_daily_banister_series(
         curr_fatigue = (curr_fatigue * decay_f) + (alpha_f * fat_impulse)
         curr_preparedness = (k1 * curr_fitness) - (k2 * curr_fatigue)
 
+        # Localized muscle readiness calculation if exercises provided
+        muscle_readiness_snapshot: Optional[Dict[str, float]] = None
+        if exercises and all_muscles_set:
+            eff_tau2_local = 0.65 * eff_tau2
+            decay_f_local = math.exp(-1.0 / eff_tau2_local)
+            alpha_f_local = 1.0 - decay_f_local
+
+            m_day_map = daily_muscle_stimulus.get(curr_date_str, {})
+            muscle_readiness_snapshot = {}
+            for m in all_muscles_set:
+                raw_m_stim = m_day_map.get(m, 0.0)
+                sat_m_stim = 100.0 * (1.0 - math.exp(-raw_m_stim / 4.0)) if raw_m_stim > 0.0 else 0.0
+                curr_muscle_fit[m] = (curr_muscle_fit[m] * decay_p) + (alpha_p * sat_m_stim)
+                curr_muscle_fat[m] = (curr_muscle_fat[m] * decay_f_local) + (alpha_f_local * sat_m_stim)
+
+                prep_m = (k1 * curr_muscle_fit[m]) - (k2 * curr_muscle_fat[m])
+                scale_m = max(12.0, 0.35 * curr_muscle_fit[m])
+                r_score = 100.0 / (1.0 + math.exp(-prep_m / scale_m))
+                muscle_readiness_snapshot[m] = round(r_score, 1)
+
         series.append(
             DailyPreparedness(
                 date=curr_date_str,
@@ -392,6 +486,7 @@ def compute_daily_banister_series(
                 preparedness=round(curr_preparedness, 2),
                 tau2=round(eff_tau2, 2),
                 energy_balance=rec_state.energy_balance,
+                muscle_readiness=muscle_readiness_snapshot,
             )
         )
 

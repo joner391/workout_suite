@@ -518,6 +518,36 @@ class CalibratedParam(StrictSchemaModel):
     calibrated_at: str = Field(
         description="ISO 8601 UTC timestamp when calibration was computed.",
     )
+    calibrated_10rm: Optional[float] = Field(
+        default=None,
+        gt=0.0,
+        description="Projected 10-Repetition Maximum strength in kg.",
+    )
+    sfr_score: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="0-100 normalized Stimulus-to-Fatigue Ratio score.",
+    )
+    sfr_tier: Optional[Literal["OPTIMAL", "MODERATE", "POOR_SWAP_RECOMMENDED"]] = Field(
+        default=None,
+        description="SFR tier classification.",
+    )
+    recommended_swap_exercise_id: Optional[str] = Field(
+        default=None,
+        description="Suggested replacement exercise ID from parent_exercise_id variant hierarchy.",
+    )
+    optimal_rest_seconds: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Recommended inter-set rest timer in seconds.",
+    )
+    asymmetry_ratio: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Mean fractional unilateral limb repetition asymmetry ratio.",
+    )
 
 
 class PainReport(StrictSchemaModel):
@@ -599,6 +629,64 @@ class CalibratedParameter(StrictSchemaModel):
     calibrated_at: str = Field(
         description="ISO 8601 UTC timestamp when calibration was computed.",
     )
+    calibrated_10rm: Optional[float] = Field(
+        default=None,
+        gt=0.0,
+        description="Projected 10-Repetition Maximum strength in kg.",
+    )
+    sfr_score: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="0-100 normalized Stimulus-to-Fatigue Ratio score.",
+    )
+    sfr_tier: Optional[Literal["OPTIMAL", "MODERATE", "POOR_SWAP_RECOMMENDED"]] = Field(
+        default=None,
+        description="SFR tier classification.",
+    )
+    recommended_swap_exercise_id: Optional[str] = Field(
+        default=None,
+        description="Suggested replacement exercise ID from parent_exercise_id variant hierarchy.",
+    )
+    optimal_rest_seconds: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Recommended inter-set rest timer in seconds.",
+    )
+    asymmetry_ratio: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Mean fractional unilateral limb repetition asymmetry ratio.",
+    )
+
+
+class MuscleLandmarkPayload(StrictSchemaModel):
+    """Localized volume landmarks and readiness percentage per muscle group."""
+
+    mev: float = Field(ge=0.0, description="Minimum Effective Volume in sets/week.")
+    mav: float = Field(ge=0.0, description="Maximum Adaptive Volume in sets/week.")
+    mrv: float = Field(ge=0.0, description="Maximum Recoverable Volume in sets/week.")
+    readiness_pct: float = Field(
+        ge=0.0,
+        le=100.0,
+        description="Current localized muscle readiness percentage (0-100).",
+    )
+
+
+class ProgramAuditPayload(StrictSchemaModel):
+    """Program parameter audit advisory payload."""
+
+    rule_code: str = Field(
+        description="Program parameter audit code (e.g. REST_TOO_SHORT, JUNK_VOLUME, AXIAL_BOTTLENECK, REP_MONOTONY).",
+    )
+    target_id: str = Field(description="Target identifier: exercise ID, muscle group name, or 'systemic'.")
+    message: str = Field(description="Actionable explanation of why this audit rule fired.")
+    suggested_parameter: str = Field(description="Name of parameter suggested for adjustment.")
+    suggested_value: Optional[Union[float, int, str, bool]] = Field(
+        default=None,
+        description="Suggested parameter value.",
+    )
 
 
 class CalibratedParametersEnvelope(StrictSchemaModel):
@@ -614,6 +702,15 @@ class CalibratedParametersEnvelope(StrictSchemaModel):
     parameters: List[CalibratedParameter] = Field(
         description="List of calibrated exercise parameters.",
     )
+    muscle_landmarks: Optional[Dict[str, MuscleLandmarkPayload]] = Field(
+        default=None,
+        description="Individualized volume landmarks and localized readiness per muscle group.",
+    )
+    program_audits: Optional[List[ProgramAuditPayload]] = Field(
+        default=None,
+        description="Deterministic program parameter audit advisories.",
+    )
 
 
 CalibratedParametersPayload = CalibratedParametersEnvelope
+

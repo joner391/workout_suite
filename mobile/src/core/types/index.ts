@@ -268,8 +268,10 @@ export interface BodyMetric {
   imported_from?: string | null;
 }
 
+export type SFRTier = 'OPTIMAL' | 'MODERATE' | 'POOR_SWAP_RECOMMENDED';
+
 /**
- * Calibrated 1RM and fatigue endurance exponent (k) from Companion Kalman engine.
+ * Calibrated 1RM, fatigue endurance exponent (k), and hypertrophy signals from Companion engine.
  */
 export interface CalibratedParam {
   id: string;
@@ -279,6 +281,50 @@ export interface CalibratedParam {
   cov_p00: number;
   cov_p11: number;
   calibrated_at: string;
+  calibrated_10rm?: number | null;
+  sfr_score?: number | null;
+  sfr_tier?: SFRTier | null;
+  recommended_swap_exercise_id?: string | null;
+  optimal_rest_seconds?: number | null;
+  asymmetry_ratio?: number | null;
+}
+
+export interface MuscleLandmarkPayload {
+  mev: number;
+  mav: number;
+  mrv: number;
+  readiness_pct: number;
+}
+
+export interface ProgramAuditPayload {
+  rule_code: string;
+  target_id: string;
+  message: string;
+  suggested_parameter: string;
+  suggested_value?: number | string | boolean | null;
+}
+
+export interface CalibratedParameterInput {
+  exercise_id: string;
+  calibrated_1rm: number;
+  calibrated_k: number;
+  cov_p00: number;
+  cov_p11: number;
+  calibrated_at: string;
+  calibrated_10rm?: number | null;
+  sfr_score?: number | null;
+  sfr_tier?: SFRTier | null;
+  recommended_swap_exercise_id?: string | null;
+  optimal_rest_seconds?: number | null;
+  asymmetry_ratio?: number | null;
+}
+
+export interface CalibratedParametersEnvelope {
+  version: string;
+  exported_at: string;
+  parameters: (CalibratedParam | CalibratedParameterInput)[];
+  muscle_landmarks?: Record<string, MuscleLandmarkPayload> | null;
+  program_audits?: ProgramAuditPayload[] | null;
 }
 
 /**

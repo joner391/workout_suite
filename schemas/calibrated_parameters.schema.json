@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://workoutsuite.app/schemas/calibrated_parameters.schema.json",
   "title": "CalibratedParametersContract",
-  "description": "Contract-first JSON Schema for companion-exported individualized 1RM and endurance (k) parameters derived from the Tier 2 Kalman Filter.",
+  "description": "Contract-first JSON Schema for companion-exported individualized 1RM, hypertrophy landmarks, and program parameter audits derived from Tier 2 Kalman Filter and Banister models.",
   "type": "object",
   "required": ["version", "exported_at", "parameters"],
   "additionalProperties": false,
@@ -22,6 +22,20 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/CalibratedParameter"
+      }
+    },
+    "muscle_landmarks": {
+      "description": "Individualized volume landmarks and localized readiness per muscle group.",
+      "type": ["object", "null"],
+      "additionalProperties": {
+        "$ref": "#/definitions/MuscleLandmarkPayload"
+      }
+    },
+    "program_audits": {
+      "description": "Deterministic program parameter audit advisories.",
+      "type": ["array", "null"],
+      "items": {
+        "$ref": "#/definitions/ProgramAuditPayload"
       }
     }
   },
@@ -65,6 +79,91 @@
           "type": "string",
           "format": "date-time",
           "description": "ISO 8601 UTC timestamp recording when this exercise parameter calibration was computed."
+        },
+        "calibrated_10rm": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0.0,
+          "description": "Projected 10-Repetition Maximum capacity in kilograms (exp(x_0) * 10^-k)."
+        },
+        "sfr_score": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 100.0,
+          "description": "0-100 normalized Stimulus-to-Fatigue Ratio score."
+        },
+        "sfr_tier": {
+          "type": ["string", "null"],
+          "enum": ["OPTIMAL", "MODERATE", "POOR_SWAP_RECOMMENDED", null],
+          "description": "SFR tier classification."
+        },
+        "recommended_swap_exercise_id": {
+          "type": ["string", "null"],
+          "description": "Suggested replacement exercise ID from parent_exercise_id variant hierarchy."
+        },
+        "optimal_rest_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Empirically recommended inter-set rest timer in seconds."
+        },
+        "asymmetry_ratio": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Mean fractional unilateral limb repetition asymmetry ratio."
+        }
+      }
+    },
+    "MuscleLandmarkPayload": {
+      "type": "object",
+      "required": ["mev", "mav", "mrv", "readiness_pct"],
+      "additionalProperties": false,
+      "properties": {
+        "mev": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Minimum Effective Volume in sets/week."
+        },
+        "mav": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Maximum Adaptive Volume in sets/week."
+        },
+        "mrv": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Maximum Recoverable Volume in sets/week."
+        },
+        "readiness_pct": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 100.0,
+          "description": "Current localized muscle readiness percentage (0-100)."
+        }
+      }
+    },
+    "ProgramAuditPayload": {
+      "type": "object",
+      "required": ["rule_code", "target_id", "message", "suggested_parameter"],
+      "additionalProperties": true,
+      "properties": {
+        "rule_code": {
+          "type": "string",
+          "description": "Program parameter audit code (e.g., REST_TOO_SHORT, JUNK_VOLUME, AXIAL_BOTTLENECK, REP_MONOTONY)."
+        },
+        "target_id": {
+          "type": "string",
+          "description": "Target identifier: exercise ID, muscle group name, or 'systemic'."
+        },
+        "message": {
+          "type": "string",
+          "description": "Actionable explanation of why this audit rule fired."
+        },
+        "suggested_parameter": {
+          "type": "string",
+          "description": "Name of parameter suggested for adjustment."
+        },
+        "suggested_value": {
+          "description": "Suggested parameter value (numeric, string, or boolean)."
         }
       }
     }

@@ -34,6 +34,7 @@ import {
   WeightUnit,
   IntensityMetric,
   ProgressionProposal,
+  CalibratedParam,
 } from '../../core/types';
 import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
 import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
@@ -41,6 +42,7 @@ import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
 import { IProgramRepository } from '../../domain/repositories/IProgramRepository';
 import { IPainReportRepository } from '../../domain/repositories/IPainReportRepository';
+import { CalibratedParamService } from '../../services/calibratedParamService';
 import { ActiveSessionService } from '../../services/activeSessionService';
 import { RestTimerService } from '../../services/restTimerService';
 import { ExerciseSubstitutionService } from '../../services/exerciseSubstitutionService';
@@ -123,6 +125,7 @@ export interface ActiveLoggerScreenProps {
   userSettingsRepo?: IUserSettingsRepository;
   programRepo?: IProgramRepository;
   painReportRepo?: IPainReportRepository;
+  calibratedParamService?: CalibratedParamService;
   activeSessionService?: ActiveSessionService;
   restTimerService?: RestTimerService;
   exerciseSubstitutionService?: ExerciseSubstitutionService;
@@ -139,6 +142,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   userSettingsRepo,
   programRepo,
   painReportRepo,
+  calibratedParamService,
   activeSessionService: propSessionService,
   restTimerService: propTimerService,
   exerciseSubstitutionService: propSubService,
@@ -228,6 +232,9 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const [gearPickerExercise, setGearPickerExercise] = useState<Exercise | null>(null);
   const [summaryWorkoutId, setSummaryWorkoutId] = useState<string | null>(null);
   const [finishedWorkoutObj, setFinishedWorkoutObj] = useState<Workout | null>(null);
+  const [calibratedParamsMap, setCalibratedParamsMap] = useState<Map<string, CalibratedParam>>(
+    new Map()
+  );
 
   // Active Progression Proposal State (Step 4.4)
   const [activeProposal, setActiveProposal] = useState<{
@@ -268,6 +275,18 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         setExerciseMap(eMap);
         setGearMap(gMap);
         setAllCatalogExercises(exercises);
+
+        // Load calibrated parameters if service provided (ADR-072 / Phase 6)
+        if (calibratedParamService) {
+          try {
+            const params = await calibratedParamService.getAllCalibratedParams();
+            if (isMounted) {
+              setCalibratedParamsMap(new Map(params.map((p) => [p.exercise_id, p])));
+            }
+          } catch (err) {
+            console.warn('Failed to load calibrated params in logger:', err);
+          }
+        }
 
         let workoutToLoadId = initialWorkoutId;
 
@@ -1062,6 +1081,24 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
                 </Text>
               </TouchableOpacity>
             ) : null}
+
+            {/* SFR Warning Badge (ADR-072 / Phase 6) */}
+            {(() => {
+              const cp = calibratedParamsMap.get(exercise.id);
+              if (cp?.sfr_tier === 'POOR_SWAP_RECOMMENDED') {
+                return (
+                  <TouchableOpacity
+                    testID={`sfr-warning-badge-${exercise.id}`}
+                    style={styles.sfrWarningBadge}
+                    onPress={() => handleOpenSubstitution(exercise)}
+                    accessibilityLabel={`Low stimulus-to-fatigue ratio warning. Tap to swap ${exercise.name}`}
+                  >
+                    <Text style={styles.sfrWarningBadgeText}>⚠️ LOW SFR • SWAP RECOMMENDED</Text>
+                  </TouchableOpacity>
+                );
+              }
+              return null;
+            })()}
           </View>
 
           <View style={styles.headerRightActions}>
@@ -1809,6 +1846,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#38BDF8',
     fontWeight: '600',
+  },
+  sfrWarningBadge: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  sfrWarningBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#EF4444',
+    letterSpacing: 0.5,
   },
   gearPickerModalContent: {
     backgroundColor: '#121214',

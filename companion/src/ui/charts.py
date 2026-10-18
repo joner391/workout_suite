@@ -659,3 +659,206 @@ def build_mesocycle_inflection_chart(
     fig.update_yaxes(title_text="RPE Drift & CUSUM", gridcolor="#27272A", row=2, col=1)
     return fig
 
+
+def build_muscle_landmarks_chart(
+    landmarks: Mapping[str, Any],
+    current_volumes: Optional[Mapping[str, float]] = None,
+) -> go.Figure:
+    """Builds interactive 12-muscle volume landmark chart comparing current volume against [MEV, MAV, MRV]."""
+    fig = go.Figure()
+
+    muscles = list(landmarks.keys())
+    if not muscles:
+        fig.add_annotation(
+            text="No muscle landmark data available.",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=14, color="#A1A1AA"),
+        )
+        fig.update_layout(**DARK_LAYOUT_TEMPLATE)
+        return fig
+
+    curr_vols = current_volumes or {}
+
+    current_vals = [float(curr_vols.get(m, 0.0)) for m in muscles]
+    mev_vals = [float(getattr(landmarks[m], "mev", 6.0)) for m in muscles]
+    mav_vals = [float(getattr(landmarks[m], "mav", 14.0)) for m in muscles]
+    mrv_vals = [float(getattr(landmarks[m], "mrv", 20.0)) for m in muscles]
+    readiness_vals = [float(getattr(landmarks[m], "readiness_pct", 100.0)) for m in muscles]
+
+    # Current Weekly Volume Bar
+    fig.add_trace(
+        go.Bar(
+            name="Current Weekly Volume (Sets)",
+            x=muscles,
+            y=current_vals,
+            marker_color="#38BDF8",
+            customdata=readiness_vals,
+            hovertemplate="<b>%{x}</b><br>Current Volume: %{y:.1f} sets/wk<br>Local Readiness: %{customdata:.1f}%<extra></extra>",
+        )
+    )
+
+    # MEV (Minimum Effective Volume) Line
+    fig.add_trace(
+        go.Scatter(
+            name="MEV (Maintenance / Min Gain)",
+            x=muscles,
+            y=mev_vals,
+            mode="lines+markers",
+            line=dict(color="#F59E0B", width=2, dash="dot"),
+            marker=dict(symbol="circle", size=8),
+            hovertemplate="<b>%{x}</b><br>MEV: %{y:.1f} sets/wk<extra></extra>",
+        )
+    )
+
+    # MAV (Maximum Adaptive Volume) Line
+    fig.add_trace(
+        go.Scatter(
+            name="MAV (Optimal Hypertrophy)",
+            x=muscles,
+            y=mav_vals,
+            mode="lines+markers",
+            line=dict(color="#10B981", width=2.5),
+            marker=dict(symbol="diamond", size=9),
+            hovertemplate="<b>%{x}</b><br>MAV: %{y:.1f} sets/wk<extra></extra>",
+        )
+    )
+
+    # MRV (Maximum Recoverable Volume) Line
+    fig.add_trace(
+        go.Scatter(
+            name="MRV (Fatigue Ceiling)",
+            x=muscles,
+            y=mrv_vals,
+            mode="lines+markers",
+            line=dict(color="#EF4444", width=2, dash="dash"),
+            marker=dict(symbol="x", size=8),
+            hovertemplate="<b>%{x}</b><br>MRV: %{y:.1f} sets/wk<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        **DARK_LAYOUT_TEMPLATE,
+        title=dict(text="12-Muscle Hypertrophy Landmarks vs Current Weekly Volume", font=dict(size=16)),
+        barmode="group",
+        height=520,
+        showlegend=True,
+    )
+    fig.update_xaxes(title_text="Canonical Muscle Group", gridcolor="#27272A")
+    fig.update_yaxes(title_text="Weekly Volume (Fractional Sets)", gridcolor="#27272A")
+    return fig
+
+
+def build_sfr_matrix_chart(
+    sfr_results: Mapping[str, Any],
+    exercise_names: Optional[Mapping[str, str]] = None,
+) -> go.Figure:
+    """Builds interactive Stimulus-to-Fatigue Ratio (SFR) scatter matrix."""
+    fig = go.Figure()
+
+    if not sfr_results:
+        fig.add_annotation(
+            text="No SFR evaluated exercises available.",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=14, color="#A1A1AA"),
+        )
+        fig.update_layout(**DARK_LAYOUT_TEMPLATE)
+        return fig
+
+    ex_names = exercise_names or {}
+
+    tiers = ["OPTIMAL", "MODERATE", "POOR_SWAP_RECOMMENDED"]
+    tier_colors = {
+        "OPTIMAL": "#10B981",
+        "MODERATE": "#38BDF8",
+        "POOR_SWAP_RECOMMENDED": "#EF4444",
+    }
+
+    for tier in tiers:
+        tier_items = [
+            (eid, res)
+            for eid, res in sfr_results.items()
+            if getattr(res, "sfr_tier", "MODERATE") == tier
+        ]
+        if not tier_items:
+            continue
+
+        names: List[str] = []
+        stimulus_vals: List[float] = []
+        fatigue_vals: List[float] = []
+        hover_texts: List[str] = []
+
+        for eid, res in tier_items:
+            name = ex_names.get(eid, eid)
+            names.append(name)
+
+            mean_ereps = float(getattr(res, "mean_effective_reps", 3.0))
+            e10rm_slope = float(getattr(res, "e10rm_slope_28d", 0.0))
+            dropoff = float(getattr(res, "intra_session_dropoff", 0.0))
+            joint_pain = int(getattr(res, "joint_pain_sum", 0))
+            muscle_pain = int(getattr(res, "muscle_pain_sum", 0))
+            sfr_score = getattr(res, "sfr_score", 50.0)
+            swap_id = getattr(res, "recommended_swap_exercise_id", None)
+            swap_name = ex_names.get(str(swap_id), str(swap_id)) if swap_id else "None"
+
+            # Stimulus component (Y-axis)
+            stimulus = (mean_ereps / 5.0) * (1.0 + max(-0.5, 10.0 * e10rm_slope))
+            # Fatigue penalty component (X-axis)
+            fatigue = (1.0 + 3.0 * dropoff) * (1.0 + 0.25 * joint_pain + 0.08 * muscle_pain)
+
+            stimulus_vals.append(stimulus)
+            fatigue_vals.append(fatigue)
+
+            hover = (
+                f"<b>{name}</b><br>"
+                f"SFR Tier: {tier}<br>"
+                f"SFR Score: {sfr_score:.1f}/100<br>"
+                f"Effective Reps: {mean_ereps:.1f}/set<br>"
+                f"Intra-Session Drop-Off: {dropoff:.1%}<br>"
+                f"28-Day Joint Pain: {joint_pain}<br>"
+                f"Recommended Swap: {swap_name}"
+            )
+            hover_texts.append(hover)
+
+        fig.add_trace(
+            go.Scatter(
+                name=tier,
+                x=fatigue_vals,
+                y=stimulus_vals,
+                mode="markers+text",
+                text=names,
+                textposition="top center",
+                textfont=dict(size=10, color="#D4D4D8"),
+                marker=dict(
+                    color=tier_colors[tier],
+                    size=12,
+                    line=dict(color="#18181B", width=1.5),
+                ),
+                hovertext=hover_texts,
+                hoverinfo="text",
+            )
+        )
+
+    fig.update_layout(
+        **DARK_LAYOUT_TEMPLATE,
+        title=dict(text="Exercise Stimulus-to-Fatigue Ratio (SFR) Matrix", font=dict(size=16)),
+        height=540,
+        showlegend=True,
+    )
+    fig.update_xaxes(
+        title_text="Fatigue & Pain Penalty ((1 + 3δ_drop) × (1 + Σ Pain))",
+        gridcolor="#27272A",
+    )
+    fig.update_yaxes(
+        title_text="Stimulus Magnitude ((eReps / 5) × (1 + 10ẋ_10RM))",
+        gridcolor="#27272A",
+    )
+    return fig
+
