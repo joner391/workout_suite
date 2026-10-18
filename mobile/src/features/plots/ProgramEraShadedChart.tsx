@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   LayoutChangeEvent,
+  useWindowDimensions,
 } from 'react-native';
 import Svg, {
   Rect,
@@ -70,7 +71,9 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
   emptyMessage = 'No data available for this timeframe.',
   formatValue = (v) => v.toFixed(1),
 }) => {
-  const [containerWidth, setContainerWidth] = useState<number>(340);
+  const { width: windowWidth } = useWindowDimensions();
+  const responsiveInitialWidth = Math.max(280, Math.min(windowWidth ? windowWidth - 32 : 340, 600));
+  const [containerWidth, setContainerWidth] = useState<number>(responsiveInitialWidth);
   const [selectedPoint, setSelectedPoint] = useState<{
     date: string;
     value: number;

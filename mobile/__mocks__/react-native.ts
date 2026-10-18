@@ -30,11 +30,31 @@ export const StyleSheet = {
 };
 
 export const Alert = {
-  alert: jest.fn(),
+  alert: jest.fn((title, message, buttons) => {
+    const confirmBtn = buttons?.find((b: any) => b.text !== 'Cancel');
+    if (confirmBtn?.onPress) {
+      confirmBtn.onPress();
+    }
+  }),
 };
 
 export const Platform = {
   OS: 'ios' as const,
   select: <T>(obj: { ios?: T; android?: T; default?: T }): T | undefined =>
     obj.ios !== undefined ? obj.ios : obj.default,
+};
+
+export const useWindowDimensions = jest.fn(() => ({
+  width: 375,
+  height: 812,
+  scale: 2,
+  fontScale: 1,
+}));
+
+export const BackHandler = {
+  addEventListener: jest.fn((event, callback) => ({
+    remove: jest.fn(),
+  })),
+  removeEventListener: jest.fn(),
+  exitApp: jest.fn(),
 };

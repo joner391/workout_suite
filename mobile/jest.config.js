@@ -24,6 +24,9 @@ module.exports = {
     '^expo-file-system(/.*)?$': '<rootDir>/__mocks__/expo-file-system.ts',
     '^expo-sharing$': '<rootDir>/__mocks__/expo-sharing.ts',
     '^expo-document-picker$': '<rootDir>/__mocks__/expo-document-picker.ts',
+    '^expo-notifications(/.*)?$': '<rootDir>/__mocks__/expo-notifications.ts',
+    '^expo-haptics$': '<rootDir>/__mocks__/expo-haptics.ts',
+    '^expo-keep-awake$': '<rootDir>/__mocks__/expo-keep-awake.ts',
     '^react-native-svg$': '<rootDir>/__mocks__/react-native-svg.ts',
   },
 };

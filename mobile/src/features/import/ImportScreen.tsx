@@ -23,6 +23,7 @@ import {
   ActivityIndicator,
   TextInput,
   Switch,
+  Alert,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -120,22 +121,36 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
     }
   };
 
-  // 1-Tap Evaluation Data Loader for Expo Go
+  // 1-Tap Evaluation Data Loader for Expo Go (Sandbox Demo)
   const handleLoadEvaluationPreset = async (preset: EvaluationPresetType) => {
-    try {
-      setStep('importing');
-      setErrorMessage(null);
-      const res = await importService.importEvaluationData(preset);
-      setExecutionResult(res.workoutsResult);
-      setBodyMetricsImportedCount(res.bodyMetricsResult.importedCount);
-      setStep('complete');
-      if (onImportComplete) {
-        onImportComplete(res.workoutsResult);
+    const executePresetImport = async () => {
+      try {
+        setStep('importing');
+        setErrorMessage(null);
+        const res = await importService.importEvaluationData(preset);
+        setExecutionResult(res.workoutsResult);
+        setBodyMetricsImportedCount(res.bodyMetricsResult.importedCount);
+        setStep('complete');
+        if (onImportComplete) {
+          onImportComplete(res.workoutsResult);
+        }
+      } catch (err: any) {
+        setErrorMessage(`Evaluation load error: ${err?.message || 'Unknown error'}`);
+        setStep('select');
       }
-    } catch (err: any) {
-      setErrorMessage(`Evaluation load error: ${err?.message || 'Unknown error'}`);
-      setStep('select');
-    }
+    };
+
+    Alert.alert(
+      'Load Demo Sandbox Data?',
+      'This will populate your database with sample historical workouts and body composition metrics. Are you sure you want to load this demo data?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Load Demo Data',
+          onPress: executePresetImport,
+        },
+      ]
+    );
   };
 
   // Direct paste handler
@@ -274,10 +289,10 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
           {/* Quick Expo Go Evaluation Section (__DEV__ only) */}
           {(__DEV__ || process.env.NODE_ENV !== 'production') && (
             <View style={styles.evaluationCard}>
-              <Text style={styles.evaluationBadge}>⚡ EXPO GO QUICK EVALUATION</Text>
-              <Text style={styles.evaluationTitle}>Load Evaluation Data</Text>
+              <Text style={styles.evaluationBadge}>⚡ DEMO SANDBOX (DEV ONLY)</Text>
+              <Text style={styles.evaluationTitle}>Load Demo Sandbox Data</Text>
               <Text style={styles.cardDescription}>
-                Instant 1-tap loader with your exported Liftosaur and StrengthLog history. Evaluate how the app looks with rich historical data without needing to transfer CSV files to your phone:
+                Load sample Liftosaur and StrengthLog historical sessions into your database for testing charts and auto-regulation without manually transferring CSV files:
               </Text>
               <View style={styles.evalButtonRow}>
                 <TouchableOpacity

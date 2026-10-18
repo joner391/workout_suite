@@ -9,6 +9,33 @@
  * until the final exercise in the group completes its set.
  */
 
+import * as Haptics from 'expo-haptics';
+
+// Safe lazy loading of expo-notifications to prevent runtime crashes in Expo Go on Android
+// where FCM/topic subscription native modules (ExpoTopicSubscriptionModule) are omitted.
+let Notifications: any = null;
+try {
+  // First attempt subpath loading which bypasses topicSubscription.js
+  const { scheduleNotificationAsync } = require('expo-notifications/build/scheduleNotificationAsync');
+  const { cancelScheduledNotificationAsync } = require('expo-notifications/build/cancelScheduledNotificationAsync');
+  const { setNotificationHandler } = require('expo-notifications/build/NotificationsHandler');
+  const { SchedulableTriggerInputTypes } = require('expo-notifications/build/Notifications.types');
+  Notifications = {
+    scheduleNotificationAsync,
+    cancelScheduledNotificationAsync,
+    setNotificationHandler,
+    SchedulableTriggerInputTypes,
+  };
+} catch {
+  try {
+    // Fallback: standard package import (for Jest mocks and standalone production builds)
+    Notifications = require('expo-notifications');
+  } catch {
+    // Graceful fallback for sandboxed runtimes (e.g. Expo Go on Android)
+    Notifications = null;
+  }
+}
+
 export type RestTimerStatus = 'idle' | 'running' | 'paused' | 'completed';
 
 export interface RestTimerState {
@@ -24,6 +51,23 @@ export interface RestTimerState {
 
 export type RestTimerListener = (state: RestTimerState) => void;
 
+// Safe global initialization of notification behavior
+try {
+  if (Notifications?.setNotificationHandler) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+  }
+} catch {
+  // Graceful fallback for non-native environments or Jest
+}
+
 export class RestTimerService {
   private status: RestTimerStatus = 'idle';
   private totalDurationSeconds: number = 0;
@@ -33,6 +77,7 @@ export class RestTimerService {
   private exerciseGroupId: string | null = null;
   private listeners: Set<RestTimerListener> = new Set();
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private scheduledNotificationId: string | null = null;
 
   constructor() {}
 
@@ -86,10 +131,13 @@ export class RestTimerService {
     if (clampedDuration === 0) {
       this.status = 'completed';
       this.endTimeMs = now;
+      this.cancelScheduledNotification();
+      this.triggerCompletionHaptics();
       this.stopTicker();
     } else {
       this.status = 'running';
       this.endTimeMs = now + clampedDuration * 1000;
+      this.scheduleLocalNotification(clampedDuration);
       this.startTicker();
     }
 
@@ -112,6 +160,7 @@ export class RestTimerService {
     this.pausedRemainingMs = Math.max(0, this.endTimeMs - now);
     this.endTimeMs = null;
     this.status = 'paused';
+    this.cancelScheduledNotification();
     this.stopTicker();
 
     const state = this.getState();
@@ -132,10 +181,13 @@ export class RestTimerService {
       this.status = 'completed';
       this.endTimeMs = now;
       this.pausedRemainingMs = null;
+      this.cancelScheduledNotification();
+      this.triggerCompletionHaptics();
       this.stopTicker();
     } else {
       this.status = 'running';
       this.endTimeMs = now + this.pausedRemainingMs;
+      this.scheduleLocalNotification(this.pausedRemainingMs / 1000);
       this.pausedRemainingMs = null;
       this.startTicker();
     }
@@ -166,6 +218,8 @@ export class RestTimerService {
       if (newEndTime <= now) {
         this.status = 'completed';
         this.endTimeMs = now;
+        this.cancelScheduledNotification();
+        this.triggerCompletionHaptics();
         this.stopTicker();
       } else {
         this.endTimeMs = newEndTime;
@@ -173,12 +227,16 @@ export class RestTimerService {
           1,
           Math.ceil((this.endTimeMs - (now - (this.totalDurationSeconds * 1000 - Math.max(0, this.endTimeMs - now)))) / 1000)
         );
+        const remSec = Math.max(1, Math.ceil((newEndTime - now) / 1000));
+        this.scheduleLocalNotification(remSec);
       }
     } else if (this.status === 'paused' && this.pausedRemainingMs !== null) {
       const newRemaining = this.pausedRemainingMs + deltaMs;
       if (newRemaining <= 0) {
         this.status = 'completed';
         this.pausedRemainingMs = 0;
+        this.cancelScheduledNotification();
+        this.triggerCompletionHaptics();
       } else {
         this.pausedRemainingMs = newRemaining;
       }
@@ -210,6 +268,8 @@ export class RestTimerService {
     this.status = 'completed';
     this.endTimeMs = Date.now();
     this.pausedRemainingMs = null;
+    this.cancelScheduledNotification();
+    this.triggerCompletionHaptics();
     this.stopTicker();
 
     const state = this.getState();
@@ -227,6 +287,7 @@ export class RestTimerService {
     this.pausedRemainingMs = null;
     this.exerciseId = null;
     this.exerciseGroupId = null;
+    this.cancelScheduledNotification();
     this.stopTicker();
 
     const state = this.getState();
@@ -316,6 +377,7 @@ export class RestTimerService {
    * Cleans up intervals and clears all listeners.
    */
   public destroy(): void {
+    this.cancelScheduledNotification();
     this.stopTicker();
     this.listeners.clear();
   }
@@ -328,8 +390,61 @@ export class RestTimerService {
     if (this.status === 'running' && this.endTimeMs !== null) {
       if (Date.now() >= this.endTimeMs) {
         this.status = 'completed';
+        this.cancelScheduledNotification();
+        this.triggerCompletionHaptics();
         this.stopTicker();
       }
+    }
+  }
+
+  private scheduleLocalNotification(seconds: number): void {
+    try {
+      this.cancelScheduledNotification();
+      if (seconds > 0 && Notifications?.scheduleNotificationAsync) {
+        const triggerType =
+          Notifications.SchedulableTriggerInputTypes?.TIME_INTERVAL ?? 'timeInterval';
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'Rest Completed',
+            body: 'Time for your next set!',
+            sound: true,
+          },
+          trigger: {
+            type: triggerType,
+            seconds: Math.max(1, Math.round(seconds)),
+          },
+        })
+          .then((id: string) => {
+            this.scheduledNotificationId = id;
+          })
+          .catch(() => {});
+      }
+    } catch {
+      // Safe fallback if notifications are unpermitted, running in background without permission, or test
+    }
+  }
+
+  private cancelScheduledNotification(): void {
+    if (this.scheduledNotificationId) {
+      const id = this.scheduledNotificationId;
+      this.scheduledNotificationId = null;
+      try {
+        if (Notifications?.cancelScheduledNotificationAsync) {
+          Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+        }
+      } catch {
+        // Safe fallback
+      }
+    }
+  }
+
+  private triggerCompletionHaptics(): void {
+    try {
+      if (Haptics?.notificationAsync && Haptics?.NotificationFeedbackType) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch {
+      // Safe fallback
     }
   }
 

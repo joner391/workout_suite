@@ -539,8 +539,69 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
             <View style={[styles.diagRow, styles.diagRowLast]}>
               <Text style={styles.diagLabel}>Suite Version</Text>
-              <Text style={styles.diagValue}>1.0.0 (Phase 1 MVP)</Text>
+              <Text style={styles.diagValue}>datSet v1.0.0 (Production Release)</Text>
             </View>
+          </View>
+
+          {/* Section: Scientific Citations & Legal Disclaimers */}
+          <Text style={styles.sectionTitle}>SCIENTIFIC CITATIONS & LEGAL</Text>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Scientific Models & Formulas</Text>
+              <Text style={styles.settingValueBadge}>PEER-REVIEWED</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              datSet utilizes verified, peer-reviewed exercise physiology and biomechanical models for all load auto-regulation, endurance scaling, and relative strength estimation:
+            </Text>
+
+            <View style={styles.referenceBlock}>
+              <Text style={styles.referenceHeading}>• Estimated 1RM Heuristics</Text>
+              <Text style={styles.referenceDetail}>
+                Epley (1985): 1RM = w · (1 + r / 30){'\n'}
+                Brzycki (1993): 1RM = w / (1.0278 - 0.0278 · r){'\n'}
+                Discounted for RPE / RIR offsets according to Helms et al. (2016) and Zourdos et al. (2016).
+              </Text>
+
+              <Text style={styles.referenceHeading}>• Relative Strength & Standardization</Text>
+              <Text style={styles.referenceDetail}>
+                DOTS Formula (Donald O. Travis, 2019): Fourth-order polynomial bodyweight scaling coefficient for comparative powerlifting strength analysis.
+              </Text>
+
+              <Text style={styles.referenceHeading}>• Body Composition Estimation</Text>
+              <Text style={styles.referenceDetail}>
+                U.S. Navy Circumference Method (Hodgdon & Beckett, 1984): Logarithmic neck, waist, hip, and height anthropometric equations.
+              </Text>
+
+              <Text style={styles.referenceHeading}>• Fatigue & Recovery Modeling (Companion)</Text>
+              <Text style={styles.referenceDetail}>
+                Banister Impulse-Response Systems Model (1975): Dual-exponential fitness-fatigue differential impulse tracking.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Health & Medical Disclaimer</Text>
+              <Text style={[styles.settingValueBadge, styles.warningBadge]}>INFORMATIONAL</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              datSet is an informational training ledger and mathematical auto-regulation toolkit, not a medical diagnostics provider or licensed healthcare service.
+              {'\n\n'}
+              Training prescriptions, warm-up ladders, and pain interception heuristics are general training suggestions. If you experience sharp, radiating, or persistent joint or muscular pain, discontinue the movement and consult a licensed physician or physical therapist.
+            </Text>
+          </View>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Privacy & Local Data Policy</Text>
+              <Text style={styles.settingValueBadge}>OFFLINE-FIRST</Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              100% On-Device Storage: All workout logs, personal records, body metrics, and equipment inventories are stored in an encrypted/isolated SQLite database on your device.
+              {'\n\n'}
+              datSet does not track, sell, or transmit any health or personal data to remote servers or third-party analytics providers.
+            </Text>
           </View>
         </ScrollView>
       )}
@@ -822,6 +883,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  referenceBlock: {
+    backgroundColor: '#09090B',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#18181B',
+    padding: 12,
+    marginTop: 4,
+  },
+  referenceHeading: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#00E676',
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  referenceDetail: {
+    fontSize: 12,
+    color: '#A1A1AA',
+    lineHeight: 17,
+  },
+  warningBadge: {
+    color: '#FFB300',
+    backgroundColor: 'rgba(255, 179, 0, 0.12)',
+    borderColor: 'rgba(255, 179, 0, 0.3)',
   },
 });
 

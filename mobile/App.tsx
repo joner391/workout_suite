@@ -18,6 +18,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -49,6 +50,7 @@ import { WorkoutTabRouter } from './src/features/logger';
 import { HomeScreen } from './src/features/home';
 import { UserProfileScreen } from './src/features/profile';
 import { SettingsScreen } from './src/features/settings';
+import { OnboardingWizardModal } from './src/features/onboarding';
 import { Workout } from './src/core/types';
 
 export type RootTab = 'home' | 'workout' | 'profile' | 'settings' | 'logger' | 'calendar';
@@ -84,6 +86,7 @@ export default function App({
   db: propDb,
 }: AppProps = {}) {
   const [activeTab, setActiveTab] = useState<RootTab>(initialTab);
+  const [tabHistory, setTabHistory] = useState<RootTab[]>([initialTab]);
   const [dbReady, setDbReady] = useState<boolean>(!!propWorkoutRepo);
   const [hasActiveWorkout, setHasActiveWorkout] = useState<boolean>(false);
   const [database, setDatabase] = useState<ISQLiteDatabase | undefined>(propDb);
@@ -91,6 +94,38 @@ export default function App({
   const [currentWorkoutId, setCurrentWorkoutId] = useState<string | undefined>(
     initialWorkoutId
   );
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
+
+  const handleNavigateToTab = useCallback((newTab: RootTab) => {
+    setActiveTab(newTab);
+    setTabHistory((prev) => {
+      if (prev[prev.length - 1] === newTab) return prev;
+      return [...prev, newTab];
+    });
+  }, []);
+
+  // Intercept Android hardware back button (Back-Stack navigation)
+  useEffect(() => {
+    const onHardwareBack = () => {
+      if (tabHistory.length > 1) {
+        const nextHistory = [...tabHistory];
+        nextHistory.pop();
+        const prevTab = nextHistory[nextHistory.length - 1] || 'home';
+        setTabHistory(nextHistory);
+        setActiveTab(prevTab);
+        return true;
+      }
+      if (activeTab !== 'home') {
+        setActiveTab('home');
+        setTabHistory(['home']);
+        return true;
+      }
+      return false; // Allow default OS exit behavior when on root home
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [tabHistory, activeTab]);
 
   // Normalize legacy tab names
   const currentTab = ((): 'home' | 'workout' | 'profile' | 'settings' => {
@@ -215,24 +250,46 @@ export default function App({
     }
   }, [dbReady, checkActiveWorkout, activeTab]);
 
+  // Check if first-time user onboarding should be presented
+  useEffect(() => {
+    if (!repos || !dbReady) return;
+    let isMounted = true;
+    (async () => {
+      try {
+        const completed = await repos.userSettingsRepo.get('onboarding_completed');
+        if (completed !== '1') {
+          const workouts = await repos.workoutRepo.findAll();
+          if (workouts.length === 0 && isMounted) {
+            setShowOnboarding(true);
+          }
+        }
+      } catch {
+        // Safe fallback
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [repos, dbReady]);
+
   // Handle starting a workout from router or home
   const handleStartSession = (workoutId: string) => {
     setCurrentWorkoutId(workoutId);
     setHasActiveWorkout(true);
-    setActiveTab('workout');
+    handleNavigateToTab('workout');
   };
 
   // Handle session finished in logger -> switch to home tab to view metrics/calendar
   const handleFinishSession = (completedWorkout: Workout) => {
     setHasActiveWorkout(false);
     setCurrentWorkoutId(undefined);
-    setActiveTab('home');
+    handleNavigateToTab('home');
   };
 
   const handleDiscardSession = () => {
     setHasActiveWorkout(false);
     setCurrentWorkoutId(undefined);
-    setActiveTab('home');
+    handleNavigateToTab('home');
   };
 
   if (!dbReady || !repos) {
@@ -241,7 +298,7 @@ export default function App({
         <SafeAreaView style={styles.loadingScreen} edges={['top', 'bottom', 'left', 'right']}>
           <StatusBar style="light" />
           <ActivityIndicator size="large" color="#00E676" />
-          <Text style={styles.loadingTitle}>MomentRM</Text>
+          <Text style={styles.loadingTitle}>datSet</Text>
           <Text style={styles.loadingSubtext}>
             Initializing offline SQLite storage...
           </Text>
@@ -344,7 +401,7 @@ export default function App({
           <TouchableOpacity
             testID="tab-btn-home"
             style={styles.tabButton}
-            onPress={() => setActiveTab('home')}
+            onPress={() => handleNavigateToTab('home')}
             activeOpacity={0.7}
             accessibilityLabel="Home Tab"
           >
@@ -372,7 +429,7 @@ export default function App({
           <TouchableOpacity
             testID="tab-btn-workout"
             style={styles.tabButton}
-            onPress={() => setActiveTab('workout')}
+            onPress={() => handleNavigateToTab('workout')}
             activeOpacity={0.7}
             accessibilityLabel="Workout Tab"
           >
@@ -403,7 +460,7 @@ export default function App({
           <TouchableOpacity
             testID="tab-btn-profile"
             style={styles.tabButton}
-            onPress={() => setActiveTab('profile')}
+            onPress={() => handleNavigateToTab('profile')}
             activeOpacity={0.7}
             accessibilityLabel="Profile Tab"
           >
@@ -431,7 +488,7 @@ export default function App({
           <TouchableOpacity
             testID="tab-btn-settings"
             style={styles.tabButton}
-            onPress={() => setActiveTab('settings')}
+            onPress={() => handleNavigateToTab('settings')}
             activeOpacity={0.7}
             accessibilityLabel="Settings Tab"
           >
@@ -455,6 +512,23 @@ export default function App({
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* First-Time User 3-Step Onboarding Wizard */}
+        {showOnboarding && repos && (
+          <OnboardingWizardModal
+            visible={showOnboarding}
+            userSettingsRepo={repos.userSettingsRepo}
+            userProfileRepo={repos.userProfileRepo}
+            programRepo={repos.programRepo}
+            programBlockService={repos.programBlockService}
+            exerciseRepo={repos.exerciseRepo}
+            onComplete={() => setShowOnboarding(false)}
+            onNavigateToImport={() => {
+              setShowOnboarding(false);
+              handleNavigateToTab('settings');
+            }}
+          />
+        )}
       </SafeAreaView>
     </SafeAreaProvider>
   );

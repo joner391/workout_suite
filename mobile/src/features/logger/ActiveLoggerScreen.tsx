@@ -62,6 +62,8 @@ import { SupersetBracketGroup } from './SupersetBracketGroup';
 import { ProgressionProposalBanner } from './ProgressionProposalBanner';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
 import { SessionDetailModal } from '../calendar/SessionDetailModal';
+import { useKeepAwake } from 'expo-keep-awake';
+import { generateWarmupSets } from '../../core/math/warmupEstimator';
 
 export interface WorkoutDurationTickerProps {
   startedAt?: string | null;
@@ -150,6 +152,13 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   onFinishSession,
   onDiscardSession,
 }) => {
+  // Lock screen awake during workout session
+  try {
+    useKeepAwake();
+  } catch {
+    // Safe fallback if native module is unavailable
+  }
+
   // Services instantiation fallback
   const sessionService = useMemo(
     () => propSessionService ?? new ActiveSessionService(workoutRepo, exerciseRepo, gearRepo),
@@ -522,6 +531,47 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
     setSets((prev) => [...prev, newSet]);
     setExpandedSetId(newSet.id);
+  };
+
+  // Generate Warmup Sets for Exercise (Warm_up_estimator.md)
+  const handleGenerateWarmupSets = async (exerciseId: string) => {
+    if (!activeWorkout) return;
+    const exercise = exerciseMap.get(exerciseId);
+    if (!exercise) return;
+
+    const exerciseSets = sets.filter((s) => s.exercise_id === exerciseId);
+    const firstWorkingSet = exerciseSets.find((s) => s.set_type === 'working') || exerciseSets[0];
+    const workingWeight = firstWorkingSet ? (firstWorkingSet.raw_input_weight || firstWorkingSet.weight) : 60;
+
+    const warmupSteps = generateWarmupSets({
+      workingWeightKg: workingWeight,
+      barTareWeightKg: exercise.default_bar_weight_kg || 20,
+      isBodyweight: exercise.is_bodyweight,
+    });
+
+    if (warmupSteps.length === 0) return;
+
+    const createdWarmupSets: WorkoutSet[] = [];
+    for (const step of warmupSteps) {
+      const newSet = await sessionService.addSet(activeWorkout.id, {
+        exerciseId,
+        rawInputWeight: step.weight,
+        reps: step.reps,
+        setType: 'warmup',
+        setNotes: step.notes,
+        gearId: firstWorkingSet?.gear_id ?? null,
+        exerciseGroupId: firstWorkingSet?.exercise_group_id ?? null,
+      });
+      createdWarmupSets.push(newSet);
+    }
+
+    setSets((prev) => {
+      const nonExSets = prev.filter((s) => s.exercise_id !== exerciseId);
+      const exSets = prev.filter((s) => s.exercise_id === exerciseId);
+      const combined = [...createdWarmupSets, ...exSets];
+      const reindexed = combined.map((s, idx) => ({ ...s, set_number: idx + 1 }));
+      return [...nonExSets, ...reindexed];
+    });
   };
 
   // Update Set
@@ -1200,15 +1250,26 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               );
             })}
 
-            {/* Add Set Button */}
-            <TouchableOpacity
-              testID={`add-set-button-${exercise.id}`}
-              style={styles.addSetButton}
-              onPress={() => handleAddSet(exercise.id)}
-              accessibilityLabel={`Add set to ${exercise.name}`}
-            >
-              <Text style={styles.addSetButtonText}>+ ADD SET</Text>
-            </TouchableOpacity>
+            {/* Add Set & Warm-up Buttons */}
+            <View style={styles.setActionButtonRow}>
+              <TouchableOpacity
+                testID={`add-set-button-${exercise.id}`}
+                style={styles.addSetButton}
+                onPress={() => handleAddSet(exercise.id)}
+                accessibilityLabel={`Add set to ${exercise.name}`}
+              >
+                <Text style={styles.addSetButtonText}>+ ADD SET</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID={`generate-warmup-button-${exercise.id}`}
+                style={styles.addWarmupButton}
+                onPress={() => handleGenerateWarmupSets(exercise.id)}
+                accessibilityLabel={`Generate warm-up sets for ${exercise.name}`}
+              >
+                <Text style={styles.addWarmupButtonText}>⚡ WARM-UP</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </View>
@@ -1981,17 +2042,35 @@ const styles = StyleSheet.create({
     color: '#71717A',
     letterSpacing: 0.5,
   },
+  setActionButtonRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#18181B',
+  },
   addSetButton: {
+    flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
     backgroundColor: '#121215',
-    borderTopWidth: 1,
-    borderTopColor: '#18181B',
   },
   addSetButtonText: {
     fontSize: 12,
     fontWeight: '800',
     color: '#00E676',
+    letterSpacing: 0.5,
+  },
+  addWarmupButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#121215',
+    borderLeftWidth: 1,
+    borderLeftColor: '#18181B',
+  },
+  addWarmupButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FEF08A',
     letterSpacing: 0.5,
   },
   addExerciseButton: {

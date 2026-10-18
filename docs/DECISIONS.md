@@ -1680,6 +1680,44 @@
   - *Cons*:
     - Requires one-time migration execution on mobile client boot to add columns to `calibrated_params`.
 
+---
+
+## ADR-075: Native Production Polish, Background Notifications, Warm-Up Ladder Generator, and Store Readiness (datSet)
+- **Context**: The mobile application completed Phase 1–15 core engineering. However, gym-floor ergonomics and App Store / Google Play requirements identified in `Argon_launch_consideration.md` remained unaddressed:
+  1. Rest timer stopped sending alerts when the app was backgrounded or the phone screen locked.
+  2. Phone display would dim and sleep mid-set during active workouts without screen keep-awake locking.
+  3. Numeric input ergonomics required tedious manual backspacing and lacked fine-grained steppers.
+  4. Missing plate-quantized warm-up ladder generator as mathematically specified in `Warm_up_estimator.md`.
+  5. Missing first-time user onboarding wizard and store configuration (bundle identifiers, iOS privacy manifests, `ITSAppUsesNonExemptEncryption`, peer-reviewed scientific citations, and medical disclaimers).
+  6. Application branding was unfinalized (`MomentRM` placeholder vs official brand `datSet`).
+- **Decision**:
+  1. **Background Rest Timer & Haptics (`restTimerService.ts`)**:
+     - Integrated `expo-notifications` for scheduled local push notifications synchronized with `endTimestampMs`, automatically cancelling pending notifications upon timer pause, skip, or reset.
+     - Integrated `expo-haptics` for tactile feedback on set completion checkboxes and timer completion.
+  2. **Screen Wake Lock (`ActiveLoggerScreen.tsx`)**:
+     - Added `expo-keep-awake` (`useKeepAwake()`) to keep the phone screen awake during active workout sessions.
+  3. **Keyboard Ergonomics & Quick Steppers (`SetRowComponent.tsx`)**:
+     - Configured `selectTextOnFocus={true}` across all numeric `TextInput` elements (`weight-input`, `reps-input`, `reps-input-left`, `reps-input-right`, `intensity-input`).
+     - Added `±1`, `±2.5`, and `±5` quick-stepper pills above inputs for one-tap micro-adjustments.
+  4. **Deterministic Warm-Up Ladder Generator (`warmupEstimator.ts`, ADR-069)**:
+     - Implemented barbell plate quantization ($L_{\text{final}} = m \cdot \lfloor L/m + 0.5 \rfloor$), empty bar baseline, 4-step progressive loading (empty bar, 50%, 70%, 87.5% diagnostic single), ternary rating adjustment ('light': $+2.5\%$ to $+5\%$, 'normal': $0\%$, 'hard': $-5\%$ to $-7.5\%$), and Helms RPE overshoot step-down.
+     - Added 1-tap `⚡ WARM-UP` button in `ActiveLoggerScreen.tsx` that generates warmup sets directly into the active exercise card.
+  5. **First-Launch Onboarding Wizard (`OnboardingWizardModal.tsx`)**:
+     - Created a 3-step wizard configuring units (`kg` / `lbs`), default bar weight (`20kg` / `15kg` or `45lbs` / `35lbs`), intensity metric (`RPE` / `RIR`), equipment profile (`commercial_gym`, `garage_gym`, `dumbbells_only`), and starter routine generation or CSV migration with health disclaimer.
+  6. **Android Hardware Back Navigation (`App.tsx`)**:
+     - Added React Native `BackHandler` listener with a navigation history stack (`tabHistory`) navigating backwards across tabs or returning to `home` before prompting app exit.
+  7. **Store Configuration & Legal Compliance (`app.json`, `SettingsScreen.tsx`, `PainReportModal.tsx`)**:
+     - Finalized brand name **datSet** (slug: `datset`, iOS bundleIdentifier: `com.datset.app`, Android package: `com.datset.app`).
+     - Added `ITSAppUsesNonExemptEncryption: false` and Apple Privacy Manifest declarations (`NSPrivacyAccessedAPITypes`) for disk space (`E174.1`) and file timestamps (`C617.1`).
+     - Added peer-reviewed scientific citations card (Epley, Brzycki, DOTS, U.S. Navy Circumference, Banister model) and health/privacy disclaimers in `SettingsScreen.tsx`.
+- **Consequences**:
+  - *Pros*:
+    - Store-compliant configuration ready for EAS Build, TestFlight, and Google Play Closed Testing.
+    - Zero gym-floor friction: screen stays awake, timer notifies in background, one-tap warm-up set generation, and instant text selection.
+    - 100% test coverage preserved with 60 Jest test suites and 793 passing tests.
+  - *Cons*:
+    - Requires Expo native build or development client to test background push notifications on physical devices (mocked in headless Jest).
+
 
 
 

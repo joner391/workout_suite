@@ -26,6 +26,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { WorkoutSet, Exercise, SetType, WeightUnit, IntensityMetric } from '../../core/types';
 
 export interface SetRowProps {
@@ -364,6 +365,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
               testID="weight-input"
               style={[styles.input, isCompleted && styles.completedInput]}
               keyboardType="decimal-pad"
+              selectTextOnFocus={true}
               placeholder={ghostSet ? `${ghostSet.raw_input_weight}` : '0'}
               placeholderTextColor="#71717A"
               value={weightInput !== null ? weightInput : (set.raw_input_weight > 0 ? `${set.raw_input_weight}` : '')}
@@ -389,6 +391,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                   testID="reps-input-left"
                   style={[styles.miniInput, isCompleted && styles.completedInput]}
                   keyboardType="number-pad"
+                  selectTextOnFocus={true}
                   placeholder={ghostSet ? `${ghostSet.reps}` : 'L'}
                   placeholderTextColor="#71717A"
                   value={repsInput !== null ? repsInput : (set.reps > 0 ? `${set.reps}` : '')}
@@ -405,6 +408,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                   testID="reps-input-right"
                   style={[styles.miniInput, isCompleted && styles.completedInput]}
                   keyboardType="number-pad"
+                  selectTextOnFocus={true}
                   placeholder={ghostSet?.reps_right !== null && ghostSet?.reps_right !== undefined ? `${ghostSet.reps_right}` : 'R'}
                   placeholderTextColor="#71717A"
                   value={repsRightInput !== null ? repsRightInput : (set.reps_right && set.reps_right > 0 ? `${set.reps_right}` : '')}
@@ -421,6 +425,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
               testID="reps-input"
               style={[styles.input, isCompleted && styles.completedInput]}
               keyboardType="number-pad"
+              selectTextOnFocus={true}
               placeholder={ghostSet ? `${ghostSet.reps}` : '0'}
               placeholderTextColor="#71717A"
               value={repsInput !== null ? repsInput : (set.reps > 0 ? `${set.reps}` : '')}
@@ -438,6 +443,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
             testID="intensity-input"
             style={[styles.intensityInput, isCompleted && styles.completedInput]}
             keyboardType="decimal-pad"
+            selectTextOnFocus={true}
             placeholder="—"
             placeholderTextColor="#71717A"
             value={
@@ -469,7 +475,18 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
         <TouchableOpacity
           testID="complete-set-checkbox"
           style={[styles.checkbox, isCompleted && styles.completedCheckbox]}
-          onPress={onToggleComplete}
+          onPress={() => {
+            if (!isCompleted) {
+              try {
+                if (Haptics?.impactAsync && Haptics?.ImpactFeedbackStyle) {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }
+              } catch {
+                // Safe fallback
+              }
+            }
+            onToggleComplete();
+          }}
           accessibilityLabel={isCompleted ? 'Mark set incomplete' : 'Mark set complete'}
         >
           {isCompleted ? (
@@ -500,6 +517,18 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                 onPress={() => handleStepWeight(-2.5)}
               >
                 <Text style={styles.pillButtonText}>-2.5</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.pillButton}
+                onPress={() => handleStepWeight(-1)}
+              >
+                <Text style={styles.pillButtonText}>-1</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.pillButton, styles.pillButtonPositive]}
+                onPress={() => handleStepWeight(1)}
+              >
+                <Text style={[styles.pillButtonText, styles.pillButtonTextPositive]}>+1</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.pillButton, styles.pillButtonPositive]}

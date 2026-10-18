@@ -226,7 +226,7 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
             <View testID="pain-physio-disclaimer" style={styles.disclaimerBox}>
               <Text style={styles.disclaimerIcon}>⚕️</Text>
               <Text style={styles.disclaimerText}>
-                <Text style={styles.disclaimerBold}>Medical Disclaimer:</Text> MomentRM is a
+                <Text style={styles.disclaimerBold}>Medical Disclaimer:</Text> datSet is a
                 training ledger, not a medical diagnostics provider. If discomfort is sharp,
                 radiating, or persists outside the gym, please consult a licensed physiotherapist
                 or sports medicine physician before loading this movement again.

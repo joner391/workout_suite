@@ -37,6 +37,7 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   ├── strengthStandards.ts
 │       │   │   ├── navyBodyFat.ts
 │       │   │   ├── effectiveReps.ts
+│       │   │   ├── warmupEstimator.ts
 │       │   │   └── __tests__/
 │       │   │       ├── unitConversion.test.ts
 │       │   │       ├── heuristic1rm.test.ts
@@ -46,7 +47,8 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │       ├── dotsCoefficients.test.ts
 │       │   │       ├── strengthStandards.test.ts
 │       │   │       ├── navyBodyFat.test.ts
-│       │   │       └── effectiveReps.test.ts
+│       │   │       ├── effectiveReps.test.ts
+│       │   │       └── warmupEstimator.test.ts
 │       │   ├── generator/
 │       │   │   ├── programSynthesizer.ts
 │       │   │   └── __tests__/
@@ -175,11 +177,16 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   ├── dummyDataPresets.ts
 │       │   │   └── __tests__/
 │       │   │       └── importComponents.test.ts
-│       │   └── settings/
+│       │   ├── settings/
+│       │   │   ├── index.ts
+│       │   │   ├── SettingsScreen.tsx
+│       │   │   └── __tests__/
+│       │   │       └── settingsComponents.test.ts
+│       │   └── onboarding/
 │       │       ├── index.ts
-│       │       ├── SettingsScreen.tsx
+│       │       ├── OnboardingWizardModal.tsx
 │       │       └── __tests__/
-│       │           └── settingsComponents.test.ts
+│       │           └── onboardingWizard.test.ts
 │       ├── __tests__/
 │       │   └── App.test.ts
 │       └── database/

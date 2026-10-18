@@ -233,4 +233,39 @@ describe('RestTimerService', () => {
       expect(listener).toHaveBeenCalledTimes(3);
     });
   });
+
+  describe('Local Push Notifications & Native Haptics', () => {
+    it('schedules notification on start and cancels on skip', async () => {
+      const Notifications = require('expo-notifications');
+      const Haptics = require('expo-haptics');
+      Notifications.scheduleNotificationAsync.mockClear();
+      Notifications.cancelScheduledNotificationAsync.mockClear();
+      Haptics.notificationAsync.mockClear();
+
+      timer.start(90);
+      expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.objectContaining({
+            title: 'Rest Completed',
+            sound: true,
+          }),
+        })
+      );
+
+      await Promise.resolve();
+      timer.skip();
+      expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalled();
+      expect(Haptics.notificationAsync).toHaveBeenCalledWith('success');
+    });
+
+    it('triggers haptics when timer expires', () => {
+      const Haptics = require('expo-haptics');
+      Haptics.notificationAsync.mockClear();
+
+      timer.start(10);
+      jest.advanceTimersByTime(11000);
+      expect(Haptics.notificationAsync).toHaveBeenCalledWith('success');
+    });
+  });
 });
+

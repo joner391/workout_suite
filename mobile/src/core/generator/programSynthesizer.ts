@@ -783,7 +783,7 @@ export function synthesizeProgram(
   }
 
   // 2. Program Name & Color Accent
-  let defaultName = 'MomentRM Custom Training Plan';
+  let defaultName = 'datSet Custom Training Plan';
   let defaultColor = '#3B82F6';
 
   switch (profile.primary_goal) {

@@ -167,7 +167,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           {/* Active Program Badge Row */}
           <View style={styles.activeProgramRow}>
             <View style={styles.activeProgramInfo}>
-              <Text style={styles.dashboardSubtitle}>MOMENTRM TRAINING HUB</Text>
+              <Text style={styles.dashboardSubtitle}>DATSET TRAINING HUB</Text>
               <View style={styles.programTitleContainer}>
                 {activeInfo ? (
                   <>
