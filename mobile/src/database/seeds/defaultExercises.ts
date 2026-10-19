@@ -1,4 +1,5 @@
 import { Exercise, GearInventory } from '../../core/types';
+export { resolveExerciseJoints } from '../../services/exerciseSubstitutionService';
 
 /**
  * 46 Foundational pre-seeded exercises categorized across Barbell, Dumbbell,

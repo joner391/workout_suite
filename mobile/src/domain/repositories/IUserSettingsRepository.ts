@@ -1,4 +1,4 @@
-import { Gender, IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
+import { AutoWarmupMode, Gender, IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
 
 /**
  * Well-known settings keys used throughout the mobile application.
@@ -9,6 +9,7 @@ export const SETTINGS_KEYS = {
   PURE_UTILITY_MODE: 'pure_utility_mode',
   USER_GENDER: 'user_gender',
   USER_BODYWEIGHT_KG: 'user_bodyweight_kg',
+  AUTO_WARMUP_MODE: 'auto_warmup_mode',
 } as const;
 
 /**
@@ -88,4 +89,16 @@ export interface IUserSettingsRepository {
    * Sets the user's bodyweight in kg, or removes it if null.
    */
   setUserBodyweight(weightKg: number | null): Promise<void>;
+
+  /**
+   * Retrieves the automated warm-up generation mode ('smart_compounds' | 'all_exercises' | 'off').
+   * Defaults to 'smart_compounds'.
+   */
+  getAutoWarmupMode(): Promise<AutoWarmupMode>;
+
+  /**
+   * Sets the automated warm-up generation mode.
+   */
+  setAutoWarmupMode(mode: AutoWarmupMode): Promise<void>;
 }
+

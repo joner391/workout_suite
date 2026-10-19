@@ -12,6 +12,20 @@ export interface WeeklyMetrics {
   activeStreakWeeks: number;
 }
 
+interface MetricsCacheEntry {
+  key: string;
+  metrics: WeeklyMetrics;
+}
+
+let metricsCache: MetricsCacheEntry | null = null;
+
+/**
+ * Clears the memoized dashboard metrics cache.
+ */
+export function clearDashboardMetricsCache(): void {
+  metricsCache = null;
+}
+
 export async function computeDashboardMetrics(
   workoutRepo: IWorkoutRepository
 ): Promise<WeeklyMetrics> {
@@ -31,15 +45,31 @@ export async function computeDashboardMetrics(
   sunday.setHours(23, 59, 59, 999);
   const sundayIso = sunday.toISOString().split('T')[0];
 
+  // Latest completed timestamp for memoization invalidation
+  let latestCompletedAt = '';
+  for (const w of completed) {
+    const ts = w.completed_at || w.started_at || w.date;
+    if (ts > latestCompletedAt) {
+      latestCompletedAt = ts;
+    }
+  }
+
+  const cacheKey = `${completed.length}_${latestCompletedAt}_${mondayIso}`;
+  if (metricsCache && metricsCache.key === cacheKey) {
+    return metricsCache.metrics;
+  }
+
   const thisWeekWorkouts = completed.filter(
     (w) => w.date >= mondayIso && w.date <= sundayIso
   );
 
   let totalTonnageKg = 0;
-  for (const w of thisWeekWorkouts) {
-    const sets = await workoutRepo.getSetsByWorkoutId(w.id);
+  if (thisWeekWorkouts.length > 0) {
+    const sets = await workoutRepo.getSetsByWorkoutIds(
+      thisWeekWorkouts.map((w) => w.id)
+    );
     for (const s of sets) {
-      if (s.weight != null && s.reps != null) {
+      if (s.weight != null && s.reps != null && s.weight > 0 && s.reps > 0) {
         totalTonnageKg += s.weight * s.reps;
       }
     }
@@ -68,9 +98,17 @@ export async function computeDashboardMetrics(
     }
   }
 
-  return {
+  const result: WeeklyMetrics = {
     workoutsThisWeek: thisWeekWorkouts.length,
     totalTonnageKg: Math.round(totalTonnageKg),
     activeStreakWeeks: streak,
   };
+
+  metricsCache = {
+    key: cacheKey,
+    metrics: result,
+  };
+
+  return result;
 }
+

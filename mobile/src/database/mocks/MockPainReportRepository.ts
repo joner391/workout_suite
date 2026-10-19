@@ -30,6 +30,7 @@ export class MockPainReportRepository implements IPainReportRepository {
       set_id: input.set_id ?? null,
       pain_type: input.pain_type,
       severity: input.severity,
+      joint_location: input.joint_location ?? null,
       notes: input.notes ?? null,
       created_at: createdAt,
     };

@@ -23,7 +23,7 @@ import {
   Switch,
   Modal,
 } from 'react-native';
-import { WeightUnit, IntensityMetric } from '../../core/types';
+import { WeightUnit, IntensityMetric, AutoWarmupMode } from '../../core/types';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
 import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
 import { IGearRepository } from '../../domain/repositories/IGearRepository';
@@ -77,6 +77,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
   const [intensityMetric, setIntensityMetric] = useState<IntensityMetric>('RPE');
   const [pureUtilityMode, setPureUtilityMode] = useState<boolean>(false);
+  const [autoWarmupMode, setAutoWarmupMode] = useState<AutoWarmupMode>('smart_compounds');
 
   const [showExerciseLibrary, setShowExerciseLibrary] = useState<boolean>(false);
   const [showImportScreen, setShowImportScreen] = useState<boolean>(false);
@@ -151,14 +152,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const loadSettings = useCallback(async () => {
     try {
       setLoading(true);
-      const [unit, intensity, utility] = await Promise.all([
+      const [unit, intensity, utility, warmupMode] = await Promise.all([
         userSettingsRepo.getUnitSystem(),
         userSettingsRepo.getIntensityMetric(),
         userSettingsRepo.getPureUtilityMode(),
+        userSettingsRepo.getAutoWarmupMode(),
       ]);
       setUnitSystem(unit);
       setIntensityMetric(intensity);
       setPureUtilityMode(utility);
+      setAutoWarmupMode(warmupMode);
     } catch {
       // Use defaults
     } finally {
@@ -192,6 +195,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const handleUtilityModeToggle = async (value: boolean) => {
     setPureUtilityMode(value);
     await userSettingsRepo.setPureUtilityMode(value);
+    if (onSettingsChange) {
+      onSettingsChange();
+    }
+  };
+
+  // Auto Warmup Mode toggle handler
+  const handleAutoWarmupChange = async (mode: AutoWarmupMode) => {
+    setAutoWarmupMode(mode);
+    await userSettingsRepo.setAutoWarmupMode(mode);
     if (onSettingsChange) {
       onSettingsChange();
     }
@@ -352,6 +364,84 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 thumbColor={pureUtilityMode ? '#000000' : '#A1A1AA'}
                 accessibilityLabel="Toggle Pure Utility Mode"
               />
+            </View>
+          </View>
+
+          <View style={styles.settingCard}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Automated Warm-Up Sets</Text>
+              <Text style={styles.settingValueBadge}>
+                {autoWarmupMode === 'smart_compounds'
+                  ? 'SMART COMPOUNDS'
+                  : autoWarmupMode === 'all_exercises'
+                  ? 'ALL LIFTS'
+                  : 'MANUAL ONLY'}
+              </Text>
+            </View>
+            <Text style={styles.settingDescription}>
+              Synthesizes an individualized warm-up progression ladder (bar tare, 50%, 70%, diagnostic single) when starting a workout or adding exercises:
+              {'\n'}• Smart Compounds: Prepares multi-joint compound lifts only, attenuating sets if the muscle group is already warmed up.
+              {'\n'}• All Lifts: Generates warm-up sets for every added movement.
+              {'\n'}• Manual Only: Adds working sets only; warm-up sets can still be synthesized on-demand via the exercise card button.
+            </Text>
+
+            <View style={styles.segmentedControl}>
+              <TouchableOpacity
+                style={[
+                  styles.segmentButton,
+                  autoWarmupMode === 'smart_compounds' && styles.segmentButtonActive,
+                ]}
+                onPress={() => handleAutoWarmupChange('smart_compounds')}
+                activeOpacity={0.8}
+                accessibilityLabel="Set automated warm-up mode to Smart Compounds"
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    autoWarmupMode === 'smart_compounds' && styles.segmentTextActive,
+                  ]}
+                >
+                  Smart Compounds
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.segmentButton,
+                  autoWarmupMode === 'all_exercises' && styles.segmentButtonActive,
+                ]}
+                onPress={() => handleAutoWarmupChange('all_exercises')}
+                activeOpacity={0.8}
+                accessibilityLabel="Set automated warm-up mode to All Lifts"
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    autoWarmupMode === 'all_exercises' && styles.segmentTextActive,
+                  ]}
+                >
+                  All Lifts
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.segmentButton,
+                  autoWarmupMode === 'off' && styles.segmentButtonActive,
+                ]}
+                onPress={() => handleAutoWarmupChange('off')}
+                activeOpacity={0.8}
+                accessibilityLabel="Set automated warm-up mode to Manual Only"
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    autoWarmupMode === 'off' && styles.segmentTextActive,
+                  ]}
+                >
+                  Manual Only
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
 

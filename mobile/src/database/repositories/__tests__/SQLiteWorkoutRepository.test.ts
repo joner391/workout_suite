@@ -319,4 +319,53 @@ describe('SQLiteWorkoutRepository', () => {
       expect(mockDb.executedQueries).toHaveLength(0);
     });
   });
+
+  describe('Batch Queries and e1RM Aggregations', () => {
+    it('returns empty array when getSetsByWorkoutIds is called with empty array', async () => {
+      const results = await repo.getSetsByWorkoutIds([]);
+      expect(results).toEqual([]);
+      expect(mockDb.executedQueries).toHaveLength(0);
+    });
+
+    it('queries sets using WHERE workout_id IN (...) for batch workout IDs', async () => {
+      mockDb.mockData.set('WHERE workout_id IN', [sampleSetRow]);
+
+      const results = await repo.getSetsByWorkoutIds(['w1', 'w2']);
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe('set_456');
+
+      expect(mockDb.executedQueries).toHaveLength(1);
+      const query = mockDb.executedQueries[0];
+      expect(query.sql).toContain('WHERE workout_id IN (?, ?)');
+      expect(query.params).toEqual(['w1', 'w2']);
+    });
+
+    it('chunks getSetsByWorkoutIds when exceeding 400 IDs', async () => {
+      mockDb.mockData.set('WHERE workout_id IN', [sampleSetRow]);
+
+      const ids = Array.from({ length: 450 }, (_, i) => `w_${i}`);
+      const results = await repo.getSetsByWorkoutIds(ids);
+
+      // 450 IDs / 400 chunk size = 2 chunks (400 + 50)
+      expect(mockDb.executedQueries).toHaveLength(2);
+      expect(mockDb.executedQueries[0].params).toHaveLength(400);
+      expect(mockDb.executedQueries[1].params).toHaveLength(50);
+      expect(results).toHaveLength(2); // 1 mock row per chunk
+    });
+
+    it('queries best e1RM by exercise using SQL aggregate and maps results', async () => {
+      mockDb.mockData.set('MAX(weight * (1.0 + reps / 30.0))', [
+        { exercise_id: 'bench_press', max_e1rm: 125.5 },
+        { exercise_id: 'squat', max_e1rm: 180.0 },
+      ]);
+
+      const results = await repo.getBestE1rmByExercise();
+      expect(results.size).toBe(2);
+      expect(results.get('bench_press')).toBe(125.5);
+      expect(results.get('squat')).toBe(180.0);
+
+      expect(mockDb.executedQueries[0].sql).toContain('GROUP BY exercise_id');
+    });
+  });
 });
+

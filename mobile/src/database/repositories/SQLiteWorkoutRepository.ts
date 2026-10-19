@@ -218,6 +218,26 @@ export class SQLiteWorkoutRepository implements IWorkoutRepository {
     return rows.map(mapRowToWorkoutSet);
   }
 
+  async getSetsByWorkoutIds(workoutIds: string[]): Promise<WorkoutSet[]> {
+    if (workoutIds.length === 0) return [];
+
+    // Chunk by 400 to comfortably respect SQLite variable parameter limits
+    const CHUNK_SIZE = 400;
+    const allSets: WorkoutSet[] = [];
+
+    for (let i = 0; i < workoutIds.length; i += CHUNK_SIZE) {
+      const chunk = workoutIds.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const rows = await this.db.getAllAsync<WorkoutSetRow>(
+        `SELECT * FROM workout_sets WHERE workout_id IN (${placeholders}) ORDER BY workout_id, set_number ASC;`,
+        ...chunk
+      );
+      allSets.push(...rows.map(mapRowToWorkoutSet));
+    }
+
+    return allSets;
+  }
+
   async addSet(set: WorkoutSet): Promise<WorkoutSet> {
     await this.db.runAsync(
       `INSERT INTO workout_sets (
@@ -442,4 +462,25 @@ export class SQLiteWorkoutRepository implements IWorkoutRepository {
       workoutDate: String(r.workoutDate),
     }));
   }
+
+  async getBestE1rmByExercise(): Promise<Map<string, number>> {
+    interface BestE1rmRow {
+      exercise_id: string;
+      max_e1rm: number;
+    }
+    const rows = await this.db.getAllAsync<BestE1rmRow>(
+      `SELECT exercise_id, MAX(weight * (1.0 + reps / 30.0)) as max_e1rm
+       FROM workout_sets
+       WHERE reps > 0 AND weight > 0
+       GROUP BY exercise_id;`
+    );
+    const result = new Map<string, number>();
+    for (const r of rows) {
+      if (r.exercise_id && r.max_e1rm > 0) {
+        result.set(r.exercise_id, Math.round(r.max_e1rm * 100) / 100);
+      }
+    }
+    return result;
+  }
 }
+

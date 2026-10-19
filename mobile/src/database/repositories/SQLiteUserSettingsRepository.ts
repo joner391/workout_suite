@@ -2,7 +2,7 @@ import {
   IUserSettingsRepository,
   SETTINGS_KEYS,
 } from '../../domain/repositories/IUserSettingsRepository';
-import { Gender, IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
+import { AutoWarmupMode, Gender, IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
 import { ISQLiteDatabase } from '../schema';
 
 interface SettingRow {
@@ -101,4 +101,17 @@ export class SQLiteUserSettingsRepository implements IUserSettingsRepository {
       await this.set(SETTINGS_KEYS.USER_BODYWEIGHT_KG, weightKg.toString());
     }
   }
+
+  async getAutoWarmupMode(): Promise<AutoWarmupMode> {
+    const val = await this.get(SETTINGS_KEYS.AUTO_WARMUP_MODE);
+    if (val === 'all_exercises' || val === 'off' || val === 'smart_compounds') {
+      return val;
+    }
+    return 'smart_compounds';
+  }
+
+  async setAutoWarmupMode(mode: AutoWarmupMode): Promise<void> {
+    await this.set(SETTINGS_KEYS.AUTO_WARMUP_MODE, mode);
+  }
 }
+

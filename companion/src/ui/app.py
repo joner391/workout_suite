@@ -708,7 +708,7 @@ def main() -> None:
             for eid, swap_id, score, severe_joint in swap_recs:
                 orig_name = ex_name_map.get(eid, eid)
                 rep_name = ex_name_map.get(str(swap_id), str(swap_id))
-                reason = "Severe Joint Pain" if severe_joint else f"SFR score {score:.1f}/100"
+                reason = "Severe Joint Pain" if severe_joint else (f"SFR score {score:.1f}/100" if score is not None else "Low SFR")
                 st.markdown(f"- **{orig_name}** ({reason}) ➔ Swap for **{rep_name}** (lower axial fatigue & joint stress)")
 
         flagged_asym = [

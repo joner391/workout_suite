@@ -84,39 +84,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [activeInfo, setActiveInfo] = useState<ActiveProgramInfo | null>(null);
   const [nextTemplate, setNextTemplate] = useState<WorkoutTemplate | null>(null);
   const [weeklyMetrics, setWeeklyMetrics] = useState<WeeklyMetrics | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState<boolean>(true);
 
   const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const metrics = await computeDashboardMetrics(workoutRepo);
-      setWeeklyMetrics(metrics);
 
-      if (userSettingsRepo) {
-        try {
-          const [gender, bw, unit] = await Promise.all([
-            userSettingsRepo.getUserGender(),
-            userSettingsRepo.getUserBodyweight(),
-            userSettingsRepo.getUnitSystem(),
-          ]);
-          setUserGender(gender);
-          setUserBodyweightKg(bw);
-          setUnitSystem(unit);
-
-          if (bw && bw > 0) {
-            const inspectionService = new ExerciseInspectionService(workoutRepo, exerciseRepo);
-            const profile = await inspectionService.getSBDBalanceProfile({
-              gender,
-              bodyweightKg: bw,
-            });
-            setSbdProfile(profile);
-          } else {
-            setSbdProfile(null);
-          }
-        } catch {
-          // Ignore
-        }
-      }
-
+      // 1. Immediately load fast program block info and template progression
       if (programBlockService && programRepo) {
         try {
           const active = await programBlockService.getActiveProgram();
@@ -146,9 +120,60 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           // Ignore
         }
       }
+
+      // 2. Load basic user settings
+      let currentGender: Gender = 'male';
+      let currentBw: number | null = null;
+      if (userSettingsRepo) {
+        try {
+          const [gender, bw, unit] = await Promise.all([
+            userSettingsRepo.getUserGender(),
+            userSettingsRepo.getUserBodyweight(),
+            userSettingsRepo.getUnitSystem(),
+          ]);
+          currentGender = gender;
+          currentBw = bw;
+          setUserGender(gender);
+          setUserBodyweightKg(bw);
+          setUnitSystem(unit);
+        } catch {
+          // Ignore
+        }
+      }
+
+      // Yield UI thread: render headers and active cards immediately
+      setLoading(false);
+
+      // 3. Offload heavy historical metrics and allometric radar calculations (Phase 5)
+      const scheduleIdleTask =
+        typeof (globalThis as any).requestIdleCallback === 'function'
+          ? (globalThis as any).requestIdleCallback
+          : (cb: () => void) => setTimeout(cb, 1);
+
+      scheduleIdleTask(async () => {
+        try {
+          setMetricsLoading(true);
+          const metrics = await computeDashboardMetrics(workoutRepo);
+          setWeeklyMetrics(metrics);
+
+          if (currentBw && currentBw > 0) {
+            const inspectionService = new ExerciseInspectionService(workoutRepo, exerciseRepo);
+            const profile = await inspectionService.getSBDBalanceProfile({
+              gender: currentGender,
+              bodyweightKg: currentBw,
+            });
+            setSbdProfile(profile);
+          } else {
+            setSbdProfile(null);
+          }
+        } catch (e) {
+          console.warn('Background analytics calculation error:', e);
+        } finally {
+          setMetricsLoading(false);
+        }
+      });
     } catch (err) {
-      console.error('Failed to load dashboard metrics:', err);
-    } finally {
+      console.error('Failed to load dashboard data:', err);
       setLoading(false);
     }
   }, [workoutRepo, exerciseRepo, userSettingsRepo, programRepo, programBlockService]);
@@ -228,7 +253,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <View style={styles.metricCard}>
               <Text style={styles.metricLabel}>WORKOUTS</Text>
               <Text testID="metric-workouts-this-week" style={styles.metricValue}>
-                {weeklyMetrics ? weeklyMetrics.workoutsThisWeek : '0'}
+                {weeklyMetrics ? weeklyMetrics.workoutsThisWeek : metricsLoading ? '—' : '0'}
               </Text>
               <Text style={styles.metricSub}>this week</Text>
             </View>
@@ -236,7 +261,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <View style={styles.metricCard}>
               <Text style={styles.metricLabel}>TONNAGE</Text>
               <Text testID="metric-tonnage-this-week" style={styles.metricValue}>
-                {weeklyMetrics ? `${weeklyMetrics.totalTonnageKg.toLocaleString()} kg` : '0 kg'}
+                {weeklyMetrics
+                  ? `${weeklyMetrics.totalTonnageKg.toLocaleString()} kg`
+                  : metricsLoading
+                  ? '—'
+                  : '0 kg'}
               </Text>
               <Text style={styles.metricSub}>volume lifted</Text>
             </View>
@@ -244,7 +273,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <View style={styles.metricCard}>
               <Text style={styles.metricLabel}>STREAK</Text>
               <Text testID="metric-active-streak" style={styles.metricValue}>
-                {weeklyMetrics ? `${weeklyMetrics.activeStreakWeeks} wks` : '0 wks'}
+                {weeklyMetrics
+                  ? `${weeklyMetrics.activeStreakWeeks} wks`
+                  : metricsLoading
+                  ? '—'
+                  : '0 wks'}
               </Text>
               <Text style={styles.metricSub}>consistent</Text>
             </View>

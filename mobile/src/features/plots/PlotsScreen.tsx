@@ -44,6 +44,7 @@ import {
   BodyMetric,
   Exercise,
   Workout,
+  WorkoutSet,
   WeightUnit,
   UserProfile,
 } from '../../core/types';
@@ -454,9 +455,18 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
 
       const dataPoints: { date: string; value: number }[] = [];
 
+      const allSets = await workoutRepo.getSetsByWorkoutIds(completed.map((w) => w.id));
+      const setsByWorkoutId = new Map<string, WorkoutSet[]>();
+      for (const s of allSets) {
+        if (s.exercise_id === selectedExerciseId) {
+          const arr = setsByWorkoutId.get(s.workout_id) || [];
+          arr.push(s);
+          setsByWorkoutId.set(s.workout_id, arr);
+        }
+      }
+
       for (const w of completed) {
-        const sets = await workoutRepo.getSetsByWorkoutId(w.id);
-        const exSets = sets.filter((s) => s.exercise_id === selectedExerciseId);
+        const exSets = setsByWorkoutId.get(w.id) || [];
 
         let maxE1rm = 0;
         for (const s of exSets) {
@@ -642,8 +652,16 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       // Group workouts into week buckets (Monday-based YYYY-MM-DD)
       const weekMap = new Map<string, number>();
 
+      const allSets = await workoutRepo.getSetsByWorkoutIds(completed.map((w) => w.id));
+      const setsByWorkoutId = new Map<string, WorkoutSet[]>();
+      for (const s of allSets) {
+        const arr = setsByWorkoutId.get(s.workout_id) || [];
+        arr.push(s);
+        setsByWorkoutId.set(s.workout_id, arr);
+      }
+
       for (const w of completed) {
-        const sets = await workoutRepo.getSetsByWorkoutId(w.id);
+        const sets = setsByWorkoutId.get(w.id) || [];
         let sessionTonnage = 0;
         for (const s of sets) {
           if (s.set_type !== 'warmup') {

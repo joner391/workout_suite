@@ -2,7 +2,7 @@ import {
   IUserSettingsRepository,
   SETTINGS_KEYS,
 } from '../../domain/repositories/IUserSettingsRepository';
-import { Gender, IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
+import { AutoWarmupMode, Gender, IntensityMetric, UserSettings, WeightUnit } from '../../core/types';
 
 /**
  * In-memory mock implementation of IUserSettingsRepository.
@@ -15,6 +15,7 @@ export class MockUserSettingsRepository implements IUserSettingsRepository {
     this.settings.set(SETTINGS_KEYS.UNIT_SYSTEM, 'kg');
     this.settings.set(SETTINGS_KEYS.INTENSITY_METRIC, 'RPE');
     this.settings.set(SETTINGS_KEYS.PURE_UTILITY_MODE, '0');
+    this.settings.set(SETTINGS_KEYS.AUTO_WARMUP_MODE, 'smart_compounds');
 
     if (initialSettings) {
       this.seed(initialSettings);
@@ -111,4 +112,17 @@ export class MockUserSettingsRepository implements IUserSettingsRepository {
       await this.set(SETTINGS_KEYS.USER_BODYWEIGHT_KG, weightKg.toString());
     }
   }
+
+  async getAutoWarmupMode(): Promise<AutoWarmupMode> {
+    const val = await this.get(SETTINGS_KEYS.AUTO_WARMUP_MODE);
+    if (val === 'all_exercises' || val === 'off' || val === 'smart_compounds') {
+      return val;
+    }
+    return 'smart_compounds';
+  }
+
+  async setAutoWarmupMode(mode: AutoWarmupMode): Promise<void> {
+    await this.set(SETTINGS_KEYS.AUTO_WARMUP_MODE, mode);
+  }
 }
+

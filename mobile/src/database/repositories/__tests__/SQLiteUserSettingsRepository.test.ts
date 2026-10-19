@@ -115,5 +115,23 @@ describe('SQLiteUserSettingsRepository', () => {
         '0',
       ]);
     });
+
+    it('retrieves auto warmup mode with smart_compounds default fallback', async () => {
+      expect(await repo.getAutoWarmupMode()).toBe('smart_compounds');
+
+      mockDb.mockData.set('WHERE key = ?;', [
+        { key: SETTINGS_KEYS.AUTO_WARMUP_MODE, value: 'all_exercises' },
+      ]);
+      expect(await repo.getAutoWarmupMode()).toBe('all_exercises');
+    });
+
+    it('sets auto warmup mode', async () => {
+      await repo.setAutoWarmupMode('off');
+      expect(mockDb.executedQueries[0].params).toEqual([
+        SETTINGS_KEYS.AUTO_WARMUP_MODE,
+        'off',
+      ]);
+    });
   });
 });
+

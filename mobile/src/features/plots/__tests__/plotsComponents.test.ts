@@ -39,6 +39,7 @@ import {
   PERFORMANCE_CHARTS,
   BODY_COMPOSITION_CHARTS,
 } from '../PlotsScreen';
+import { downsampleLTTB } from '../ProgramEraShadedChart';
 import {
   Workout,
   WorkoutSet,
@@ -867,4 +868,50 @@ describe('Longitudinal Plots & Era Shading Suite (Step 5.2)', () => {
       expect(element.props.userProfileRepo).toBe(mockUserProfileRepo);
     });
   });
+
+  describe('7. Largest-Triangle-Three-Buckets (LTTB) Downsampling Optimization', () => {
+    test('returns original data if data length is less than or equal to threshold', () => {
+      const data = [
+        { date: '2026-01-01', value: 10 },
+        { date: '2026-01-02', value: 20 },
+        { date: '2026-01-03', value: 15 },
+      ];
+      expect(downsampleLTTB(data, 5)).toEqual(data);
+      expect(downsampleLTTB(data, 3)).toEqual(data);
+    });
+
+    test('downsamples series with > threshold points to exactly threshold points preserving endpoints', () => {
+      const points = Array.from({ length: 100 }, (_, i) => {
+        const d = new Date(2026, 0, 1 + i);
+        return {
+          date: d.toISOString().split('T')[0],
+          value: Math.sin(i / 10) * 50 + 100,
+        };
+      });
+
+      const downsampled = downsampleLTTB(points, 30);
+      expect(downsampled).toHaveLength(30);
+      expect(downsampled[0]).toEqual(points[0]);
+      expect(downsampled[downsampled.length - 1]).toEqual(points[points.length - 1]);
+    });
+
+    test('retains extreme visual peak during downsampling', () => {
+      const points = Array.from({ length: 80 }, (_, i) => {
+        const d = new Date(2026, 0, 1 + i);
+        return {
+          date: d.toISOString().split('T')[0],
+          value: 50,
+        };
+      });
+      // Inject a massive peak at point index 40
+      points[40].value = 500;
+      const peakDate = points[40].date;
+
+      const downsampled = downsampleLTTB(points, 20);
+      expect(downsampled).toHaveLength(20);
+      const hasPeak = downsampled.some((p) => p.date === peakDate && p.value === 500);
+      expect(hasPeak).toBe(true);
+    });
+  });
 });
+

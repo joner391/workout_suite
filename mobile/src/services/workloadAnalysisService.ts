@@ -229,6 +229,20 @@ export function resolveAssistingMuscles(exercise: Exercise): (MuscleGroup | stri
   return [];
 }
 
+interface WorkloadCacheEntry {
+  key: string;
+  data: WeeklyWorkloadDeepDive;
+}
+
+let workloadCache: WorkloadCacheEntry | null = null;
+
+/**
+ * Clears the memoized workload analysis cache.
+ */
+export function clearWorkloadAnalysisCache(): void {
+  workloadCache = null;
+}
+
 /**
  * Computes comprehensive workload, volume landmarks, and dual intensity intelligence.
  */
@@ -247,29 +261,49 @@ export async function computeWeeklyWorkloadDeepDive(
   // 1. Fetch workouts and exercises
   const allWorkouts = await workoutRepo.findAll();
   const completedWorkouts = allWorkouts.filter((w) => w.status === 'completed');
+
+  // Check memoized cache
+  let latestCompletedAt = '';
+  for (const w of completedWorkouts) {
+    const ts = w.completed_at || w.started_at || w.date;
+    if (ts > latestCompletedAt) latestCompletedAt = ts;
+  }
+  const cacheKey = `${completedWorkouts.length}_${latestCompletedAt}_${weekOffset}_${mondayIso}`;
+  if (!customLandmarks && workloadCache && workloadCache.key === cacheKey) {
+    return workloadCache.data;
+  }
+
   const allExercises = await exerciseRepo.findAll();
   const exerciseMap = new Map<string, Exercise>(allExercises.map((e) => [e.id, e]));
 
-  // 2. Pre-calculate best historical e1RM per exercise across all completed workouts
+  // 2. Batch fetch all sets for all completed workouts in a SINGLE query (resolves N+1)
+  const allCompletedSets = await workoutRepo.getSetsByWorkoutIds(
+    completedWorkouts.map((w) => w.id)
+  );
+
+  // 3. Pre-calculate best historical e1RM per exercise across all completed workouts
   // for relative intensity benchmarking
   const bestE1rmMap = new Map<string, number>();
-  for (const w of completedWorkouts) {
-    const sets = await workoutRepo.getSetsByWorkoutId(w.id);
-    for (const s of sets) {
-      if (s.weight && s.weight > 0 && s.reps && s.reps > 0) {
-        const est = calculateHeuristic1RM(s.weight, s.reps, {
-          rpe: s.rpe,
-          rir: s.rir,
-        });
-        const prev = bestE1rmMap.get(s.exercise_id) || 0;
-        if (est > prev) {
-          bestE1rmMap.set(s.exercise_id, est);
-        }
+  const setsByWorkoutId = new Map<string, WorkoutSet[]>();
+
+  for (const s of allCompletedSets) {
+    const arr = setsByWorkoutId.get(s.workout_id) || [];
+    arr.push(s);
+    setsByWorkoutId.set(s.workout_id, arr);
+
+    if (s.weight && s.weight > 0 && s.reps && s.reps > 0) {
+      const est = calculateHeuristic1RM(s.weight, s.reps, {
+        rpe: s.rpe,
+        rir: s.rir,
+      });
+      const prev = bestE1rmMap.get(s.exercise_id) || 0;
+      if (est > prev) {
+        bestE1rmMap.set(s.exercise_id, est);
       }
     }
   }
 
-  // 3. Filter workouts in the target week
+  // 4. Filter workouts in the target week
   const weekWorkouts = completedWorkouts.filter(
     (w) => w.date >= mondayIso && w.date <= sundayIso
   );
@@ -277,7 +311,7 @@ export async function computeWeeklyWorkloadDeepDive(
   // Map workouts by date
   const workoutsByDate = new Map<string, { workout: Workout; sets: WorkoutSet[] }[]>();
   for (const w of weekWorkouts) {
-    const sets = await workoutRepo.getSetsByWorkoutId(w.id);
+    const sets = setsByWorkoutId.get(w.id) || [];
     const existing = workoutsByDate.get(w.date) || [];
     existing.push({ workout: w, sets });
     workoutsByDate.set(w.date, existing);
@@ -589,7 +623,7 @@ export async function computeWeeklyWorkloadDeepDive(
     },
   ];
 
-  return {
+  const result: WeeklyWorkloadDeepDive = {
     weekStartDate: mondayIso,
     weekEndDate: sundayIso,
     totalTonnageKg: Math.round(totalWeekTonnage),
@@ -612,4 +646,13 @@ export async function computeWeeklyWorkloadDeepDive(
       totalUnratedSets,
     },
   };
+
+  if (!customLandmarks) {
+    workloadCache = {
+      key: cacheKey,
+      data: result,
+    };
+  }
+
+  return result;
 }

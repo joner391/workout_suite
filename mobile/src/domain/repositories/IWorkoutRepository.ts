@@ -66,6 +66,12 @@ export interface IWorkoutRepository {
   getSetsByWorkoutId(workoutId: string): Promise<WorkoutSet[]>;
 
   /**
+   * Batch retrieves all sets for multiple workout sessions in a single query.
+   * Results are ordered by workout_id, set_number ASC.
+   */
+  getSetsByWorkoutIds(workoutIds: string[]): Promise<WorkoutSet[]>;
+
+  /**
    * Inserts a newly logged workout set.
    */
   addSet(set: WorkoutSet): Promise<WorkoutSet>;
@@ -119,4 +125,11 @@ export interface IWorkoutRepository {
    * (e.g. 1RM, 2RM, 3RM, 5RM, etc.), with optional date scoping and cross-variant exercise filtering.
    */
   getRepMaxSets(options: RepMaxQueryOptions): Promise<RawRepMaxRow[]>;
+
+  /**
+   * Aggregates the highest estimated 1RM (e1RM = weight * (1 + reps/30)) across all historical sets
+   * grouped by exercise_id via a single high-performance SQL aggregation.
+   */
+  getBestE1rmByExercise(): Promise<Map<string, number>>;
 }
+

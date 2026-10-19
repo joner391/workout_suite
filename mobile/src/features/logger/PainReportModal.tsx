@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -8,11 +8,13 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import { Exercise, PainType } from '../../core/types';
+import { Exercise, PainType, JointLocation } from '../../core/types';
+import { resolveExerciseJoints } from '../../services/exerciseSubstitutionService';
 
 export interface PainReportSubmitData {
   painType: PainType;
   severity: number;
+  jointLocation?: JointLocation | null;
   notes?: string;
   shouldSkipRemainingSets: boolean;
 }
@@ -25,6 +27,32 @@ export interface PainReportModalProps {
   onSubmit: (data: PainReportSubmitData) => Promise<void> | void;
 }
 
+export const ALL_JOINTS: JointLocation[] = [
+  'shoulder',
+  'elbow',
+  'wrist',
+  'lower_back',
+  'hip',
+  'knee',
+  'ankle',
+  'neck',
+  'chest_pec',
+  'other',
+];
+
+export const JOINT_LABELS: Record<JointLocation, string> = {
+  shoulder: 'Shoulder',
+  elbow: 'Elbow',
+  wrist: 'Wrist',
+  lower_back: 'Lower Back',
+  hip: 'Hip',
+  knee: 'Knee',
+  ankle: 'Ankle',
+  neck: 'Neck',
+  chest_pec: 'Chest / Pec',
+  other: 'Other Joint',
+};
+
 export const PainReportModal: React.FC<PainReportModalProps> = ({
   visible,
   exercise,
@@ -36,23 +64,75 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
   const [severity, setSeverity] = useState<number>(5);
   const [notes, setNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [showAllJoints, setShowAllJoints] = useState<boolean>(false);
+
+  const resolvedJoints = useMemo(() => {
+    return exercise ? resolveExerciseJoints(exercise) : [];
+  }, [exercise]);
+
+  const isMultiJoint = useMemo(() => {
+    if (!exercise) return false;
+    return exercise.is_compound || resolvedJoints.length > 1;
+  }, [exercise, resolvedJoints]);
+
+  const [selectedJoint, setSelectedJoint] = useState<JointLocation | null>(() => {
+    if (exercise && !isMultiJoint && resolvedJoints.length === 1) {
+      return resolvedJoints[0];
+    }
+    return null;
+  });
+
+  // Re-sync default joint when exercise changes
+  useEffect(() => {
+    if (exercise) {
+      const joints = resolveExerciseJoints(exercise);
+      const multi = exercise.is_compound || joints.length > 1;
+      if (!multi && joints.length === 1) {
+        setSelectedJoint(joints[0]);
+      } else {
+        setSelectedJoint(null);
+      }
+      setShowAllJoints(false);
+    }
+  }, [exercise]);
+
+  const primaryJoints = useMemo(() => {
+    return resolvedJoints.length > 0 ? resolvedJoints : (['other'] as JointLocation[]);
+  }, [resolvedJoints]);
+
+  const secondaryJoints = useMemo(() => {
+    return ALL_JOINTS.filter((j) => !primaryJoints.includes(j));
+  }, [primaryJoints]);
 
   const isSevere = severity > 6;
+  const isSubmitDisabled = isSubmitting || (painType === 'joint' && isMultiJoint && !selectedJoint);
 
   const handleSubmit = async () => {
-    if (!exercise || isSubmitting) return;
+    if (!exercise || isSubmitting || isSubmitDisabled) return;
     setIsSubmitting(true);
     try {
+      const trimmedNotes = notes.trim();
+      const finalNotes = selectedJoint
+        ? trimmedNotes !== ''
+          ? `[Joint: ${selectedJoint}] ${trimmedNotes}`
+          : `[Joint: ${selectedJoint}]`
+        : trimmedNotes !== ''
+        ? trimmedNotes
+        : undefined;
+
       await onSubmit({
         painType,
         severity,
-        notes: notes.trim() !== '' ? notes.trim() : undefined,
+        jointLocation: selectedJoint,
+        notes: finalNotes,
         shouldSkipRemainingSets: isSevere,
       });
       // Reset form fields
       setNotes('');
       setSeverity(5);
       setPainType('joint');
+      setSelectedJoint(null);
+      setShowAllJoints(false);
     } finally {
       setIsSubmitting(false);
     }
@@ -101,6 +181,81 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
           </View>
 
           <ScrollView style={styles.bodyScroll} showsVerticalScrollIndicator={false}>
+            {/* Step 0: Joint / Articulation Selector */}
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeading}>Which joint or area hurts?</Text>
+              {isMultiJoint && painType === 'joint' && !selectedJoint && (
+                <Text testID="joint-required-indicator" style={styles.requiredBadge}>* Select Joint</Text>
+              )}
+            </View>
+
+            <View style={styles.jointChipsContainer}>
+              <View style={styles.jointChipsRow}>
+                {primaryJoints.map((j) => {
+                  const isSelected = selectedJoint === j;
+                  return (
+                    <TouchableOpacity
+                      key={j}
+                      testID={`joint-chip-${j}`}
+                      style={[
+                        styles.jointChip,
+                        isSelected && styles.jointChipSelected,
+                      ]}
+                      onPress={() => setSelectedJoint(isSelected ? null : j)}
+                    >
+                      <Text
+                        style={[
+                          styles.jointChipText,
+                          isSelected && styles.jointChipTextSelected,
+                        ]}
+                      >
+                        {JOINT_LABELS[j] || j}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+
+                <TouchableOpacity
+                  testID="toggle-all-joints-btn"
+                  style={styles.allJointsToggleBtn}
+                  onPress={() => setShowAllJoints((prev) => !prev)}
+                >
+                  <Text style={styles.allJointsToggleText}>
+                    {showAllJoints ? '– Less' : '+ All / Other Joints'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {showAllJoints && (
+                <View style={[styles.jointChipsRow, styles.secondaryChipsRow]}>
+                  {secondaryJoints.map((j) => {
+                    const isSelected = selectedJoint === j;
+                    return (
+                      <TouchableOpacity
+                        key={j}
+                        testID={`joint-chip-${j}`}
+                        style={[
+                          styles.jointChip,
+                          styles.secondaryJointChip,
+                          isSelected && styles.jointChipSelected,
+                        ]}
+                        onPress={() => setSelectedJoint(isSelected ? null : j)}
+                      >
+                        <Text
+                          style={[
+                            styles.jointChipText,
+                            isSelected && styles.jointChipTextSelected,
+                          ]}
+                        >
+                          {JOINT_LABELS[j] || j}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+
             {/* Step 1: Pain Category (Joint vs Muscle) */}
             <Text style={styles.sectionHeading}>1. What kind of pain is this?</Text>
             <View style={styles.typeSelectorRow}>
@@ -249,10 +404,10 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
               style={[
                 styles.submitBtn,
                 isSevere && styles.submitBtnSevere,
-                isSubmitting && styles.submitBtnDisabled,
+                isSubmitDisabled && styles.submitBtnDisabled,
               ]}
               onPress={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitDisabled}
             >
               <Text style={styles.submitBtnText}>
                 {isSubmitting
@@ -334,6 +489,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
     marginBottom: 8,
+  },
+  requiredBadge: {
+    color: '#F87171',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  jointChipsContainer: {
+    marginBottom: 8,
+  },
+  jointChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    alignItems: 'center',
+  },
+  secondaryChipsRow: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#27272A',
+  },
+  jointChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#18181B',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3F3F46',
+  },
+  secondaryJointChip: {
+    backgroundColor: '#121215',
+    borderColor: '#27272A',
+  },
+  jointChipSelected: {
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    borderColor: '#38BDF8',
+  },
+  jointChipText: {
+    color: '#D4D4D8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  jointChipTextSelected: {
+    color: '#38BDF8',
+    fontWeight: '700',
+  },
+  allJointsToggleBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: '#27272A',
+    borderRadius: 8,
+  },
+  allJointsToggleText: {
+    color: '#A1A1AA',
+    fontSize: 11,
+    fontWeight: '600',
   },
   severityBadge: {
     fontSize: 11,

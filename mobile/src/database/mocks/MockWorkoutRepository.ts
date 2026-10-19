@@ -146,6 +146,17 @@ export class MockWorkoutRepository implements IWorkoutRepository {
       .map((s) => ({ ...s }));
   }
 
+  async getSetsByWorkoutIds(workoutIds: string[]): Promise<WorkoutSet[]> {
+    const idSet = new Set(workoutIds);
+    return Array.from(this.sets.values())
+      .filter((s) => idSet.has(s.workout_id))
+      .sort((a, b) => {
+        if (a.workout_id !== b.workout_id) return a.workout_id.localeCompare(b.workout_id);
+        return a.set_number - b.set_number;
+      })
+      .map((s) => ({ ...s }));
+  }
+
   async addSet(set: WorkoutSet): Promise<WorkoutSet> {
     const cloned = { ...set };
     this.sets.set(cloned.id, cloned);
@@ -313,4 +324,19 @@ export class MockWorkoutRepository implements IWorkoutRepository {
       };
     });
   }
+
+  async getBestE1rmByExercise(): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    for (const s of this.sets.values()) {
+      if (s.reps > 0 && s.weight > 0) {
+        const e1rm = s.weight * (1.0 + s.reps / 30.0);
+        const currentBest = result.get(s.exercise_id) ?? 0;
+        if (e1rm > currentBest) {
+          result.set(s.exercise_id, Math.round(e1rm * 100) / 100);
+        }
+      }
+    }
+    return result;
+  }
 }
+

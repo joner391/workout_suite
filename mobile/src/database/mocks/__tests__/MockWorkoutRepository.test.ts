@@ -575,4 +575,29 @@ describe('MockWorkoutRepository', () => {
       expect(prs.every((p) => p.workoutId !== 'workout_discarded')).toBe(true);
     });
   });
+
+  describe('Batch Set and e1RM Aggregations', () => {
+    it('retrieves all sets matching a list of workout IDs via getSetsByWorkoutIds', async () => {
+      const sets = await repo.getSetsByWorkoutIds(['workout_1', 'workout_2']);
+      expect(sets.length).toBeGreaterThan(0);
+      expect(sets.every((s) => s.workout_id === 'workout_1' || s.workout_id === 'workout_2')).toBe(true);
+      // Workout 1 has s1_1 and s1_2; Workout 2 has s2_1, s2_ohp, s2_2
+      expect(sets.map((s) => s.id)).toEqual(['s1_1', 's1_2', 's2_1', 's2_ohp', 's2_2']);
+    });
+
+    it('returns empty array when getSetsByWorkoutIds is called with empty array', async () => {
+      const sets = await repo.getSetsByWorkoutIds([]);
+      expect(sets).toEqual([]);
+    });
+
+    it('computes maximum e1RM per exercise across all sets via getBestE1rmByExercise', async () => {
+      const bestE1rms = await repo.getBestE1rmByExercise();
+      expect(bestE1rms.has('bench_press')).toBe(true);
+      expect(bestE1rms.has('overhead_press')).toBe(true);
+      // Bench press best set is 102.5kg x 8 reps -> 102.5 * (1 + 8/30) = 129.833... -> 129.83
+      const benchE1rm = bestE1rms.get('bench_press');
+      expect(benchE1rm).toBeCloseTo(129.83, 1);
+    });
+  });
 });
+

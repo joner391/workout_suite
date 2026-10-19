@@ -693,5 +693,166 @@ describe('ActiveSessionService', () => {
       expect(groups.get(groupId)).toEqual(['barbell_bench', 'cable_crossover']);
     });
   });
+
+  describe('Automated & Context-Aware Warm-up Synthesis (Phase 3)', () => {
+    it('generates warm-up sets from first working set load and renumbers sets contiguously', async () => {
+      const workout = await sessionService.startWorkout();
+      // Add a working set of 100kg
+      await sessionService.addSet(workout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 100,
+        reps: 8,
+        setType: 'working',
+      });
+
+      const warmupSets = await sessionService.generateWarmupSetsForExercise(
+        workout.id,
+        'barbell_bench'
+      );
+
+      expect(warmupSets.length).toBeGreaterThanOrEqual(3);
+      expect(warmupSets.every((s) => s.set_type === 'warmup')).toBe(true);
+
+      const allSets = await sessionService.getWorkoutSets(workout.id);
+      const benchSets = allSets.filter((s) => s.exercise_id === 'barbell_bench');
+
+      // Verify contiguous 1-indexed numbering: warmups (1..N), working set (N+1)
+      benchSets.forEach((s, idx) => {
+        expect(s.set_number).toBe(idx + 1);
+      });
+
+      const workingSet = benchSets.find((s) => s.set_type === 'working');
+      expect(workingSet?.set_number).toBe(warmupSets.length + 1);
+      expect(workingSet?.raw_input_weight).toBe(100);
+    });
+
+    it('falls back to ghost sets when no active working load is entered yet', async () => {
+      // Seed a completed past workout with 80kg bench press
+      const pastWorkout = await workoutRepo.create({
+        id: 'past_bench_workout',
+        template_id: null,
+        date: '2026-10-10',
+        name: 'Past Workout',
+        notes: null,
+        started_at: '2026-10-10T10:00:00.000Z',
+        duration_seconds: 3000,
+        status: 'completed',
+        completed_at: '2026-10-10T11:00:00.000Z',
+        imported_from: null,
+      });
+      await workoutRepo.saveSets([
+        {
+          id: 'past_bench_s1',
+          workout_id: pastWorkout.id,
+          exercise_id: 'barbell_bench',
+          gear_id: null,
+          set_number: 1,
+          weight: 80,
+          raw_input_weight: 80,
+          added_weight: null,
+          reps: 6,
+          reps_right: null,
+          rpe: 8,
+          rir: 2,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: '2026-10-10T10:15:00.000Z',
+        },
+      ]);
+
+      const activeWorkout = await sessionService.startWorkout();
+      // Add empty/placeholder working set with 0kg
+      await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 0,
+        reps: 0,
+        setType: 'working',
+      });
+
+      const warmups = await sessionService.generateWarmupSetsForExercise(
+        activeWorkout.id,
+        'barbell_bench'
+      );
+
+      // Should have generated ladder based on ghost 80kg (bar 20kg, 50% 40kg, 70% 55kg, 87.5% 70kg)
+      expect(warmups.length).toBeGreaterThanOrEqual(3);
+      expect(warmups[0].raw_input_weight).toBe(20);
+      expect(warmups[warmups.length - 1].raw_input_weight).toBeGreaterThanOrEqual(55);
+    });
+
+    it('falls back to default bar weight when neither working weight nor ghost set exists', async () => {
+      const activeWorkout = await sessionService.startWorkout();
+      // Add empty set with 0 weight on barbell bench
+      await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 0,
+        reps: 0,
+      });
+
+      const warmups = await sessionService.generateWarmupSetsForExercise(
+        activeWorkout.id,
+        'barbell_bench'
+      );
+
+      // Barbell fallback gives 2 acclimating sets at 20kg
+      expect(warmups.length).toBe(2);
+      expect(warmups[0].raw_input_weight).toBe(20);
+      expect(warmups[0].reps).toBe(10);
+      expect(warmups[1].raw_input_weight).toBe(20);
+      expect(warmups[1].reps).toBe(5);
+    });
+
+    it('attenuates redundant warm-ups to at most 2 potentiation sets if muscle group is already warmed up', async () => {
+      const activeWorkout = await sessionService.startWorkout();
+      // First chest exercise (bench press)
+      await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+
+      // Second chest exercise (dumbbell bench)
+      await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'db_bench',
+        rawInputWeight: 30,
+        reps: 10,
+        setType: 'working',
+      });
+
+      const warmupsDb = await sessionService.generateWarmupSetsForExercise(
+        activeWorkout.id,
+        'db_bench',
+        { targetWorkingWeightKg: 60 }
+      );
+
+      // Because Chest already has completed working set from barbell_bench, capped to at most 2 potentiation sets
+      expect(warmupsDb.length).toBeLessThanOrEqual(2);
+    });
+
+    it('does not duplicate warm-up sets if already generated for that exercise', async () => {
+      const activeWorkout = await sessionService.startWorkout();
+      await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+
+      const firstGen = await sessionService.generateWarmupSetsForExercise(
+        activeWorkout.id,
+        'barbell_bench'
+      );
+      const secondGen = await sessionService.generateWarmupSetsForExercise(
+        activeWorkout.id,
+        'barbell_bench'
+      );
+
+      expect(secondGen.length).toBe(firstGen.length);
+      expect(secondGen[0].id).toBe(firstGen[0].id);
+    });
+  });
 });
+
 

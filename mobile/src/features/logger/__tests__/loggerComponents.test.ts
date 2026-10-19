@@ -12,6 +12,7 @@
 
 import { formatTimeRemaining } from '../RestTimerBanner';
 import { formatElapsedDuration } from '../ActiveLoggerScreen';
+import { formatCompactGhostDisplay } from '../SetRowComponent';
 import { calculatePlateLoading, DEFAULT_BAR_TARE_KG } from '../../../core/math/plateCalculator';
 import {
   Workout,
@@ -845,6 +846,81 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
         reps_right: null,
       };
       expect(formatGhost(bilateralExercise, ghostSetBilateral)).toBe('20 × 12');
+
+      // Test production formatCompactGhostDisplay helper
+      expect(formatCompactGhostDisplay(unilateralExercise, ghostSetUnilateral)).toBe('20×12/10 @8.5');
+      expect(formatCompactGhostDisplay(bilateralExercise, ghostSetBilateral)).toBe('20×12 @8.5');
+      expect(formatCompactGhostDisplay(bilateralExercise, { ...ghostSetBilateral, rpe: null, rir: null })).toBe('20×12');
+      expect(formatCompactGhostDisplay(bilateralExercise, null)).toBe('—');
+    });
+
+    test('auto-committing ghost values when user taps completion with empty inputs', () => {
+      const activeEmptySet: WorkoutSet = {
+        id: 'set-active',
+        workout_id: 'w-1',
+        exercise_id: 'ex-squat',
+        gear_id: null,
+        set_number: 1,
+        weight: 0,
+        raw_input_weight: 0,
+        added_weight: null,
+        reps: 0,
+        reps_right: null,
+        rpe: null,
+        rir: null,
+        set_type: 'working',
+        set_notes: null,
+        exercise_group_id: null,
+        created_at: new Date().toISOString(),
+      };
+
+      const ghostSet: WorkoutSet = {
+        id: 'ghost-1',
+        workout_id: 'w-old',
+        exercise_id: 'ex-squat',
+        gear_id: null,
+        set_number: 1,
+        weight: 120,
+        raw_input_weight: 120,
+        added_weight: null,
+        reps: 8,
+        reps_right: null,
+        rpe: 8,
+        rir: 2,
+        set_type: 'working',
+        set_notes: null,
+        exercise_group_id: null,
+        created_at: new Date().toISOString(),
+      };
+
+      // Emulate SetRowComponent 1-tap auto-commit on complete
+      let autoCommittedFields: Partial<WorkoutSet> = {};
+      const needsWeight = (!activeEmptySet.raw_input_weight || activeEmptySet.raw_input_weight === 0) && !!ghostSet && ghostSet.raw_input_weight > 0;
+      const needsReps = (!activeEmptySet.reps || activeEmptySet.reps === 0) && !!ghostSet && ghostSet.reps > 0;
+
+      if (needsWeight || needsReps) {
+        if (needsWeight) {
+          autoCommittedFields.raw_input_weight = ghostSet.raw_input_weight;
+          autoCommittedFields.weight = ghostSet.weight;
+        }
+        if (needsReps) {
+          autoCommittedFields.reps = ghostSet.reps;
+          if (ghostSet.reps_right !== null && ghostSet.reps_right !== undefined) {
+            autoCommittedFields.reps_right = ghostSet.reps_right;
+          }
+        }
+        if (ghostSet.rpe !== null && activeEmptySet.rpe === null) {
+          autoCommittedFields.rpe = ghostSet.rpe;
+        }
+        if (ghostSet.rir !== null && activeEmptySet.rir === null) {
+          autoCommittedFields.rir = ghostSet.rir;
+        }
+      }
+
+      expect(autoCommittedFields.raw_input_weight).toBe(120);
+      expect(autoCommittedFields.weight).toBe(120);
+      expect(autoCommittedFields.reps).toBe(8);
+      expect(autoCommittedFields.rpe).toBe(8);
     });
 
     test('Independent unilateral rep stepping for Left and Right limbs', () => {

@@ -1,4 +1,4 @@
-import { PainReport, PainType } from '../../core/types';
+import { PainReport, PainType, JointLocation } from '../../core/types';
 
 export interface CreatePainReportInput {
   workout_id: string;
@@ -6,6 +6,7 @@ export interface CreatePainReportInput {
   set_id?: string | null;
   pain_type: PainType;
   severity: number; // 1 to 10
+  joint_location?: JointLocation | null;
   notes?: string | null;
 }
 

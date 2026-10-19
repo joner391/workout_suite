@@ -317,7 +317,7 @@ def test_build_sfr_matrix_chart() -> None:
     assert fig_empty is not None
     assert len(fig_empty.layout.annotations) > 0
 
-    # Test populated
+    # Test populated with mix of evaluable and non-evaluable (sfr_score=None) exercises
     sfr_results = {
         "bench": ExerciseSFRResult(
             exercise_id="bench",
@@ -347,11 +347,48 @@ def test_build_sfr_matrix_chart() -> None:
             has_severe_joint_pain=True,
             recommended_swap_exercise_id="leg_press",
         ),
+        "unperformed": ExerciseSFRResult(
+            exercise_id="unperformed",
+            sfr_score=None,
+            sfr_tier="MODERATE",
+            is_evaluable=False,
+            sessions_evaluated=0,
+            mean_effective_reps=0.0,
+            intra_session_dropoff=0.0,
+            e10rm_slope_28d=0.0,
+            joint_pain_sum=0,
+            muscle_pain_sum=0,
+            has_severe_joint_pain=False,
+            recommended_swap_exercise_id=None,
+        ),
     }
-    names = {"bench": "Bench Press", "squat": "Barbell Squat", "leg_press": "Leg Press"}
+    names = {"bench": "Bench Press", "squat": "Barbell Squat", "leg_press": "Leg Press", "unperformed": "Unperformed"}
 
     fig = build_sfr_matrix_chart(sfr_results, names)
     assert fig is not None
-    assert len(fig.data) == 2  # Traces for OPTIMAL and POOR_SWAP_RECOMMENDED
+    assert len(fig.data) == 2  # Traces for OPTIMAL and POOR_SWAP_RECOMMENDED (unperformed excluded)
+
+    # Test only non-evaluable exercises with None scores
+    only_non_evaluable = {
+        "unperformed": ExerciseSFRResult(
+            exercise_id="unperformed",
+            sfr_score=None,
+            sfr_tier="MODERATE",
+            is_evaluable=False,
+            sessions_evaluated=1,
+            mean_effective_reps=0.0,
+            intra_session_dropoff=0.0,
+            e10rm_slope_28d=0.0,
+            joint_pain_sum=0,
+            muscle_pain_sum=0,
+            has_severe_joint_pain=False,
+            recommended_swap_exercise_id=None,
+        )
+    }
+    fig_none = build_sfr_matrix_chart(only_non_evaluable)
+    assert fig_none is not None
+    assert len(fig_none.layout.annotations) > 0
+    assert "minimum 3 sessions" in fig_none.layout.annotations[0].text
+
 
 

@@ -165,6 +165,27 @@ describe('Database Schema & Migrations', () => {
     );
   });
 
+  it('runs v5 -> v6 migration when user_version is 5', async () => {
+    mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 5 }]);
+
+    await migrateDatabase(mockDb);
+
+    // Should run v5 -> v6
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE pain_reports ADD COLUMN joint_location TEXT;'))
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) => q.includes('CREATE INDEX IF NOT EXISTS idx_workouts_status_date'))
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) => q.includes('CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise_id'))
+    ).toBe(true);
+
+    expect(mockDb.execQueries).toContain(
+      `PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`
+    );
+  });
+
   it('resets the database by dropping tables and re-migrating', async () => {
     // Simulate current version = 1 initially, but resetDatabase will drop and re-seed
     mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 0 }]);

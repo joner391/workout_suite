@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,66 @@ import Svg, {
 } from 'react-native-svg';
 import { parseIsoDateToMs } from '../../core/math/navyBodyFat';
 import { Program, ProgramBlock } from '../../core/types';
+
+/**
+ * Largest-Triangle-Three-Buckets (LTTB) downsampling algorithm.
+ * Reduces raw data point density while strictly preserving local extrema, peaks, and troughs.
+ */
+export function downsampleLTTB(data: ChartDataPoint[], threshold: number): ChartDataPoint[] {
+  if (data.length <= threshold || threshold < 3) {
+    return data;
+  }
+
+  const sampled: ChartDataPoint[] = [];
+  const every = (data.length - 2) / (threshold - 2);
+
+  let a = 0;
+  sampled.push(data[a]);
+
+  for (let i = 0; i < threshold - 2; i++) {
+    let avgX = 0;
+    let avgY = 0;
+    const avgRangeStart = Math.floor((i + 1) * every) + 1;
+    const avgRangeEnd = Math.min(Math.floor((i + 2) * every) + 1, data.length);
+    const avgRangeLength = avgRangeEnd - avgRangeStart;
+
+    for (let j = avgRangeStart; j < avgRangeEnd; j++) {
+      avgX += parseIsoDateToMs(data[j].date);
+      avgY += data[j].value;
+    }
+    avgX /= (avgRangeLength || 1);
+    avgY /= (avgRangeLength || 1);
+
+    const rangeOffs = Math.floor(i * every) + 1;
+    const rangeTo = Math.min(Math.floor((i + 1) * every) + 1, data.length);
+
+    const pointAX = parseIsoDateToMs(data[a].date);
+    const pointAY = data[a].value;
+
+    let maxArea = -1;
+    let maxAreaPointIdx = rangeOffs;
+
+    for (let j = rangeOffs; j < rangeTo; j++) {
+      const currentX = parseIsoDateToMs(data[j].date);
+      const currentY = data[j].value;
+
+      const area = Math.abs(
+        (pointAX - avgX) * (currentY - pointAY) - (pointAX - currentX) * (avgY - pointAY)
+      ) * 0.5;
+
+      if (area > maxArea) {
+        maxArea = area;
+        maxAreaPointIdx = j;
+      }
+    }
+
+    sampled.push(data[maxAreaPointIdx]);
+    a = maxAreaPointIdx;
+  }
+
+  sampled.push(data[data.length - 1]);
+  return sampled;
+}
 
 export interface ChartDataPoint {
   date: string; // ISO8601 YYYY-MM-DD
@@ -90,11 +150,19 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
     }
   };
 
+  // Downsample line series data if points > 60 using LTTB (Phase 5)
+  const downsampledSeries = useMemo(() => {
+    return series.map((s) => ({
+      ...s,
+      data: s.data.length > 60 ? downsampleLTTB(s.data, 60) : s.data,
+    }));
+  }, [series]);
+
   // 1. Gather all date and value data points
   const allDatesMs: number[] = [];
   const allValues: number[] = [];
 
-  for (const s of series) {
+  for (const s of downsampledSeries) {
     for (const pt of s.data) {
       const ms = parseIsoDateToMs(pt.date);
       if (!isNaN(ms) && !isNaN(pt.value)) {
@@ -364,7 +432,7 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
         {/* ================================================================= */}
         {/* 4. LINE SERIES & SCATTER POINTS                                   */}
         {/* ================================================================= */}
-        {series.map((s) => {
+        {downsampledSeries.map((s) => {
           if (s.data.length === 0) return null;
 
           // Build SVG path
@@ -381,6 +449,9 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
             }
           });
 
+          // Decoupled circle rendering (Phase 5): only render individual SVG circles when points <= 35
+          const shouldRenderCircles = s.data.length <= 35;
+
           return (
             <G key={`series-group-${s.id}`}>
               {/* Continuous Line */}
@@ -395,38 +466,50 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
               )}
 
               {/* Data Point Circles */}
-              {s.data.map((pt, pIdx) => {
-                const ms = parseIsoDateToMs(pt.date);
-                if (isNaN(ms)) return null;
-                const px = getX(ms);
-                const py = getY(pt.value);
-                const isSelected =
-                  selectedPoint?.date === pt.date &&
-                  selectedPoint?.seriesName === s.name;
+              {shouldRenderCircles
+                ? s.data.map((pt, pIdx) => {
+                    const ms = parseIsoDateToMs(pt.date);
+                    if (isNaN(ms)) return null;
+                    const px = getX(ms);
+                    const py = getY(pt.value);
+                    const isSelected =
+                      selectedPoint?.date === pt.date &&
+                      selectedPoint?.seriesName === s.name;
 
-                return (
-                  <Circle
-                    key={`point-${s.id}-${pIdx}`}
-                    cx={px}
-                    cy={py}
-                    r={isSelected ? 6 : s.dotRadius ?? 3.5}
-                    fill={isSelected ? '#FFFFFF' : s.color}
-                    stroke={isSelected ? s.color : '#121212'}
-                    strokeWidth={isSelected ? 2 : 1}
-                    onPress={() => {
-                      const era = getEraForDate(ms);
-                      setSelectedPoint({
-                        date: pt.date,
-                        value: pt.value,
-                        seriesName: s.name,
-                        color: s.color,
-                        eraName: era?.name,
-                        eraColor: era?.color_hex,
-                      });
-                    }}
-                  />
-                );
-              })}
+                    return (
+                      <Circle
+                        key={`point-${s.id}-${pIdx}`}
+                        cx={px}
+                        cy={py}
+                        r={isSelected ? 6 : s.dotRadius ?? 3.5}
+                        fill={isSelected ? '#FFFFFF' : s.color}
+                        stroke={isSelected ? s.color : '#121212'}
+                        strokeWidth={isSelected ? 2 : 1}
+                        onPress={() => {
+                          const era = getEraForDate(ms);
+                          setSelectedPoint({
+                            date: pt.date,
+                            value: pt.value,
+                            seriesName: s.name,
+                            color: s.color,
+                            eraName: era?.name,
+                            eraColor: era?.color_hex,
+                          });
+                        }}
+                      />
+                    );
+                  })
+                : selectedPoint &&
+                  selectedPoint.seriesName === s.name && (
+                    <Circle
+                      cx={getX(parseIsoDateToMs(selectedPoint.date))}
+                      cy={getY(selectedPoint.value)}
+                      r={6}
+                      fill="#FFFFFF"
+                      stroke={selectedPoint.color}
+                      strokeWidth={2}
+                    />
+                  )}
             </G>
           );
         })}

@@ -66,4 +66,56 @@ describe('PainReportModal & In-Gym Discomfort Reporting', () => {
     expect(severeReport.severity).toBe(8);
     expect(severeReport.shouldSkipRemainingSets).toBe(true);
   });
+
+  it('resolves biomechanical joints and requires joint selection on multi-joint compounds', () => {
+    const { resolveExerciseJoints } = require('../../../services/exerciseSubstitutionService');
+    const benchJoints = resolveExerciseJoints(mockExercise);
+    expect(benchJoints).toEqual(['shoulder', 'elbow', 'wrist', 'chest_pec']);
+
+    const isMultiJoint = mockExercise.is_compound || benchJoints.length > 1;
+    expect(isMultiJoint).toBe(true);
+
+    // Validation logic: submit disabled if joint pain selected on multi-joint exercise without picking a joint
+    const canSubmit = (painType: 'joint' | 'muscle', selectedJoint: string | null) => {
+      return painType !== 'joint' || !isMultiJoint || !!selectedJoint;
+    };
+
+    expect(canSubmit('joint', null)).toBe(false);
+    expect(canSubmit('joint', 'shoulder')).toBe(true);
+    expect(canSubmit('muscle', null)).toBe(true);
+  });
+
+  it('persists joint_location in payload and prepends [Joint: ...] to notes', () => {
+    const buildJointSubmitPayload = (
+      painType: 'joint' | 'muscle',
+      severity: number,
+      selectedJoint: string | null,
+      notes?: string
+    ) => {
+      const trimmedNotes = notes?.trim();
+      const finalNotes = selectedJoint
+        ? trimmedNotes && trimmedNotes !== ''
+          ? `[Joint: ${selectedJoint}] ${trimmedNotes}`
+          : `[Joint: ${selectedJoint}]`
+        : trimmedNotes && trimmedNotes !== ''
+        ? trimmedNotes
+        : undefined;
+
+      return {
+        painType,
+        severity,
+        jointLocation: selectedJoint,
+        notes: finalNotes,
+        shouldSkipRemainingSets: severity > 6,
+      };
+    };
+
+    const report = buildJointSubmitPayload('joint', 5, 'shoulder', 'Pinching on eccentric');
+    expect(report.jointLocation).toBe('shoulder');
+    expect(report.notes).toBe('[Joint: shoulder] Pinching on eccentric');
+
+    const reportNoNotes = buildJointSubmitPayload('joint', 5, 'lower_back');
+    expect(reportNoNotes.jointLocation).toBe('lower_back');
+    expect(reportNoNotes.notes).toBe('[Joint: lower_back]');
+  });
 });

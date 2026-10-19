@@ -2,7 +2,7 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { DEFAULT_EXERCISES, DEFAULT_GEAR } from './seeds/defaultExercises';
 
 export const DATABASE_NAME = 'workout_suite.db';
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 /**
  * Minimal abstraction matching the modern expo-sqlite async interface.
@@ -200,15 +200,18 @@ CREATE TABLE IF NOT EXISTS pain_reports (
     set_id TEXT REFERENCES workout_sets(id) ON DELETE SET NULL,
     pain_type TEXT NOT NULL,
     severity INTEGER NOT NULL,
+    joint_location TEXT,
     notes TEXT,
     created_at TEXT NOT NULL
 );
 
 -- Indices for rapid query performance and ghost set lookups
 CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_id ON workout_sets(workout_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise_id ON workout_sets(exercise_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sets_ex_created ON workout_sets(exercise_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_workouts_status ON workouts(status);
 CREATE INDEX IF NOT EXISTS idx_workouts_date ON workouts(date);
+CREATE INDEX IF NOT EXISTS idx_workouts_status_date ON workouts(status, date);
 CREATE INDEX IF NOT EXISTS idx_exercises_parent_id ON exercises(parent_exercise_id);
 CREATE INDEX IF NOT EXISTS idx_pain_reports_workout_id ON pain_reports(workout_id);
 CREATE INDEX IF NOT EXISTS idx_pain_reports_exercise_id ON pain_reports(exercise_id);
@@ -401,6 +404,39 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
         } catch {
           // Column may already exist
         }
+      }
+      await db.execAsync('PRAGMA user_version = 5;');
+      await db.execAsync('COMMIT;');
+      currentVersion = 5;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  if (currentVersion < 6) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      // Migration v5 -> v6:
+      // 1. Add joint_location to pain_reports
+      // 2. Create idx_workouts_status_date on workouts(status, date)
+      // 3. Create idx_workout_sets_exercise_id on workout_sets(exercise_id)
+      try {
+        await db.execAsync(
+          'ALTER TABLE pain_reports ADD COLUMN joint_location TEXT;'
+        );
+      } catch {
+        // Column may already exist
+      }
+      try {
+        await db.execAsync(
+          'CREATE INDEX IF NOT EXISTS idx_workouts_status_date ON workouts(status, date);'
+        );
+        await db.execAsync(
+          'CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise_id ON workout_sets(exercise_id);'
+        );
+      } catch {
+        // Indexes may already exist
       }
       await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
       await db.execAsync('COMMIT;');

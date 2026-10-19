@@ -26,6 +26,7 @@ describe('MockUserSettingsRepository', () => {
         [SETTINGS_KEYS.UNIT_SYSTEM]: 'kg',
         [SETTINGS_KEYS.INTENSITY_METRIC]: 'RPE',
         [SETTINGS_KEYS.PURE_UTILITY_MODE]: '0',
+        [SETTINGS_KEYS.AUTO_WARMUP_MODE]: 'smart_compounds',
       });
     });
   });
@@ -78,6 +79,17 @@ describe('MockUserSettingsRepository', () => {
       await repo.setPureUtilityMode(false);
       expect(await repo.getPureUtilityMode()).toBe(false);
       expect(await repo.get(SETTINGS_KEYS.PURE_UTILITY_MODE)).toBe('0');
+    });
+
+    it('updates and retrieves auto warmup mode', async () => {
+      expect(await repo.getAutoWarmupMode()).toBe('smart_compounds');
+
+      await repo.setAutoWarmupMode('all_exercises');
+      expect(await repo.getAutoWarmupMode()).toBe('all_exercises');
+      expect(await repo.get(SETTINGS_KEYS.AUTO_WARMUP_MODE)).toBe('all_exercises');
+
+      await repo.setAutoWarmupMode('off');
+      expect(await repo.getAutoWarmupMode()).toBe('off');
     });
   });
 

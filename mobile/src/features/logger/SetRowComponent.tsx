@@ -64,6 +64,18 @@ const SET_TYPE_COLORS: Record<SetType, { bg: string; text: string }> = {
   amrap: { bg: '#7F1D1D', text: '#FEE2E2' }, // Crimson/Red
 };
 
+export function formatCompactGhostDisplay(
+  exercise: Exercise,
+  ghostSet?: WorkoutSet | null
+): string {
+  if (!ghostSet) return '—';
+  const rpePart = ghostSet.rpe ? ` @${ghostSet.rpe}` : ghostSet.rir !== null && ghostSet.rir !== undefined ? ` @${ghostSet.rir}RIR` : '';
+  if (exercise.is_unilateral && ghostSet.reps_right !== null && ghostSet.reps_right !== undefined) {
+    return `${ghostSet.raw_input_weight}×${ghostSet.reps}/${ghostSet.reps_right}${rpePart}`;
+  }
+  return `${ghostSet.raw_input_weight}×${ghostSet.reps}${rpePart}`;
+}
+
 const SetRowComponentInner: React.FC<SetRowProps> = ({
   set,
   exercise,
@@ -320,11 +332,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
   const typeBadgeColor = SET_TYPE_COLORS[set.set_type] || SET_TYPE_COLORS.working;
 
   // Ghost display string (formats unilateral L/R reps as weight × L/R)
-  const ghostDisplay = ghostSet
-    ? exercise.is_unilateral && ghostSet.reps_right !== null && ghostSet.reps_right !== undefined
-      ? `${ghostSet.raw_input_weight} × ${ghostSet.reps}/${ghostSet.reps_right}`
-      : `${ghostSet.raw_input_weight} × ${ghostSet.reps}`
-    : '—';
+  const ghostDisplay = formatCompactGhostDisplay(exercise, ghostSet);
 
   const isDumbbell = exercise.load_mode === 'per_hand';
   const isBarbell = exercise.category === 'Barbell';
@@ -360,26 +368,37 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
 
         {/* Weight Column */}
         <View style={styles.weightColumn}>
-          <View style={styles.inputWithUnit}>
-            <TextInput
-              testID="weight-input"
-              style={[styles.input, isCompleted && styles.completedInput]}
-              keyboardType="decimal-pad"
-              selectTextOnFocus={true}
-              placeholder={ghostSet ? `${ghostSet.raw_input_weight}` : '0'}
-              placeholderTextColor="#71717A"
-              value={weightInput !== null ? weightInput : (set.raw_input_weight > 0 ? `${set.raw_input_weight}` : '')}
-              onChangeText={handleWeightChange}
-              onBlur={handleWeightBlur}
-              editable={!isCompleted}
-              onFocus={() => { if (!isExpanded) toggleExpand(); }}
-            />
-            {isDumbbell && (
-              <View testID="dumbbell-badge" style={styles.dumbbellBadge}>
-                <Text style={styles.dumbbellBadgeText}>×2</Text>
-              </View>
-            )}
-          </View>
+          <TouchableOpacity
+            activeOpacity={1}
+            onLongPress={() => {
+              if (isBarbell && onOpenPlateCalculator) {
+                const target = set.raw_input_weight > 0 ? set.raw_input_weight : (ghostSet?.raw_input_weight ?? exercise.default_bar_weight_kg ?? 20);
+                onOpenPlateCalculator(target);
+              }
+            }}
+            delayLongPress={350}
+          >
+            <View style={styles.inputWithUnit}>
+              <TextInput
+                testID="weight-input"
+                style={[styles.input, isCompleted && styles.completedInput]}
+                keyboardType="decimal-pad"
+                selectTextOnFocus={true}
+                placeholder={ghostSet ? `${ghostSet.raw_input_weight}` : '0'}
+                placeholderTextColor="#71717A"
+                value={weightInput !== null ? weightInput : (set.raw_input_weight > 0 ? `${set.raw_input_weight}` : '')}
+                onChangeText={handleWeightChange}
+                onBlur={handleWeightBlur}
+                editable={!isCompleted}
+                onFocus={() => { if (!isExpanded) toggleExpand(); }}
+              />
+              {isDumbbell && (
+                <View testID="dumbbell-badge" style={styles.dumbbellBadge}>
+                  <Text style={styles.dumbbellBadgeText}>×2</Text>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Reps Column (Supports Unilateral L/R) */}
@@ -471,12 +490,34 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
           </Text>
         </TouchableOpacity>
 
-        {/* 1-Tap Checkbox Complete Action */}
+        {/* 1-Tap Checkbox Complete Action with Ghost Auto-Commit */}
         <TouchableOpacity
           testID="complete-set-checkbox"
           style={[styles.checkbox, isCompleted && styles.completedCheckbox]}
           onPress={() => {
             if (!isCompleted) {
+              const needsWeight = (!set.raw_input_weight || set.raw_input_weight === 0) && !!ghostSet && ghostSet.raw_input_weight > 0;
+              const needsReps = (!set.reps || set.reps === 0) && !!ghostSet && ghostSet.reps > 0;
+              if (needsWeight || needsReps) {
+                const autoCommitFields: Partial<WorkoutSet> = {};
+                if (needsWeight && ghostSet) {
+                  autoCommitFields.raw_input_weight = ghostSet.raw_input_weight;
+                  autoCommitFields.weight = ghostSet.weight;
+                }
+                if (needsReps && ghostSet) {
+                  autoCommitFields.reps = ghostSet.reps;
+                  if (ghostSet.reps_right !== null && ghostSet.reps_right !== undefined) {
+                    autoCommitFields.reps_right = ghostSet.reps_right;
+                  }
+                }
+                if (ghostSet?.rpe !== null && ghostSet?.rpe !== undefined && set.rpe === null) {
+                  autoCommitFields.rpe = ghostSet.rpe;
+                }
+                if (ghostSet?.rir !== null && ghostSet?.rir !== undefined && set.rir === null) {
+                  autoCommitFields.rir = ghostSet.rir;
+                }
+                onUpdateSet(autoCommitFields);
+              }
               try {
                 if (Haptics?.impactAsync && Haptics?.ImpactFeedbackStyle) {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -764,9 +805,12 @@ const styles = StyleSheet.create({
   typeBadgeText: {
     fontSize: 12,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    includeFontPadding: false,
   },
   ghostColumn: {
-    width: 64,
+    flex: 1,
+    flexShrink: 1,
     justifyContent: 'center',
     marginRight: 6,
   },
@@ -774,9 +818,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#71717A',
     fontWeight: '500',
+    fontVariant: ['tabular-nums'],
+    includeFontPadding: false,
   },
   weightColumn: {
-    flex: 1.3,
+    minWidth: 68,
+    flexShrink: 0,
     marginRight: 6,
   },
   inputWithUnit: {
@@ -784,7 +831,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   input: {
-    flex: 1,
+    minWidth: 68,
+    flexShrink: 0,
     height: 38,
     backgroundColor: '#18181B',
     borderRadius: 6,
@@ -795,6 +843,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     paddingHorizontal: 4,
+    paddingVertical: 6,
+    includeFontPadding: false,
+    fontVariant: ['tabular-nums'],
   },
   completedInput: {
     color: '#86EFAC',
@@ -811,9 +862,12 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     color: '#A1A1AA',
+    fontVariant: ['tabular-nums'],
+    includeFontPadding: false,
   },
   repsColumn: {
-    flex: 1.0,
+    minWidth: 48,
+    flexShrink: 0,
     marginRight: 6,
   },
   unilateralContainer: {
@@ -830,6 +884,7 @@ const styles = StyleSheet.create({
   },
   miniInput: {
     width: '100%',
+    minWidth: 24,
     height: 38,
     backgroundColor: '#18181B',
     borderRadius: 6,
@@ -840,13 +895,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     paddingHorizontal: 2,
+    paddingVertical: 6,
+    includeFontPadding: false,
+    fontVariant: ['tabular-nums'],
   },
   intensityColumn: {
-    width: 52,
+    minWidth: 48,
+    flexShrink: 0,
     marginRight: 4,
   },
   intensityInput: {
-    width: '100%',
+    minWidth: 48,
+    flexShrink: 0,
     height: 38,
     backgroundColor: '#18181B',
     borderRadius: 6,
@@ -856,6 +916,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 13,
     fontWeight: '600',
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+    includeFontPadding: false,
+    fontVariant: ['tabular-nums'],
   },
   expandToggleButton: {
     width: 24,

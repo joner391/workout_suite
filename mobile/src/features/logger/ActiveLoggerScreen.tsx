@@ -35,6 +35,7 @@ import {
   IntensityMetric,
   ProgressionProposal,
   CalibratedParam,
+  AutoWarmupMode,
 } from '../../core/types';
 import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
 import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
@@ -184,7 +185,10 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [sets, setSets] = useState<WorkoutSet[]>([]);
   const [completedSetIds, setCompletedSetIds] = useState<Set<string>>(new Set());
-  const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
+  const [expandedExerciseIds, setExpandedExerciseIds] = useState<Set<string>>(new Set());
+  const [expandedWarmupExercises, setExpandedWarmupExercises] = useState<Set<string>>(new Set());
+  const [autoWarmupMode, setAutoWarmupMode] = useState<AutoWarmupMode>('smart_compounds');
+  const cardOffsetsRef = useRef<Record<string, number>>({});
   const [markIncompleteAsComplete, setMarkIncompleteAsComplete] = useState<boolean>(false);
   const [exerciseMap, setExerciseMap] = useState<Map<string, Exercise>>(new Map());
   const [gearMap, setGearMap] = useState<Map<string, GearInventory>>(new Map());
@@ -263,12 +267,14 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
         // Load user settings if available
         if (userSettingsRepo) {
-          const [unit, intensity] = await Promise.all([
+          const [unit, intensity, warmupMode] = await Promise.all([
             userSettingsRepo.getUnitSystem(),
             userSettingsRepo.getIntensityMetric(),
+            userSettingsRepo.getAutoWarmupMode(),
           ]);
           if (unit) setUnitSystem(unit);
           if (intensity) setIntensityMetric(intensity);
+          if (warmupMode) setAutoWarmupMode(warmupMode);
         }
 
         // Load exercises & gear catalog
@@ -373,21 +379,12 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
     setGhostSetsByExercise(ghostMap);
 
-    // Initial expanded exercise: first exercise with at least one incomplete set
-    let initialExpandedId: string | null = null;
-    for (const exId of uniqueExerciseIds) {
-      const exSets = session.sets.filter((s) => s.exercise_id === exId);
-      const hasIncomplete = exSets.some((s) => !currentCompleted.has(s.id));
-      if (hasIncomplete) {
-        initialExpandedId = exId;
-        break;
-      }
-    }
-    if (!initialExpandedId && uniqueExerciseIds.length > 0) {
-      initialExpandedId = uniqueExerciseIds[0];
-    }
-
-    setExpandedExerciseId((prev) => (prev && uniqueExerciseIds.includes(prev) ? prev : initialExpandedId));
+    // Independent multi-card expansion: Expand all exercises in the workout by default
+    setExpandedExerciseIds((prev) => {
+      const next = new Set(prev);
+      uniqueExerciseIds.forEach((id) => next.add(id));
+      return next;
+    });
 
     // Evaluate Progression Rules if programRepo and template_id are present (Step 4.4)
     if (programRepo && session.workout.template_id) {
@@ -536,42 +533,15 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   // Generate Warmup Sets for Exercise (Warm_up_estimator.md)
   const handleGenerateWarmupSets = async (exerciseId: string) => {
     if (!activeWorkout) return;
-    const exercise = exerciseMap.get(exerciseId);
-    if (!exercise) return;
-
-    const exerciseSets = sets.filter((s) => s.exercise_id === exerciseId);
-    const firstWorkingSet = exerciseSets.find((s) => s.set_type === 'working') || exerciseSets[0];
-    const workingWeight = firstWorkingSet ? (firstWorkingSet.raw_input_weight || firstWorkingSet.weight) : 60;
-
-    const warmupSteps = generateWarmupSets({
-      workingWeightKg: workingWeight,
-      barTareWeightKg: exercise.default_bar_weight_kg || 20,
-      isBodyweight: exercise.is_bodyweight,
-    });
-
-    if (warmupSteps.length === 0) return;
-
-    const createdWarmupSets: WorkoutSet[] = [];
-    for (const step of warmupSteps) {
-      const newSet = await sessionService.addSet(activeWorkout.id, {
-        exerciseId,
-        rawInputWeight: step.weight,
-        reps: step.reps,
-        setType: 'warmup',
-        setNotes: step.notes,
-        gearId: firstWorkingSet?.gear_id ?? null,
-        exerciseGroupId: firstWorkingSet?.exercise_group_id ?? null,
-      });
-      createdWarmupSets.push(newSet);
+    const createdWarmupSets = await sessionService.generateWarmupSetsForExercise(
+      activeWorkout.id,
+      exerciseId
+    );
+    if (createdWarmupSets.length > 0) {
+      const updatedSets = await sessionService.getWorkoutSets(activeWorkout.id);
+      setSets(updatedSets);
+      setExpandedExerciseIds((prev) => new Set(prev).add(exerciseId));
     }
-
-    setSets((prev) => {
-      const nonExSets = prev.filter((s) => s.exercise_id !== exerciseId);
-      const exSets = prev.filter((s) => s.exercise_id === exerciseId);
-      const combined = [...createdWarmupSets, ...exSets];
-      const reindexed = combined.map((s, idx) => ({ ...s, set_number: idx + 1 }));
-      return [...nonExSets, ...reindexed];
-    });
   };
 
   // Update Set
@@ -680,7 +650,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         }
 
         if (nextExId) {
-          setExpandedExerciseId(nextExId);
+          setExpandedExerciseIds((prev) => new Set(prev).add(nextExId!));
         }
       }
 
@@ -738,11 +708,17 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     }
   };
 
-  // 1-Tap Exercise Accordion Selection ("Always keep one open")
+  // 1-Tap Exercise Accordion Selection (Independent Multi-Card Expansion)
   const handleSelectExercise = (exerciseId: string) => {
-    if (expandedExerciseId !== exerciseId) {
-      setExpandedExerciseId(exerciseId);
-    }
+    setExpandedExerciseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(exerciseId)) {
+        next.delete(exerciseId);
+      } else {
+        next.add(exerciseId);
+      }
+      return next;
+    });
   };
 
   // Open Plate Calculator Modal
@@ -814,11 +790,13 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const handleSubmitPainReport = async ({
     painType,
     severity,
+    jointLocation,
     notes,
     shouldSkipRemainingSets,
   }: {
     painType: 'joint' | 'muscle';
     severity: number;
+    jointLocation?: any;
     notes?: string;
     shouldSkipRemainingSets: boolean;
   }) => {
@@ -832,6 +810,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         exercise_id: targetExercise.id,
         pain_type: painType,
         severity,
+        joint_location: jointLocation ?? null,
         notes,
       });
     }
@@ -869,7 +848,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       }
 
       if (nextExId) {
-        setExpandedExerciseId(nextExId);
+        setExpandedExerciseIds((prev) => new Set(prev).add(nextExId!));
       }
 
       setPainAlertBanner(
@@ -899,7 +878,17 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       rpe: 8.0,
     });
 
-    setExpandedExerciseId(exercise.id);
+    // Automated Warm-Up Synthesis (Phase 3)
+    if (
+      autoWarmupMode === 'all_exercises' ||
+      (autoWarmupMode === 'smart_compounds' && exercise.is_compound)
+    ) {
+      await sessionService.generateWarmupSetsForExercise(activeWorkout.id, exercise.id, {
+        targetWorkingWeightKg: initialWeight,
+      });
+    }
+
+    setExpandedExerciseIds((prev) => new Set(prev).add(exercise.id));
     await loadWorkout(activeWorkout.id);
   };
 
@@ -1067,13 +1056,26 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     const firstSetGearId = exSets[0]?.gear_id;
     const gear = firstSetGearId ? gearMap.get(firstSetGearId) : null;
     const isGrouped = !!exSets[0]?.exercise_group_id;
-    const isExpanded = expandedExerciseId === exercise.id;
+    const isExpanded = expandedExerciseIds.has(exercise.id);
     const isAllSetsCompleted = exSets.length > 0 && exSets.every((s) => completedSetIds.has(s.id));
+
+    // Warm-up Sub-collapsing (Phase 4)
+    const warmupSets = exSets.filter((s) => s.set_type === 'warmup');
+    const completedWarmups = warmupSets.filter((s) => completedSetIds.has(s.id));
+    const isWarmupsExpanded = expandedWarmupExercises.has(exercise.id);
+    const shouldSubCollapseWarmups = completedWarmups.length >= 2 && !isWarmupsExpanded;
+
+    const setsToRender = shouldSubCollapseWarmups
+      ? exSets.filter((s) => s.set_type !== 'warmup' || !completedSetIds.has(s.id))
+      : exSets;
 
     return (
       <View
         key={exercise.id}
         testID={`exercise-card-${exercise.id}`}
+        onLayout={(e) => {
+          cardOffsetsRef.current[exercise.id] = e.nativeEvent.layout.y;
+        }}
         style={[
           styles.exerciseCard,
           isGrouped && styles.groupedExerciseCard,
@@ -1209,23 +1211,58 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           <View testID={`exercise-card-body-${exercise.id}`}>
             {/* Sets Table Header Columns */}
             <View style={styles.tableHeaderRow}>
-              <Text style={[styles.tableHeaderCol, { width: 32 }]}>SET</Text>
-              <Text style={[styles.tableHeaderCol, { width: 64 }]}>PREV</Text>
-              <Text style={[styles.tableHeaderCol, { flex: 1.3 }]}>
+              <Text style={[styles.tableHeaderCol, { minWidth: 46, marginRight: 6, textAlign: 'center' }]}>SET</Text>
+              <Text style={[styles.tableHeaderCol, { flex: 1, marginRight: 6 }]}>PREV</Text>
+              <Text style={[styles.tableHeaderCol, { minWidth: 68, marginRight: 6, textAlign: 'center' }]}>
                 {unitSystem.toUpperCase()}
               </Text>
-              <Text style={[styles.tableHeaderCol, { flex: 1.0 }]}>
+              <Text style={[styles.tableHeaderCol, { minWidth: 48, marginRight: 6, textAlign: 'center' }]}>
                 {exercise.is_unilateral ? 'L / R' : 'REPS'}
               </Text>
-              <Text style={[styles.tableHeaderCol, { width: 52, textAlign: 'center' }]}>
+              <Text style={[styles.tableHeaderCol, { minWidth: 48, marginRight: 4, textAlign: 'center' }]}>
                 {intensityMetric}
               </Text>
-              <Text style={[styles.tableHeaderCol, { width: 24 }]} />
+              <Text style={[styles.tableHeaderCol, { width: 24, marginRight: 4 }]} />
               <Text style={[styles.tableHeaderCol, { width: 38, textAlign: 'center' }]}>✓</Text>
             </View>
 
+            {/* Sub-Collapsed Completed Warm-Up Sets Banner (Phase 4) */}
+            {shouldSubCollapseWarmups && (
+              <TouchableOpacity
+                testID={`toggle-warmups-${exercise.id}`}
+                style={styles.completedWarmupsBanner}
+                onPress={() => {
+                  setExpandedWarmupExercises((prev) => new Set(prev).add(exercise.id));
+                }}
+                accessibilityLabel={`Show ${completedWarmups.length} completed warm-up sets for ${exercise.name}`}
+              >
+                <Text style={styles.completedWarmupsBannerText}>
+                  ✓ {completedWarmups.length} Warm-up Sets Completed (Tap to show)
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {isWarmupsExpanded && completedWarmups.length >= 2 && (
+              <TouchableOpacity
+                testID={`collapse-warmups-${exercise.id}`}
+                style={styles.collapseWarmupsBanner}
+                onPress={() => {
+                  setExpandedWarmupExercises((prev) => {
+                    const next = new Set(prev);
+                    next.delete(exercise.id);
+                    return next;
+                  });
+                }}
+                accessibilityLabel={`Hide completed warm-up sets for ${exercise.name}`}
+              >
+                <Text style={styles.collapseWarmupsBannerText}>
+                  ▴ Hide Completed Warm-up Sets
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {/* Set Rows */}
-            {exSets.map((s) => {
+            {setsToRender.map((s) => {
               const ghostSet = ghostSets.find((g) => g.set_number === s.set_number) || null;
               const isCompleted = completedSetIds.has(s.id);
 
@@ -1318,9 +1355,6 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         </View>
       </View>
 
-      {/* Embedded Rest Timer Banner */}
-      <RestTimerBanner timerService={timerService} />
-
       {/* Embedded Progression Proposal Banner (Step 4.4) */}
       <ProgressionProposalBanner
         proposal={activeProposal?.proposal ?? null}
@@ -1374,6 +1408,9 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           <Text style={styles.discardFooterText}>Discard Workout</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Docked Rest Timer Banner (ADR-009 / Phase 4) */}
+      <RestTimerBanner timerService={timerService} />
 
       {/* Implement / Bar Selection Modal (ADR-025) */}
       {gearPickerExercise && (
@@ -1817,7 +1854,39 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 12,
-    paddingBottom: 40,
+    paddingBottom: 96,
+  },
+  completedWarmupsBanner: {
+    backgroundColor: '#0F1A12',
+    borderColor: '#064E3B',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    marginVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completedWarmupsBannerText: {
+    color: '#34D399',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  collapseWarmupsBanner: {
+    backgroundColor: '#18181B',
+    borderColor: '#27272A',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    marginBottom: 6,
+    alignItems: 'center',
+  },
+  collapseWarmupsBannerText: {
+    color: '#A1A1AA',
+    fontSize: 11,
+    fontWeight: '600',
   },
   exerciseCard: {
     backgroundColor: '#09090B',

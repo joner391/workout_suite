@@ -207,6 +207,58 @@ describe('ExerciseSubstitutionService', () => {
       // DB Bench with ghost history ranks higher than Incline Bench without history
       expect(substitutes[0].exercise.id).toBe('db_bench');
     });
+
+    it('penalizes candidates with painful joint and promotes joint-sparing substitutes', async () => {
+      const legPress: Exercise = {
+        id: 'machine_leg_press',
+        name: 'Machine Leg Press',
+        muscle_group: 'Quads',
+        category: 'Machine',
+        is_compound: true,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'total',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 0,
+        is_custom: false,
+        parent_exercise_id: null,
+        standard_lift_type: null,
+        default_rest_seconds: 120,
+      };
+
+      const frontSquat: Exercise = {
+        id: 'barbell_front_squat',
+        name: 'Front Squat',
+        muscle_group: 'Quads',
+        category: 'Barbell',
+        is_compound: true,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'total',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 20,
+        is_custom: false,
+        parent_exercise_id: 'barbell_squat',
+        standard_lift_type: 'squat',
+        default_rest_seconds: 150,
+      };
+
+      await exerciseRepo.create(legPress);
+      await exerciseRepo.create(frontSquat);
+
+      // Without painful joint options, front squat (direct variant) ranks above leg press
+      const standardSubs = await subService.findSubstitutes('barbell_squat');
+      expect(standardSubs[0].exercise.id).toBe('barbell_front_squat');
+
+      // With lower_back painful joint option: front squat loads lower_back (-60), leg press spares it (+30 total boost)
+      const jointAwareSubs = await subService.findSubstitutes('barbell_squat', {
+        painfulJoint: 'lower_back',
+      });
+
+      expect(jointAwareSubs[0].exercise.id).toBe('machine_leg_press');
+      const frontSquatResult = jointAwareSubs.find((s) => s.exercise.id === 'barbell_front_squat');
+      expect(frontSquatResult?.relevanceScore).toBe(40); // 100 - 60 = 40
+    });
   });
 
   describe('transferRepBrackets', () => {

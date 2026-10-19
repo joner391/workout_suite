@@ -17,10 +17,8 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
   ActivityIndicator,
-  FlatList,
 } from 'react-native';
 import {
   Workout,
@@ -690,13 +688,8 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
           <ActivityIndicator color="#00E676" size="small" />
         </View>
       ) : selectedDateWorkouts.length === 0 ? null : (
-        <FlatList
-          data={selectedDateWorkouts}
-          keyExtractor={(w) => w.id}
-          style={styles.workoutsList}
-          contentContainerStyle={styles.workoutsListContent}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item: w }) => (
+        <View style={styles.workoutsListContent}>
+          {selectedDateWorkouts.map((w) => (
             <TouchableOpacity
               key={w.id}
               style={styles.workoutCard}
@@ -744,8 +737,8 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
                 <Text style={styles.tapToInspectText}>Tap for set breakdown ›</Text>
               </View>
             </TouchableOpacity>
-          )}
-        />
+          ))}
+        </View>
       )}
 
       {/* Drill-down Inspection Modal */}

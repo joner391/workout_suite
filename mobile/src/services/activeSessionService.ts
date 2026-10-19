@@ -20,6 +20,7 @@ import {
   GearInventory,
 } from '../core/types';
 import { normalizeExerciseLoad } from '../core/math/loadNormalizer';
+import { generateWarmupSets } from '../core/math/warmupEstimator';
 import { IWorkoutRepository } from '../domain/repositories/IWorkoutRepository';
 import { IExerciseRepository } from '../domain/repositories/IExerciseRepository';
 import { IGearRepository } from '../domain/repositories/IGearRepository';
@@ -471,6 +472,216 @@ export class ActiveSessionService {
     const ghostSets = await this.getGhostSetsForExercise(exerciseId);
     const match = ghostSets.find((s) => s.set_number === setNumber);
     return match || null;
+  }
+
+  /**
+   * Retrieves all sets for a specific workout ordered by set_number ASC.
+   */
+  public async getWorkoutSets(workoutId: string): Promise<WorkoutSet[]> {
+    return this.workoutRepo.getSetsByWorkoutId(workoutId);
+  }
+
+  /**
+   * Generates individualized warm-up progression sets for an exercise within an active workout.
+   *
+   * Target Load Resolution Fallback Chain:
+   * 1. Explicit `options.targetWorkingWeightKg` if > 0.
+   * 2. First non-warmup set's `raw_input_weight` (or `weight`) in active workout if > 0.
+   * 3. Most recent completed ghost set's `raw_input_weight` (or `weight`) if > 0.
+   * 4. Default fallback load: bar tare weight (2 acclimating sets) for barbell lifts, or sensible baseline.
+   *
+   * Context-Aware Volume Reduction:
+   * Attenuates redundant empty-bar steps to at most 1-2 potentiation sets if the exercise's primary muscle group
+   * has already been warmed up earlier in the session.
+   *
+   * Prepend & Renumber:
+   * Sets are inserted contiguously at the start of the exercise (set 1..N) and subsequent sets are renumbered.
+   * All sets are immediately persisted via write-through.
+   */
+  public async generateWarmupSetsForExercise(
+    workoutId: string,
+    exerciseId: string,
+    options?: {
+      targetWorkingWeightKg?: number;
+      alreadyWarmedMuscleGroups?: Set<string>;
+    }
+  ): Promise<WorkoutSet[]> {
+    const workout = await this.workoutRepo.findById(workoutId);
+    if (!workout) {
+      throw new Error(`Workout with ID '${workoutId}' not found.`);
+    }
+
+    const exercise = await this.resolveExercise(exerciseId);
+    if (!exercise) {
+      throw new Error(`Exercise with ID '${exerciseId}' not found in catalog.`);
+    }
+
+    const existingSets = await this.workoutRepo.getSetsByWorkoutId(workoutId);
+    const exerciseSets = existingSets
+      .filter((s) => s.exercise_id === exerciseId)
+      .sort((a, b) => a.set_number - b.set_number);
+
+    // If warmup sets already exist for this exercise, do not duplicate
+    const existingWarmups = exerciseSets.filter((s) => s.set_type === 'warmup');
+    if (existingWarmups.length > 0) {
+      return existingWarmups;
+    }
+
+    // 1. Target load resolution fallback chain
+    let resolvedWorkingWeight = 0;
+    if (options?.targetWorkingWeightKg && options.targetWorkingWeightKg > 0) {
+      resolvedWorkingWeight = options.targetWorkingWeightKg;
+    }
+
+    const firstWorkingSet = exerciseSets.find((s) => s.set_type !== 'warmup');
+    if (resolvedWorkingWeight <= 0 && firstWorkingSet) {
+      if (firstWorkingSet.raw_input_weight > 0) {
+        resolvedWorkingWeight = firstWorkingSet.raw_input_weight;
+      } else if (firstWorkingSet.weight > 0) {
+        resolvedWorkingWeight = firstWorkingSet.weight;
+      }
+    }
+
+    if (resolvedWorkingWeight <= 0) {
+      const ghostSets = await this.getGhostSetsForExercise(exerciseId);
+      const ghostWorking =
+        ghostSets.find(
+          (s) => s.set_type !== 'warmup' && (s.raw_input_weight > 0 || s.weight > 0)
+        ) || ghostSets[0];
+      if (ghostWorking) {
+        resolvedWorkingWeight =
+          ghostWorking.raw_input_weight > 0
+            ? ghostWorking.raw_input_weight
+            : ghostWorking.weight;
+      }
+    }
+
+    const barTareWeight = exercise.default_bar_weight_kg || 20;
+
+    // 2. Generate raw progression ladder
+    let steps: { setNumber: number; weight: number; reps: number; isDiagnosticSingle: boolean; notes: string }[] = [];
+
+    if (resolvedWorkingWeight > 0) {
+      steps = generateWarmupSets({
+        workingWeightKg: resolvedWorkingWeight,
+        barTareWeightKg: barTareWeight,
+        minimumPlateIncrementKg: 2.5,
+        isBodyweight: exercise.is_bodyweight || false,
+      });
+    }
+
+    // Fallback: If working weight is still 0 or empty steps returned, avoid silent failure
+    if (steps.length === 0) {
+      if (exercise.is_bodyweight) {
+        steps = [
+          {
+            setNumber: 1,
+            weight: 0,
+            reps: 10,
+            isDiagnosticSingle: false,
+            notes: 'Bodyweight activation set',
+          },
+        ];
+      } else if (exercise.category === 'Barbell' || barTareWeight > 0) {
+        steps = [
+          {
+            setNumber: 1,
+            weight: barTareWeight,
+            reps: 10,
+            isDiagnosticSingle: false,
+            notes: 'Empty bar - mobility and motor pattern rehearsal',
+          },
+          {
+            setNumber: 2,
+            weight: barTareWeight,
+            reps: 5,
+            isDiagnosticSingle: false,
+            notes: 'Empty bar - movement groove',
+          },
+        ];
+      } else {
+        steps = [
+          {
+            setNumber: 1,
+            weight: 10,
+            reps: 10,
+            isDiagnosticSingle: false,
+            notes: 'Light preparation set',
+          },
+          {
+            setNumber: 2,
+            weight: 15,
+            reps: 6,
+            isDiagnosticSingle: false,
+            notes: 'Movement rehearsal',
+          },
+        ];
+      }
+    }
+
+    // 3. Context-Aware Synergist / Muscle Group Volume Reduction
+    let isMuscleGroupAlreadyWarmed = false;
+    if (options?.alreadyWarmedMuscleGroups?.has(exercise.muscle_group)) {
+      isMuscleGroupAlreadyWarmed = true;
+    } else {
+      for (const set of existingSets) {
+        if (set.exercise_id !== exerciseId) {
+          const ex = await this.resolveExercise(set.exercise_id);
+          if (ex && ex.muscle_group === exercise.muscle_group && set.set_type !== 'warmup') {
+            isMuscleGroupAlreadyWarmed = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (isMuscleGroupAlreadyWarmed && steps.length > 2) {
+      steps = steps.slice(-2);
+    }
+
+    // Re-index step numbers
+    steps = steps.map((s, idx) => ({ ...s, setNumber: idx + 1 }));
+
+    // 4. Prepend & Renumber Contiguously
+    const gear = firstWorkingSet?.gear_id ? await this.resolveGear(firstWorkingSet.gear_id) : null;
+    const now = new Date().toISOString();
+
+    const createdWarmupSets: WorkoutSet[] = steps.map((step, idx) => {
+      const normalized = normalizeExerciseLoad(
+        step.weight,
+        exercise,
+        gear
+      );
+      return {
+        id: generateUuid(),
+        workout_id: workoutId,
+        exercise_id: exerciseId,
+        gear_id: firstWorkingSet?.gear_id ?? null,
+        set_number: idx + 1,
+        weight: normalized.effectiveWeightKg,
+        raw_input_weight: normalized.rawInputWeightKg,
+        added_weight: normalized.addedWeightKg,
+        reps: step.reps,
+        reps_right: null,
+        rpe: null,
+        rir: null,
+        set_type: 'warmup',
+        set_notes: step.notes,
+        exercise_group_id: firstWorkingSet?.exercise_group_id ?? null,
+        created_at: now,
+      };
+    });
+
+    // Shift existing non-warmup sets for this exercise
+    const workingSets = exerciseSets.filter((s) => s.set_type !== 'warmup');
+    const shiftedWorkingSets: WorkoutSet[] = workingSets.map((s, idx) => ({
+      ...s,
+      set_number: createdWarmupSets.length + idx + 1,
+    }));
+
+    await this.workoutRepo.saveSets([...createdWarmupSets, ...shiftedWorkingSets]);
+
+    return createdWarmupSets;
   }
 
   // ==========================================================================

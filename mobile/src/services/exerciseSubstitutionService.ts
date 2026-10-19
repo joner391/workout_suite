@@ -11,15 +11,132 @@
  * 4. Transfers target rep/RPE prescriptions and swaps sets in active session
  */
 
-import { Exercise, WorkoutSet, WorkoutWithSets } from '../core/types';
+import { Exercise, WorkoutSet, WorkoutWithSets, JointLocation } from '../core/types';
 import { normalizeExerciseLoad } from '../core/math/loadNormalizer';
 import { IExerciseRepository } from '../domain/repositories/IExerciseRepository';
 import { IWorkoutRepository } from '../domain/repositories/IWorkoutRepository';
 import { IGearRepository } from '../domain/repositories/IGearRepository';
 
 // ============================================================================
+// Biomechanical Joint Resolution Helper
+// ============================================================================
+
+/**
+ * Maps an exercise to its primary mechanically loaded joints and articulations.
+ */
+export function resolveExerciseJoints(exercise: Exercise): JointLocation[] {
+  if (exercise.primary_joints && exercise.primary_joints.length > 0) {
+    return exercise.primary_joints;
+  }
+
+  const name = (exercise.name || '').toLowerCase();
+  const id = (exercise.id || '').toLowerCase();
+  const mg = (exercise.muscle_group || '').toLowerCase();
+
+  // Leg Extension / Leg Curl (single joint isolation)
+  if (name.includes('leg extension') || name.includes('leg curl') || id.includes('leg_extension') || id.includes('leg_curl')) {
+    return ['knee'];
+  }
+
+  // Calf Raise
+  if (name.includes('calf') || mg === 'calves') {
+    return ['ankle', 'knee'];
+  }
+
+  // Leg Press & Bulgarian Split Squat (machine/supported spinal offloading)
+  if (name.includes('leg press') || id.includes('leg_press') || name.includes('split squat') || id.includes('split_squat')) {
+    return ['knee', 'hip', 'ankle'];
+  }
+
+  // Squat variants (high axial shear on lower back)
+  if (name.includes('squat') || id.includes('squat') || name.includes('lunge') || id.includes('lunge')) {
+    return ['knee', 'hip', 'lower_back', 'ankle'];
+  }
+
+  // Deadlift / RDL / Good Morning / Hip Thrust
+  if (
+    name.includes('deadlift') ||
+    name.includes('rdl') ||
+    name.includes('good morning') ||
+    name.includes('hip thrust') ||
+    id.includes('deadlift') ||
+    id.includes('rdl') ||
+    id.includes('hip_thrust')
+  ) {
+    return ['lower_back', 'hip', 'knee', 'wrist'];
+  }
+
+  // Bench Press / Incline / Dip / Push-Up
+  if (
+    name.includes('bench press') ||
+    name.includes('chest press') ||
+    name.includes('dip') ||
+    name.includes('push-up') ||
+    name.includes('push up') ||
+    name.includes('incline bench') ||
+    id.includes('bench_press') ||
+    id.includes('dip')
+  ) {
+    return ['shoulder', 'elbow', 'wrist', 'chest_pec'];
+  }
+
+  // Overhead Press / Shoulder Press / Lateral Raise
+  if (
+    name.includes('overhead press') ||
+    name.includes('shoulder press') ||
+    name.includes('ohp') ||
+    name.includes('military press') ||
+    name.includes('lateral raise') ||
+    id.includes('ohp') ||
+    id.includes('shoulder_press') ||
+    id.includes('lateral_raise')
+  ) {
+    return ['shoulder', 'elbow', 'wrist', 'lower_back'];
+  }
+
+  // Row / Pulldown / Pull-Up
+  if (
+    name.includes('row') ||
+    name.includes('pulldown') ||
+    name.includes('pull-up') ||
+    name.includes('pull up') ||
+    name.includes('chin-up') ||
+    id.includes('row') ||
+    id.includes('pulldown') ||
+    id.includes('pull_up')
+  ) {
+    return ['shoulder', 'elbow', 'wrist', 'lower_back'];
+  }
+
+  // Bicep Curl / Tricep Pushdown / Skull Crusher
+  if (
+    name.includes('curl') ||
+    name.includes('pushdown') ||
+    name.includes('skull crusher') ||
+    name.includes('tricep') ||
+    (name.includes('extension') && (mg === 'arms' || mg === 'triceps' || mg === 'biceps'))
+  ) {
+    return ['elbow', 'wrist', 'shoulder'];
+  }
+
+  // Muscle group fallbacks
+  if (mg === 'chest') return ['shoulder', 'elbow', 'wrist', 'chest_pec'];
+  if (mg === 'back' || mg === 'lats' || mg === 'traps') return ['shoulder', 'elbow', 'wrist', 'lower_back'];
+  if (mg === 'shoulders') return ['shoulder', 'elbow', 'wrist', 'lower_back'];
+  if (mg === 'quads' || mg === 'hamstrings') return ['knee', 'hip', 'lower_back', 'ankle'];
+  if (mg === 'glutes') return ['hip', 'lower_back', 'knee'];
+  if (mg === 'biceps' || mg === 'triceps' || mg === 'forearms') return ['elbow', 'wrist', 'shoulder'];
+
+  return ['other'];
+}
+
+// ============================================================================
 // Service DTOs & Output Types
 // ============================================================================
+
+export interface FindSubstitutesOptions {
+  painfulJoint?: JointLocation | null;
+}
 
 export type SubstitutionMatchReason =
   | 'direct_variant'
@@ -84,7 +201,8 @@ export class ExerciseSubstitutionService {
    * Includes historical ghost sets from the substitute's most recent completed session.
    */
   public async findSubstitutes(
-    currentExerciseId: string
+    currentExerciseId: string,
+    options?: FindSubstitutesOptions
   ): Promise<ExerciseSubstitutionOption[]> {
     const current = await this.exerciseRepo.findById(currentExerciseId);
     if (!current) {
@@ -163,7 +281,7 @@ export class ExerciseSubstitutionService {
       }
     }
 
-    // 4. Attach ghost sets and calculate final relevance score
+    // 4. Attach ghost sets and calculate final relevance score (with biomechanical joint awareness)
     const results: ExerciseSubstitutionOption[] = await Promise.all(
       candidates.map(async (candidate) => {
         const ghostSets = await this.workoutRepo.getMostRecentCompletedSetsForExercise(
@@ -171,7 +289,27 @@ export class ExerciseSubstitutionService {
         );
         const hasGhostData = ghostSets.length > 0;
         // Prioritize movements the user has actually logged before (+5 bonus)
-        const relevanceScore = candidate.baseScore + (hasGhostData ? 5 : 0);
+        let relevanceScore = candidate.baseScore + (hasGhostData ? 5 : 0);
+
+        if (options?.painfulJoint) {
+          const candJoints = resolveExerciseJoints(candidate.exercise);
+          if (candJoints.includes(options.painfulJoint)) {
+            // Penalize candidate exercises that heavily load the painful articulation (-60)
+            relevanceScore -= 60;
+          } else {
+            // Boost substitutes that spare the injured joint (+15)
+            relevanceScore += 15;
+          }
+
+          // Specific biomechanical enhancements
+          const candName = candidate.exercise.name.toLowerCase();
+          if (options.painfulJoint === 'shoulder' && (candName.includes('close grip') || candName.includes('dumbbell') || candName.includes('neutral'))) {
+            relevanceScore += 10;
+          }
+          if (options.painfulJoint === 'lower_back' && (candName.includes('leg press') || candName.includes('split squat') || candName.includes('belt squat'))) {
+            relevanceScore += 15;
+          }
+        }
 
         return {
           exercise: candidate.exercise,

@@ -683,11 +683,11 @@ def build_muscle_landmarks_chart(
 
     curr_vols = current_volumes or {}
 
-    current_vals = [float(curr_vols.get(m, 0.0)) for m in muscles]
-    mev_vals = [float(getattr(landmarks[m], "mev", 6.0)) for m in muscles]
-    mav_vals = [float(getattr(landmarks[m], "mav", 14.0)) for m in muscles]
-    mrv_vals = [float(getattr(landmarks[m], "mrv", 20.0)) for m in muscles]
-    readiness_vals = [float(getattr(landmarks[m], "readiness_pct", 100.0)) for m in muscles]
+    current_vals = [float(curr_vols.get(m, 0.0) or 0.0) for m in muscles]
+    mev_vals = [float(getattr(landmarks[m], "mev", 6.0) or 6.0) for m in muscles]
+    mav_vals = [float(getattr(landmarks[m], "mav", 14.0) or 14.0) for m in muscles]
+    mrv_vals = [float(getattr(landmarks[m], "mrv", 20.0) or 20.0) for m in muscles]
+    readiness_vals = [float(getattr(landmarks[m], "readiness_pct", 100.0) or 100.0) for m in muscles]
 
     # Current Weekly Volume Bar
     fig.add_trace(
@@ -759,9 +759,15 @@ def build_sfr_matrix_chart(
     """Builds interactive Stimulus-to-Fatigue Ratio (SFR) scatter matrix."""
     fig = go.Figure()
 
-    if not sfr_results:
+    evaluable_results = {
+        eid: res
+        for eid, res in (sfr_results or {}).items()
+        if getattr(res, "is_evaluable", True) and getattr(res, "sfr_score", None) is not None
+    }
+
+    if not evaluable_results:
         fig.add_annotation(
-            text="No SFR evaluated exercises available.",
+            text="No SFR evaluated exercises available (minimum 3 sessions required).",
             xref="paper",
             yref="paper",
             x=0.5,
@@ -784,7 +790,7 @@ def build_sfr_matrix_chart(
     for tier in tiers:
         tier_items = [
             (eid, res)
-            for eid, res in sfr_results.items()
+            for eid, res in evaluable_results.items()
             if getattr(res, "sfr_tier", "MODERATE") == tier
         ]
         if not tier_items:
@@ -799,12 +805,24 @@ def build_sfr_matrix_chart(
             name = ex_names.get(eid, eid)
             names.append(name)
 
-            mean_ereps = float(getattr(res, "mean_effective_reps", 3.0))
-            e10rm_slope = float(getattr(res, "e10rm_slope_28d", 0.0))
-            dropoff = float(getattr(res, "intra_session_dropoff", 0.0))
-            joint_pain = int(getattr(res, "joint_pain_sum", 0))
-            muscle_pain = int(getattr(res, "muscle_pain_sum", 0))
-            sfr_score = getattr(res, "sfr_score", 50.0)
+            mean_ereps_val = getattr(res, "mean_effective_reps", 3.0)
+            mean_ereps = float(mean_ereps_val) if mean_ereps_val is not None else 0.0
+
+            e10rm_slope_val = getattr(res, "e10rm_slope_28d", 0.0)
+            e10rm_slope = float(e10rm_slope_val) if e10rm_slope_val is not None else 0.0
+
+            dropoff_val = getattr(res, "intra_session_dropoff", 0.0)
+            dropoff = float(dropoff_val) if dropoff_val is not None else 0.0
+
+            joint_pain_val = getattr(res, "joint_pain_sum", 0)
+            joint_pain = int(joint_pain_val) if joint_pain_val is not None else 0
+
+            muscle_pain_val = getattr(res, "muscle_pain_sum", 0)
+            muscle_pain = int(muscle_pain_val) if muscle_pain_val is not None else 0
+
+            sfr_score = getattr(res, "sfr_score", None)
+            score_str = f"{sfr_score:.1f}/100" if sfr_score is not None else "N/A"
+
             swap_id = getattr(res, "recommended_swap_exercise_id", None)
             swap_name = ex_names.get(str(swap_id), str(swap_id)) if swap_id else "None"
 
@@ -819,7 +837,7 @@ def build_sfr_matrix_chart(
             hover = (
                 f"<b>{name}</b><br>"
                 f"SFR Tier: {tier}<br>"
-                f"SFR Score: {sfr_score:.1f}/100<br>"
+                f"SFR Score: {score_str}<br>"
                 f"Effective Reps: {mean_ereps:.1f}/set<br>"
                 f"Intra-Session Drop-Off: {dropoff:.1%}<br>"
                 f"28-Day Joint Pain: {joint_pain}<br>"

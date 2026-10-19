@@ -38,6 +38,20 @@ export type MuscleGroup =
   | 'Abs'
   | 'Traps';
 
+export type JointLocation =
+  | 'shoulder'
+  | 'elbow'
+  | 'wrist'
+  | 'lower_back'
+  | 'hip'
+  | 'knee'
+  | 'ankle'
+  | 'neck'
+  | 'chest_pec'
+  | 'other';
+
+export type AutoWarmupMode = 'smart_compounds' | 'all_exercises' | 'off';
+
 export type StandardLiftType = 'squat' | 'bench' | 'deadlift' | 'ohp' | 'row';
 
 export type GearType =
@@ -115,6 +129,7 @@ export interface Exercise {
   standard_lift_type: StandardLiftType | null;
   default_rest_seconds: number;
   secondary_muscles?: (MuscleGroup | string)[];
+  primary_joints?: JointLocation[];
 }
 
 /**
@@ -337,6 +352,7 @@ export interface PainReport {
   set_id: string | null;
   pain_type: PainType;
   severity: number; // 1 to 10
+  joint_location?: JointLocation | null;
   notes: string | null;
   created_at: string;
 }
