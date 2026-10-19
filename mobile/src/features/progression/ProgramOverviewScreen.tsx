@@ -117,6 +117,16 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
     sourceExercise: TemplateExercise;
   } | null>(null);
 
+  // Exercise Action Menu (Consolidates row actions into clean overflow sheet)
+  const [actionMenuState, setActionMenuState] = useState<{
+    visible: boolean;
+    templateId: string;
+    templateExercise: TemplateExercise;
+    exerciseName: string;
+    isExFirst: boolean;
+    isExLast: boolean;
+  } | null>(null);
+
   // Initial Data Load
   const loadData = useCallback(async () => {
     try {
@@ -819,63 +829,6 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                             <View style={styles.exerciseActionCol}>
                               <View style={styles.exerciseActionRow}>
                                 <TouchableOpacity
-                                  testID={`exercise-move-up-${te.id}`}
-                                  style={[styles.smallBtn, isExFirst && styles.btnDisabled]}
-                                  onPress={() => handleMoveExercise(tmpl.id, te.id, 'up')}
-                                  disabled={isExFirst}
-                                >
-                                  <Text style={styles.smallBtnText}>▲</Text>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                  testID={`exercise-move-down-${te.id}`}
-                                  style={[styles.smallBtn, isExLast && styles.btnDisabled]}
-                                  onPress={() => handleMoveExercise(tmpl.id, te.id, 'down')}
-                                  disabled={isExLast}
-                                >
-                                  <Text style={styles.smallBtnText}>▼</Text>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                  testID={`swap-template-exercise-${te.id}`}
-                                  style={styles.smallBtn}
-                                  onPress={() =>
-                                    setCatalogPickerState({
-                                      visible: true,
-                                      mode: 'swap',
-                                      templateId: tmpl.id,
-                                      targetTemplateExercise: te,
-                                    })
-                                  }
-                                >
-                                  <Text style={styles.smallBtnText}>⇄ Swap</Text>
-                                </TouchableOpacity>
-
-                                {te.exercise_group_id ? (
-                                  <TouchableOpacity
-                                    testID={`unlink-superset-btn-${te.id}`}
-                                    style={styles.supersetBtnActive}
-                                    onPress={() => handleUnlinkSuperset(te)}
-                                  >
-                                    <Text style={styles.supersetBtnActiveText}>Unlink ⛓️‍💥</Text>
-                                  </TouchableOpacity>
-                                ) : (
-                                  <TouchableOpacity
-                                    testID={`link-superset-btn-${te.id}`}
-                                    style={styles.smallBtn}
-                                    onPress={() =>
-                                      setSupersetPickerState({
-                                        visible: true,
-                                        templateId: tmpl.id,
-                                        sourceExercise: te,
-                                      })
-                                    }
-                                  >
-                                    <Text style={styles.smallBtnText}>Pair 🔗</Text>
-                                  </TouchableOpacity>
-                                )}
-
-                                <TouchableOpacity
                                   testID={`configure-rules-btn-${te.id}`}
                                   style={styles.configureRulesBtn}
                                   onPress={() =>
@@ -889,11 +842,22 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                  testID={`delete-template-exercise-${te.id}`}
-                                  style={styles.smallBtnDestructive}
-                                  onPress={() => handleDeleteTemplateExercise(te.id)}
+                                  testID={`exercise-actions-menu-${te.id}`}
+                                  style={styles.overflowMenuBtn}
+                                  onPress={() =>
+                                    setActionMenuState({
+                                      visible: true,
+                                      templateId: tmpl.id,
+                                      templateExercise: te,
+                                      exerciseName: exName,
+                                      isExFirst,
+                                      isExLast,
+                                    })
+                                  }
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`More actions for ${exName}`}
                                 >
-                                  <Text style={styles.smallBtnDestructiveText}>✕</Text>
+                                  <Text style={styles.overflowMenuBtnText}>•••</Text>
                                 </TouchableOpacity>
                               </View>
                             </View>
@@ -1104,6 +1068,150 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Exercise Actions Overflow Modal */}
+      {actionMenuState && (
+        <Modal
+          visible={actionMenuState.visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setActionMenuState(null)}
+        >
+          <TouchableOpacity
+            style={styles.actionMenuOverlay}
+            activeOpacity={1}
+            onPress={() => setActionMenuState(null)}
+          >
+            <View style={styles.actionMenuCard}>
+              <View style={styles.actionMenuHeader}>
+                <Text style={styles.actionMenuTitle} numberOfLines={1}>
+                  {actionMenuState.exerciseName}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setActionMenuState(null)}
+                  style={{ padding: 4 }}
+                  accessibilityLabel="Close action menu"
+                >
+                  <Text style={styles.actionMenuClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Move Up */}
+              <TouchableOpacity
+                testID={`exercise-move-up-${actionMenuState.templateExercise.id}`}
+                style={[
+                  styles.actionMenuItem,
+                  actionMenuState.isExFirst && styles.actionMenuItemDisabled,
+                ]}
+                disabled={actionMenuState.isExFirst}
+                onPress={() => {
+                  handleMoveExercise(
+                    actionMenuState.templateId,
+                    actionMenuState.templateExercise.id,
+                    'up'
+                  );
+                  setActionMenuState(null);
+                }}
+              >
+                <Text style={styles.actionMenuItemIcon}>▲</Text>
+                <Text style={styles.actionMenuItemText}>Move Up</Text>
+              </TouchableOpacity>
+
+              {/* Move Down */}
+              <TouchableOpacity
+                testID={`exercise-move-down-${actionMenuState.templateExercise.id}`}
+                style={[
+                  styles.actionMenuItem,
+                  actionMenuState.isExLast && styles.actionMenuItemDisabled,
+                ]}
+                disabled={actionMenuState.isExLast}
+                onPress={() => {
+                  handleMoveExercise(
+                    actionMenuState.templateId,
+                    actionMenuState.templateExercise.id,
+                    'down'
+                  );
+                  setActionMenuState(null);
+                }}
+              >
+                <Text style={styles.actionMenuItemIcon}>▼</Text>
+                <Text style={styles.actionMenuItemText}>Move Down</Text>
+              </TouchableOpacity>
+
+              {/* Swap Exercise */}
+              <TouchableOpacity
+                testID={`swap-template-exercise-${actionMenuState.templateExercise.id}`}
+                style={styles.actionMenuItem}
+                onPress={() => {
+                  const targetTe = actionMenuState.templateExercise;
+                  const tmplId = actionMenuState.templateId;
+                  setActionMenuState(null);
+                  setCatalogPickerState({
+                    visible: true,
+                    mode: 'swap',
+                    templateId: tmplId,
+                    targetTemplateExercise: targetTe,
+                  });
+                }}
+              >
+                <Text style={styles.actionMenuItemIcon}>⇄</Text>
+                <Text style={styles.actionMenuItemText}>Swap Exercise</Text>
+              </TouchableOpacity>
+
+              {/* Superset Pair / Unlink */}
+              {actionMenuState.templateExercise.exercise_group_id ? (
+                <TouchableOpacity
+                  testID={`unlink-superset-btn-${actionMenuState.templateExercise.id}`}
+                  style={styles.actionMenuItem}
+                  onPress={() => {
+                    handleUnlinkSuperset(actionMenuState.templateExercise);
+                    setActionMenuState(null);
+                  }}
+                >
+                  <Text style={styles.actionMenuItemIcon}>⛓️‍💥</Text>
+                  <Text style={[styles.actionMenuItemText, { color: '#F59E0B' }]}>
+                    Unlink Superset
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  testID={`link-superset-btn-${actionMenuState.templateExercise.id}`}
+                  style={styles.actionMenuItem}
+                  onPress={() => {
+                    const sourceTe = actionMenuState.templateExercise;
+                    const tmplId = actionMenuState.templateId;
+                    setActionMenuState(null);
+                    setSupersetPickerState({
+                      visible: true,
+                      templateId: tmplId,
+                      sourceExercise: sourceTe,
+                    });
+                  }}
+                >
+                  <Text style={styles.actionMenuItemIcon}>🔗</Text>
+                  <Text style={styles.actionMenuItemText}>Pair Superset</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Delete Exercise */}
+              <TouchableOpacity
+                testID={`delete-template-exercise-${actionMenuState.templateExercise.id}`}
+                style={[styles.actionMenuItem, styles.actionMenuItemDestructive]}
+                onPress={() => {
+                  const teId = actionMenuState.templateExercise.id;
+                  setActionMenuState(null);
+                  handleDeleteTemplateExercise(teId);
+                }}
+              >
+                <Text style={[styles.actionMenuItemIcon, { color: '#EF4444' }]}>✕</Text>
+                <Text style={[styles.actionMenuItemText, { color: '#EF4444' }]}>
+                  Delete Exercise
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </View>
   );
 };
@@ -1700,5 +1808,83 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     opacity: 0.3,
+  },
+  overflowMenuBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  overflowMenuBtnText: {
+    color: '#E4E4E7',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  actionMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'flex-end',
+  },
+  actionMenuCard: {
+    backgroundColor: '#121214',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    padding: 16,
+    paddingBottom: 32,
+  },
+  actionMenuHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#27272A',
+    paddingBottom: 12,
+    marginBottom: 8,
+  },
+  actionMenuTitle: {
+    color: '#FAFAFA',
+    fontSize: 15,
+    fontWeight: '800',
+    flex: 1,
+  },
+  actionMenuClose: {
+    color: '#71717A',
+    fontSize: 16,
+    fontWeight: '700',
+    padding: 4,
+  },
+  actionMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#18181B',
+    gap: 12,
+  },
+  actionMenuItemDisabled: {
+    opacity: 0.35,
+  },
+  actionMenuItemDestructive: {
+    borderBottomWidth: 0,
+    marginTop: 4,
+  },
+  actionMenuItemIcon: {
+    fontSize: 16,
+    color: '#FAFAFA',
+    width: 24,
+    textAlign: 'center',
+  },
+  actionMenuItemText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FAFAFA',
   },
 });

@@ -360,21 +360,27 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
 
   // Month navigation
   const handlePrevMonth = () => {
-    if (currentMonth === 0) {
-      setCurrentMonth(11);
-      setCurrentYear((y) => y - 1);
-    } else {
-      setCurrentMonth((m) => m - 1);
+    let newYear = currentYear;
+    let newMonth = currentMonth - 1;
+    if (newMonth < 0) {
+      newMonth = 11;
+      newYear -= 1;
     }
+    setCurrentMonth(newMonth);
+    setCurrentYear(newYear);
+    setSelectedDate(toIsoDate(newYear, newMonth, 1));
   };
 
   const handleNextMonth = () => {
-    if (currentMonth === 11) {
-      setCurrentMonth(0);
-      setCurrentYear((y) => y + 1);
-    } else {
-      setCurrentMonth((m) => m + 1);
+    let newYear = currentYear;
+    let newMonth = currentMonth + 1;
+    if (newMonth > 11) {
+      newMonth = 0;
+      newYear += 1;
     }
+    setCurrentMonth(newMonth);
+    setCurrentYear(newYear);
+    setSelectedDate(toIsoDate(newYear, newMonth, 1));
   };
 
   const handleJumpToToday = () => {
@@ -654,40 +660,55 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
         </View>
       )}
 
-      {/* Selected Date Agenda Header — only visible when there are workouts to display or a manual session can be added */}
-      {(selectedDateWorkouts.length > 0 || onStartWorkout) && (
-        <View style={styles.agendaHeaderRow}>
-          <View>
-            <Text style={styles.agendaDateTitle}>
-              {formatFriendlyDate(selectedDate)}
-            </Text>
-            <Text style={styles.agendaDateSubtitle}>
-              {selectedDateWorkouts.length === 0
-                ? 'No workouts logged'
-                : `${selectedDateWorkouts.length} workout${
-                    selectedDateWorkouts.length > 1 ? 's' : ''
-                  } recorded`}
-            </Text>
-          </View>
-
-          {onStartWorkout && (
-            <TouchableOpacity
-              style={styles.addWorkoutButton}
-              onPress={() => onStartWorkout(selectedDate)}
-              accessibilityLabel="Start Workout for Date"
-            >
-              <Text style={styles.addWorkoutButtonText}>+ New Session</Text>
-            </TouchableOpacity>
-          )}
+      {/* Selected Date Agenda Header */}
+      <View style={styles.agendaHeaderRow}>
+        <View>
+          <Text style={styles.agendaDateTitle}>
+            {formatFriendlyDate(selectedDate)}
+          </Text>
+          <Text style={styles.agendaDateSubtitle}>
+            {selectedDateWorkouts.length === 0
+              ? 'No workouts logged'
+              : `${selectedDateWorkouts.length} workout${
+                  selectedDateWorkouts.length > 1 ? 's' : ''
+                } recorded`}
+          </Text>
         </View>
-      )}
 
-      {/* Workouts List for Selected Date — collapsed to null when no workouts on this date to save screen space */}
+        {onStartWorkout && (
+          <TouchableOpacity
+            style={styles.addWorkoutButton}
+            onPress={() => onStartWorkout(selectedDate)}
+            accessibilityLabel="Start Workout for Date"
+          >
+            <Text style={styles.addWorkoutButtonText}>+ New Session</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Workouts List for Selected Date */}
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator color="#00E676" size="small" />
         </View>
-      ) : selectedDateWorkouts.length === 0 ? null : (
+      ) : selectedDateWorkouts.length === 0 ? (
+        <View testID="calendar-empty-day-card" style={styles.emptyDayCard}>
+          <Text style={styles.emptyDayTitle}>Rest / Recovery Day 🌿</Text>
+          <Text style={styles.emptyDaySubtitle}>
+            No training logged for this day. Rest is when muscle and connective tissue adapt.
+          </Text>
+          {onStartWorkout && (
+            <TouchableOpacity
+              testID="calendar-start-empty-day-workout-btn"
+              style={styles.startEmptyDayWorkoutBtn}
+              onPress={() => onStartWorkout(selectedDate)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.startEmptyDayWorkoutBtnText}>+ Log Workout</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
         <View style={styles.workoutsListContent}>
           {selectedDateWorkouts.map((w) => (
             <TouchableOpacity
@@ -1182,5 +1203,41 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  emptyDayCard: {
+    backgroundColor: '#121215',
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+    borderRadius: 8,
+    padding: 16,
+    marginHorizontal: 16,
+    marginVertical: 10,
+    alignItems: 'center',
+  },
+  emptyDayTitle: {
+    color: '#FAFAFA',
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  emptyDaySubtitle: {
+    color: '#71717A',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 12,
+    lineHeight: 16,
+  },
+  startEmptyDayWorkoutBtn: {
+    backgroundColor: '#14291B',
+    borderColor: '#00E676',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  startEmptyDayWorkoutBtnText: {
+    color: '#00E676',
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

@@ -61,10 +61,17 @@ import { PainReportModal } from './PainReportModal';
 import { CrashRecoveryDialog } from './CrashRecoveryDialog';
 import { SupersetBracketGroup } from './SupersetBracketGroup';
 import { ProgressionProposalBanner } from './ProgressionProposalBanner';
+import { WarmupAssessmentModal } from './WarmupAssessmentModal';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
 import { SessionDetailModal } from '../calendar/SessionDetailModal';
 import { useKeepAwake } from 'expo-keep-awake';
-import { generateWarmupSets } from '../../core/math/warmupEstimator';
+import {
+  generateWarmupSets,
+  isLastWarmupSet,
+  WarmupPerceptionRating,
+} from '../../core/math/warmupEstimator';
+import { calculateHeuristic1RM } from '../../core/math/heuristic1rm';
+import { formatWeight } from '../../core/math/unitConversion';
 
 export interface WorkoutDurationTickerProps {
   startedAt?: string | null;
@@ -118,6 +125,91 @@ export function formatElapsedDuration(startedAt?: string | null): string {
   return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs
     .toString()
     .padStart(2, '0')}`;
+}
+
+/**
+ * Resolves the next exercise to focus/scroll to within a superset group upon set completion.
+ * Cycles circularly through exercises, prioritizing those with incomplete sets.
+ */
+export function resolveNextSupersetExercise(
+  currentExerciseId: string,
+  exercises: { exercise: { id: string }; sets: { id: string }[] }[],
+  completedSetIds: Set<string>
+): string | null {
+  if (exercises.length <= 1) return null;
+  const currentIdx = exercises.findIndex((e) => e.exercise.id === currentExerciseId);
+  if (currentIdx === -1) return null;
+
+  const n = exercises.length;
+  // Circular search for the next exercise that still has incomplete sets
+  for (let step = 1; step < n; step++) {
+    const candidateIdx = (currentIdx + step) % n;
+    const candidate = exercises[candidateIdx];
+    const hasIncomplete = candidate.sets.some((s) => !completedSetIds.has(s.id));
+    if (hasIncomplete) {
+      return candidate.exercise.id;
+    }
+  }
+
+  // Fallback to next circular exercise
+  return exercises[(currentIdx + 1) % n].exercise.id;
+}
+
+/**
+ * Formats a list of completed sets into a concise summary string.
+ * Converts consecutive identical sets (e.g. 85x5, 85x5, 85x5) into compacted notation (85 kg × 5 × 3).
+ */
+export function formatSessionSetsSummary(
+  sets: WorkoutSet[],
+  exercise: Exercise,
+  unitSystem: WeightUnit = 'kg'
+): string {
+  const workingSets = sets.filter((s) => s.set_type !== 'warmup');
+  const setsToDisplay = workingSets.length > 0 ? workingSets : sets;
+  if (setsToDisplay.length === 0) return '';
+
+  const isPerHand = exercise.load_mode === 'per_hand';
+  const isUnilateral = exercise.is_unilateral;
+
+  // Run-length encoding of consecutive identical sets
+  const groups: {
+    weightStr: string;
+    repsStr: string;
+    intensityStr: string;
+    count: number;
+    key: string;
+  }[] = [];
+
+  for (const s of setsToDisplay) {
+    const load = isPerHand ? s.weight / 2 : s.weight;
+    const weightStr =
+      s.weight > 0 ? `${formatWeight(load, unitSystem)}${isPerHand ? ' (×2)' : ''}` : 'BW';
+    const repsStr =
+      isUnilateral && s.reps_right != null ? `${s.reps}/${s.reps_right}` : `${s.reps}`;
+    const intensityStr =
+      s.rpe != null ? ` @${s.rpe}` : s.rir != null ? ` @${s.rir}RIR` : '';
+    const key = `${s.weight}_${s.reps}_${s.reps_right ?? ''}_${s.rpe ?? ''}_${s.rir ?? ''}`;
+
+    const prevGroup = groups[groups.length - 1];
+    if (prevGroup && prevGroup.key === key) {
+      prevGroup.count += 1;
+    } else {
+      groups.push({
+        weightStr,
+        repsStr,
+        intensityStr,
+        count: 1,
+        key,
+      });
+    }
+  }
+
+  return groups
+    .map((g) => {
+      const setCountStr = g.count > 1 ? ` × ${g.count}` : '';
+      return `${g.weightStr} × ${g.repsStr}${setCountStr}${g.intensityStr}`;
+    })
+    .join(', ');
 }
 
 export interface ActiveLoggerScreenProps {
@@ -185,18 +277,43 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [sets, setSets] = useState<WorkoutSet[]>([]);
   const [completedSetIds, setCompletedSetIds] = useState<Set<string>>(new Set());
+  const completedSetIdsRef = useRef<Set<string>>(completedSetIds);
+
+  useEffect(() => {
+    completedSetIdsRef.current = completedSetIds;
+  }, [completedSetIds]);
+
   const [expandedExerciseIds, setExpandedExerciseIds] = useState<Set<string>>(new Set());
   const [expandedWarmupExercises, setExpandedWarmupExercises] = useState<Set<string>>(new Set());
   const [autoWarmupMode, setAutoWarmupMode] = useState<AutoWarmupMode>('smart_compounds');
   const cardOffsetsRef = useRef<Record<string, number>>({});
+  const supersetContainerYRef = useRef<number>(0);
+  const mainScrollViewRef = useRef<ScrollView>(null);
+  const [activeSupersetExerciseId, setActiveSupersetExerciseId] = useState<string | null>(null);
   const [markIncompleteAsComplete, setMarkIncompleteAsComplete] = useState<boolean>(false);
   const [exerciseMap, setExerciseMap] = useState<Map<string, Exercise>>(new Map());
   const [gearMap, setGearMap] = useState<Map<string, GearInventory>>(new Map());
   const [ghostSetsByExercise, setGhostSetsByExercise] = useState<Map<string, WorkoutSet[]>>(new Map());
+  const [exercisePrMap, setExercisePrMap] = useState<
+    Map<
+      string,
+      {
+        best1RMKg: number | null;
+        best1RMDate: string | null;
+        bestE1RMKg: number | null;
+        bestE1RMDate: string | null;
+      }
+    >
+  >(new Map());
+  const [exerciseHistoryMap, setExerciseHistoryMap] = useState<
+    Map<string, { workoutId: string; date: string; sets: WorkoutSet[] }[]>
+  >(new Map());
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
   const [intensityMetric, setIntensityMetric] = useState<IntensityMetric>('RPE');
   const [loading, setLoading] = useState<boolean>(true);
   const [expandedSetId, setExpandedSetId] = useState<string | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const railScrollViewRef = useRef<ScrollView>(null);
 
   // Modals state
   const [recoveryData, setRecoveryData] = useState<CrashRecoveryPromptData | null>(null);
@@ -232,6 +349,21 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   });
 
   const [painAlertBanner, setPainAlertBanner] = useState<string | null>(null);
+
+  // Warm-Up Set Autoregulation Assessment State (ADR-082)
+  const [warmupAssessmentTarget, setWarmupAssessmentTarget] = useState<{
+    visible: boolean;
+    exercise: Exercise | null;
+    warmupSet: WorkoutSet | null;
+    plannedWorkingWeightKg: number;
+    remainingWorkSetsCount: number;
+  }>({
+    visible: false,
+    exercise: null,
+    warmupSet: null,
+    plannedWorkingWeightKg: 0,
+    remainingWorkSetsCount: 0,
+  });
 
   const [showAddExerciseModal, setShowAddExerciseModal] = useState<boolean>(false);
   const [showFullLibraryModal, setShowFullLibraryModal] = useState<boolean>(false);
@@ -358,6 +490,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
             currentCompleted = new Set(parsed);
+            completedSetIdsRef.current = currentCompleted;
             setCompletedSetIds(currentCompleted);
           }
         }
@@ -366,18 +499,107 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       }
     }
 
-    // Fetch ghost sets for each unique exercise
+    // Fetch ghost sets, PR records, and last 3 sessions for each unique exercise
     const uniqueExerciseIds = Array.from(new Set(session.sets.map((s) => s.exercise_id)));
     const ghostMap = new Map<string, WorkoutSet[]>();
+    const prMap = new Map<
+      string,
+      {
+        best1RMKg: number | null;
+        best1RMDate: string | null;
+        bestE1RMKg: number | null;
+        bestE1RMDate: string | null;
+      }
+    >();
+    const historyMap = new Map<
+      string,
+      { workoutId: string; date: string; sets: WorkoutSet[] }[]
+    >();
+
+    // Load completed workouts once to associate workout dates
+    let completedWorkoutMap = new Map<string, Workout>();
+    try {
+      const completedWorkouts = await workoutRepo.findAll({ status: 'completed' });
+      completedWorkoutMap = new Map(completedWorkouts.map((w) => [w.id, w]));
+    } catch (err) {
+      console.warn('Failed to fetch completed workouts for history lookup:', err);
+    }
 
     await Promise.all(
       uniqueExerciseIds.map(async (exId) => {
         const ghosts = await sessionService.getGhostSetsForExercise(exId);
         ghostMap.set(exId, ghosts);
+
+        try {
+          const historicalSets = await workoutRepo.getHistoricalSetsForExercise(exId, {
+            onlyCompletedWorkouts: true,
+          });
+          const pastSets = historicalSets.filter((s) => s.workout_id !== workoutId);
+
+          // All-time 1RM: heaviest single completed rep (reps === 1)
+          let best1RMKg: number | null = null;
+          let best1RMDate: string | null = null;
+          const singleSets = pastSets.filter((s) => s.reps === 1 && s.weight > 0);
+          for (const s of singleSets) {
+            if (best1RMKg === null || s.weight > best1RMKg) {
+              best1RMKg = s.weight;
+              const w = completedWorkoutMap.get(s.workout_id);
+              best1RMDate = w?.date || s.created_at?.split('T')[0] || null;
+            }
+          }
+
+          // All-time e1RM: peak Lombardi formula estimation across all completed sets
+          let bestE1RMKg: number | null = null;
+          let bestE1RMDate: string | null = null;
+          for (const s of pastSets) {
+            if (s.weight > 0 && s.reps > 0) {
+              const e1rm = calculateHeuristic1RM(s.weight, s.reps, {
+                rpe: s.rpe,
+                rir: s.rir,
+              });
+              if (e1rm > 0 && (bestE1RMKg === null || e1rm > bestE1RMKg)) {
+                bestE1RMKg = e1rm;
+                const w = completedWorkoutMap.get(s.workout_id);
+                bestE1RMDate = w?.date || s.created_at?.split('T')[0] || null;
+              }
+            }
+          }
+
+          prMap.set(exId, { best1RMKg, best1RMDate, bestE1RMKg, bestE1RMDate });
+
+          // Group past sets by session
+          const sessionSetsMap = new Map<string, WorkoutSet[]>();
+          for (const s of pastSets) {
+            if (!sessionSetsMap.has(s.workout_id)) {
+              sessionSetsMap.set(s.workout_id, []);
+            }
+            sessionSetsMap.get(s.workout_id)!.push(s);
+          }
+
+          const sessions = Array.from(sessionSetsMap.entries()).map(([wId, wSets]) => {
+            const w = completedWorkoutMap.get(wId);
+            const date = w?.date || wSets[0]?.created_at?.split('T')[0] || '';
+            return {
+              workoutId: wId,
+              date,
+              sets: wSets.sort((a, b) => a.set_number - b.set_number),
+            };
+          });
+
+          // Sort sessions descending by date
+          sessions.sort((a, b) => b.date.localeCompare(a.date));
+
+          // Retain last 3 sessions
+          historyMap.set(exId, sessions.slice(0, 3));
+        } catch (err) {
+          console.warn(`Failed to compute PR/history for exercise ${exId}:`, err);
+        }
       })
     );
 
     setGhostSetsByExercise(ghostMap);
+    setExercisePrMap(prMap);
+    setExerciseHistoryMap(historyMap);
 
     // Independent multi-card expansion: Expand all exercises in the workout by default
     setExpandedExerciseIds((prev) => {
@@ -500,6 +722,148 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     setActiveProposal(null);
   };
 
+  // Group sets by exercise
+  const exercisesWithSets = useMemo(() => {
+    const map = new Map<string, WorkoutSet[]>();
+    for (const s of sets) {
+      const arr = map.get(s.exercise_id) || [];
+      arr.push(s);
+      map.set(s.exercise_id, arr);
+    }
+
+    return Array.from(map.entries()).map(([exerciseId, exerciseSets]) => {
+      const exercise = exerciseMap.get(exerciseId) || {
+        id: exerciseId,
+        name: 'Unknown Exercise',
+        muscle_group: 'Other',
+        category: 'Other',
+        is_compound: false,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'total',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 20.0,
+        is_custom: false,
+        parent_exercise_id: null,
+        standard_lift_type: null,
+        default_rest_seconds: 90,
+      } as Exercise;
+
+      return {
+        exercise,
+        sets: exerciseSets.sort((a, b) => a.set_number - b.set_number),
+      };
+    });
+  }, [sets, exerciseMap]);
+
+  type RenderableWorkoutItem =
+    | { type: 'single'; exercise: Exercise; sets: WorkoutSet[] }
+    | { type: 'superset'; groupId: string; items: { exercise: Exercise; sets: WorkoutSet[] }[] };
+
+  const renderableWorkoutItems = useMemo<RenderableWorkoutItem[]>(() => {
+    const result: RenderableWorkoutItem[] = [];
+    const processedExerciseIds = new Set<string>();
+
+    for (const item of exercisesWithSets) {
+      if (processedExerciseIds.has(item.exercise.id)) continue;
+
+      const groupId = item.sets[0]?.exercise_group_id;
+      if (groupId) {
+        // Collect all exercises belonging to this group
+        const groupItems = exercisesWithSets.filter(
+          (other) => other.sets[0]?.exercise_group_id === groupId
+        );
+        groupItems.forEach((g) => processedExerciseIds.add(g.exercise.id));
+        result.push({
+          type: 'superset',
+          groupId,
+          items: groupItems,
+        });
+      } else {
+        processedExerciseIds.add(item.exercise.id);
+        result.push({
+          type: 'single',
+          exercise: item.exercise,
+          sets: item.sets,
+        });
+      }
+    }
+
+    return result;
+  }, [exercisesWithSets]);
+
+  // Auto-sync selectedItemId to the first item with incomplete sets if unset or invalid
+  useEffect(() => {
+    if (renderableWorkoutItems.length === 0) {
+      if (selectedItemId !== null) setSelectedItemId(null);
+      return;
+    }
+
+    const currentMatches = renderableWorkoutItems.some((item) =>
+      item.type === 'single' ? item.exercise.id === selectedItemId : item.groupId === selectedItemId
+    );
+
+    if (!selectedItemId || !currentMatches) {
+      const firstIncomplete = renderableWorkoutItems.find((item) => {
+        if (item.type === 'single') {
+          return item.sets.some((s) => !completedSetIds.has(s.id));
+        }
+        return item.items.some((sub) => sub.sets.some((s) => !completedSetIds.has(s.id)));
+      });
+      if (firstIncomplete) {
+        setSelectedItemId(
+          firstIncomplete.type === 'single' ? firstIncomplete.exercise.id : firstIncomplete.groupId
+        );
+      } else {
+        const first = renderableWorkoutItems[0];
+        setSelectedItemId(first.type === 'single' ? first.exercise.id : first.groupId);
+      }
+    }
+  }, [renderableWorkoutItems, completedSetIds, selectedItemId]);
+
+  // Selected item resolution
+  const selectedItem = useMemo(() => {
+    if (renderableWorkoutItems.length === 0) return null;
+    const found = renderableWorkoutItems.find((item) =>
+      item.type === 'single' ? item.exercise.id === selectedItemId : item.groupId === selectedItemId
+    );
+    return found || renderableWorkoutItems[0];
+  }, [renderableWorkoutItems, selectedItemId]);
+
+  const currentItemIndex = useMemo(() => {
+    if (!selectedItem) return 0;
+    return renderableWorkoutItems.indexOf(selectedItem);
+  }, [renderableWorkoutItems, selectedItem]);
+
+  // Smooth scroll rail when selected item changes
+  useEffect(() => {
+    if (!selectedItemId || renderableWorkoutItems.length === 0) return;
+    const idx = renderableWorkoutItems.findIndex((item) =>
+      item.type === 'single' ? item.exercise.id === selectedItemId : item.groupId === selectedItemId
+    );
+    if (idx >= 0 && railScrollViewRef.current) {
+      railScrollViewRef.current.scrollTo({
+        x: Math.max(0, (idx - 1) * 125),
+        animated: true,
+      });
+    }
+  }, [selectedItemId, renderableWorkoutItems]);
+
+  // Synchronize activeSupersetExerciseId when superset item is selected or changes
+  useEffect(() => {
+    if (selectedItem?.type === 'superset') {
+      const firstIncomplete = selectedItem.items.find((sub) =>
+        sub.sets.some((s) => !completedSetIds.has(s.id))
+      );
+      const targetId = firstIncomplete ? firstIncomplete.exercise.id : selectedItem.items[0]?.exercise.id;
+      if (targetId) {
+        setActiveSupersetExerciseId(targetId);
+      }
+    } else {
+      setActiveSupersetExerciseId(null);
+    }
+  }, [selectedItem?.type === 'superset' ? selectedItem.groupId : null]);
+
   // Add Set to Exercise
   const handleAddSet = async (exerciseId: string) => {
     if (!activeWorkout) return;
@@ -599,6 +963,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       setCompletedSetIds((prev) => {
         const next = new Set(prev);
         next.delete(setId);
+        completedSetIdsRef.current = next;
         if (userSettingsRepo && activeWorkout) {
           userSettingsRepo
             .set(`active_completed_set_ids_${activeWorkout.id}`, JSON.stringify(Array.from(next)))
@@ -611,14 +976,16 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
   // Toggle Set Complete (1-Tap Completion, Auto-Advance & Rest Timer Trigger)
   const handleToggleCompleteSet = (targetSet: WorkoutSet) => {
-    const isNowCompleted = !completedSetIds.has(targetSet.id);
-    const nextCompleted = new Set(completedSetIds);
+    const currentCompleted = completedSetIdsRef.current;
+    const isNowCompleted = !currentCompleted.has(targetSet.id);
+    const nextCompleted = new Set(currentCompleted);
 
     if (isNowCompleted) {
       nextCompleted.add(targetSet.id);
     } else {
       nextCompleted.delete(targetSet.id);
     }
+    completedSetIdsRef.current = nextCompleted;
     setCompletedSetIds(nextCompleted);
 
     if (userSettingsRepo && activeWorkout) {
@@ -628,29 +995,94 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     }
 
     if (isNowCompleted) {
-      // Auto-advance hybrid: Check if ALL sets of this exercise are now completed
-      const thisExSets = sets.filter((s) => s.exercise_id === targetSet.exercise_id);
-      const isThisExAllCompleted =
-        thisExSets.length > 0 && thisExSets.every((s) => nextCompleted.has(s.id));
+      // ADR-082: Diagnostic Warm-Up Set Autoregulation Trigger
+      if (isLastWarmupSet(targetSet, sets)) {
+        const uncompletedWorkSets = sets.filter(
+          (s) =>
+            s.exercise_id === targetSet.exercise_id &&
+            s.set_type !== 'warmup' &&
+            !nextCompleted.has(s.id)
+        );
 
-      if (isThisExAllCompleted) {
-        // Find next exercise with incomplete sets
-        const distinctExIds = Array.from(new Set(sets.map((s) => s.exercise_id)));
-        const currentIndex = distinctExIds.indexOf(targetSet.exercise_id);
-        let nextExId: string | null = null;
+        if (uncompletedWorkSets.length > 0) {
+          const plannedWeight =
+            uncompletedWorkSets[0].raw_input_weight > 0
+              ? uncompletedWorkSets[0].raw_input_weight
+              : uncompletedWorkSets[0].weight;
 
-        for (let i = 1; i < distinctExIds.length; i++) {
-          const candidateId = distinctExIds[(currentIndex + i) % distinctExIds.length];
-          const candidateSets = sets.filter((s) => s.exercise_id === candidateId);
-          const hasIncomplete = candidateSets.some((s) => !nextCompleted.has(s.id));
+          if (plannedWeight > 0) {
+            const exerciseObj = exerciseMap.get(targetSet.exercise_id);
+            if (exerciseObj) {
+              setWarmupAssessmentTarget({
+                visible: true,
+                exercise: exerciseObj,
+                warmupSet: targetSet,
+                plannedWorkingWeightKg: plannedWeight,
+                remainingWorkSetsCount: uncompletedWorkSets.length,
+              });
+            }
+          }
+        }
+      }
+
+      // Find current renderable item on the rail
+      const currentItem = renderableWorkoutItems.find((item) =>
+        item.type === 'single'
+          ? item.exercise.id === targetSet.exercise_id
+          : item.items.some((sub) => sub.exercise.id === targetSet.exercise_id)
+      );
+
+      // Check if current rail item (single or entire superset) is all complete
+      let isItemAllCompleted = false;
+      if (currentItem) {
+        if (currentItem.type === 'single') {
+          isItemAllCompleted = currentItem.sets.every((s) => nextCompleted.has(s.id));
+        } else {
+          isItemAllCompleted = currentItem.items.every((sub) =>
+            sub.sets.every((s) => nextCompleted.has(s.id))
+          );
+        }
+      }
+
+      if (isItemAllCompleted && currentItem) {
+        // Auto-advance to next item on the rail with incomplete sets
+        const currentIndex = renderableWorkoutItems.indexOf(currentItem);
+        let nextItemId: string | null = null;
+
+        for (let i = 1; i < renderableWorkoutItems.length; i++) {
+          const candidate = renderableWorkoutItems[(currentIndex + i) % renderableWorkoutItems.length];
+          const hasIncomplete =
+            candidate.type === 'single'
+              ? candidate.sets.some((s) => !nextCompleted.has(s.id))
+              : candidate.items.some((sub) => sub.sets.some((s) => !nextCompleted.has(s.id)));
           if (hasIncomplete) {
-            nextExId = candidateId;
+            nextItemId = candidate.type === 'single' ? candidate.exercise.id : candidate.groupId;
             break;
           }
         }
 
+        if (nextItemId) {
+          setSelectedItemId(nextItemId);
+          setExpandedExerciseIds((prev) => new Set(prev).add(nextItemId!));
+        }
+      } else if (currentItem && currentItem.type === 'superset') {
+        // Intra-superset transition: smoothly scroll over to the other exercise in the superset
+        const nextExId = resolveNextSupersetExercise(
+          targetSet.exercise_id,
+          currentItem.items,
+          nextCompleted
+        );
         if (nextExId) {
-          setExpandedExerciseIds((prev) => new Set(prev).add(nextExId!));
+          setActiveSupersetExerciseId(nextExId);
+          const targetCardY = cardOffsetsRef.current[nextExId] || 0;
+          const supersetY = supersetContainerYRef.current || 0;
+          const scrollY = Math.max(0, supersetY + targetCardY - 8);
+          if (mainScrollViewRef.current) {
+            mainScrollViewRef.current.scrollTo({
+              y: scrollY,
+              animated: true,
+            });
+          }
         }
       }
 
@@ -708,17 +1140,27 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     }
   };
 
-  // 1-Tap Exercise Accordion Selection (Independent Multi-Card Expansion)
+  // 1-Tap Exercise Selection (Selects Item in Horizontal Rail)
   const handleSelectExercise = (exerciseId: string) => {
-    setExpandedExerciseIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(exerciseId)) {
-        next.delete(exerciseId);
-      } else {
-        next.add(exerciseId);
+    setExpandedExerciseIds((prev) => new Set(prev).add(exerciseId));
+    const parentGroup = renderableWorkoutItems.find(
+      (item) => item.type === 'superset' && item.items.some((i) => i.exercise.id === exerciseId)
+    );
+    if (parentGroup && parentGroup.type === 'superset') {
+      setSelectedItemId(parentGroup.groupId);
+      setActiveSupersetExerciseId(exerciseId);
+      const targetCardY = cardOffsetsRef.current[exerciseId] || 0;
+      const supersetY = supersetContainerYRef.current || 0;
+      const scrollY = Math.max(0, supersetY + targetCardY - 8);
+      if (mainScrollViewRef.current) {
+        mainScrollViewRef.current.scrollTo({
+          y: scrollY,
+          animated: true,
+        });
       }
-      return next;
-    });
+    } else {
+      setSelectedItemId(exerciseId);
+    }
   };
 
   // Open Plate Calculator Modal
@@ -766,6 +1208,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       templateId: activeWorkout.template_id,
     });
 
+    setSelectedItemId(newExercise.id);
     // Refresh workout
     await loadWorkout(activeWorkout.id);
   };
@@ -849,6 +1292,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
       if (nextExId) {
         setExpandedExerciseIds((prev) => new Set(prev).add(nextExId!));
+        handleSelectExercise(nextExId);
       }
 
       setPainAlertBanner(
@@ -856,6 +1300,104 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       );
       setTimeout(() => setPainAlertBanner(null), 6000);
     }
+  };
+
+  // Open Warm-Up Assessment Modal Manually (ADR-082)
+  const handleOpenWarmupAssessment = (warmupSet: WorkoutSet, exercise: Exercise) => {
+    const uncompletedWorkSets = sets.filter(
+      (s) =>
+        s.exercise_id === exercise.id &&
+        s.set_type !== 'warmup' &&
+        !completedSetIdsRef.current.has(s.id)
+    );
+
+    const referenceWorkSets =
+      uncompletedWorkSets.length > 0
+        ? uncompletedWorkSets
+        : sets.filter((s) => s.exercise_id === exercise.id && s.set_type !== 'warmup');
+
+    if (referenceWorkSets.length === 0) return;
+
+    const plannedWeight =
+      referenceWorkSets[0].raw_input_weight > 0
+        ? referenceWorkSets[0].raw_input_weight
+        : referenceWorkSets[0].weight;
+
+    if (plannedWeight <= 0) return;
+
+    setWarmupAssessmentTarget({
+      visible: true,
+      exercise,
+      warmupSet,
+      plannedWorkingWeightKg: plannedWeight,
+      remainingWorkSetsCount: referenceWorkSets.length,
+    });
+  };
+
+  // Apply Warm-Up Autoregulation Adjustment (ADR-082)
+  const handleApplyWarmupAdjustment = async (
+    rating: WarmupPerceptionRating,
+    adjustedLoadKg: number,
+    action?: 'apply_reduction' | 'groove_retry'
+  ) => {
+    if (!activeWorkout || !warmupAssessmentTarget.exercise || !warmupAssessmentTarget.warmupSet) {
+      setWarmupAssessmentTarget((prev) => ({ ...prev, visible: false }));
+      return;
+    }
+
+    const { exercise, warmupSet } = warmupAssessmentTarget;
+
+    if (action === 'groove_retry') {
+      // Groove Check Protocol: Rest 90s & Retry Warm-Up Single (Warm_up_estimator.md)
+      timerService.start(90, {
+        exerciseId: exercise.id,
+        exerciseGroupId: warmupSet.exercise_group_id,
+      });
+
+      const updatedNotes = warmupSet.set_notes
+        ? `${warmupSet.set_notes} • Sluggish (Groove Check 90s rest initiated)`
+        : 'Sluggish (Groove Check 90s rest initiated)';
+      await handleUpdateSet(warmupSet.id, { set_notes: updatedNotes });
+      setWarmupAssessmentTarget((prev) => ({ ...prev, visible: false }));
+      return;
+    }
+
+    // Apply autoregulated load to all remaining uncompleted work sets
+    try {
+      const result = await sessionService.applyWarmupAutoregulation(
+        activeWorkout.id,
+        exercise.id,
+        rating,
+        {
+          completedSetIds: completedSetIdsRef.current,
+          hasRecentFatigueFlag: !!painAlertBanner,
+        }
+      );
+
+      // Synchronize in-memory sets state
+      setSets((prev) =>
+        prev.map((s) => {
+          const updated = result.updatedSets.find((u) => u.id === s.id);
+          return updated || s;
+        })
+      );
+
+      // Annotate the warmup set
+      const noteRating =
+        rating === 'hard' || rating === 'heavy' ? 'Heavy' : rating === 'light' ? 'Light' : 'Normal';
+      const updatedNotes = warmupSet.set_notes
+        ? `${warmupSet.set_notes} • Assessment: ${noteRating}`
+        : `Assessment: ${noteRating}`;
+      await handleUpdateSet(warmupSet.id, { set_notes: updatedNotes });
+    } catch (err) {
+      console.warn('Failed to apply warmup autoregulation:', err);
+    } finally {
+      setWarmupAssessmentTarget((prev) => ({ ...prev, visible: false }));
+    }
+  };
+
+  const handleDismissWarmupAssessment = () => {
+    setWarmupAssessmentTarget((prev) => ({ ...prev, visible: false }));
   };
 
   // Add Exercise from Catalog
@@ -889,6 +1431,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     }
 
     setExpandedExerciseIds((prev) => new Set(prev).add(exercise.id));
+    setSelectedItemId(exercise.id);
     await loadWorkout(activeWorkout.id);
   };
 
@@ -903,8 +1446,9 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     if (uncompletedSets.length > 0) {
       if (markIncompleteAsComplete) {
         // Mark remaining sets as completed
-        const nextCompleted = new Set(completedSetIds);
+        const nextCompleted = new Set(completedSetIdsRef.current);
         uncompletedSets.forEach((s) => nextCompleted.add(s.id));
+        completedSetIdsRef.current = nextCompleted;
         setCompletedSetIds(nextCompleted);
       } else {
         // Exclude uncompleted sets by deleting them from SQLite before final ledger commit
@@ -939,40 +1483,6 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     }
   };
 
-  // Group sets by exercise
-  const exercisesWithSets = useMemo(() => {
-    const map = new Map<string, WorkoutSet[]>();
-    for (const s of sets) {
-      const arr = map.get(s.exercise_id) || [];
-      arr.push(s);
-      map.set(s.exercise_id, arr);
-    }
-
-    return Array.from(map.entries()).map(([exerciseId, exerciseSets]) => {
-      const exercise = exerciseMap.get(exerciseId) || {
-        id: exerciseId,
-        name: 'Unknown Exercise',
-        muscle_group: 'Other',
-        category: 'Other',
-        is_compound: false,
-        is_bodyweight: false,
-        is_unilateral: false,
-        load_mode: 'total',
-        default_cable_ratio: 1.0,
-        default_bar_weight_kg: 20.0,
-        is_custom: false,
-        parent_exercise_id: null,
-        standard_lift_type: null,
-        default_rest_seconds: 90,
-      } as Exercise;
-
-      return {
-        exercise,
-        sets: exerciseSets.sort((a, b) => a.set_number - b.set_number),
-      };
-    });
-  }, [sets, exerciseMap]);
-
   // Open Superset Pairing Modal
   const handleOpenSupersetModal = (exercise: Exercise) => {
     setSupersetSourceExercise(exercise);
@@ -987,6 +1497,14 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       supersetSourceExercise.id,
       targetExerciseId,
     ]);
+    const refreshed = await sessionService.getActiveWorkout(activeWorkout.id);
+    if (refreshed) {
+      setSets(refreshed.sets);
+      const pairedSet = refreshed.sets.find((s) => s.exercise_id === supersetSourceExercise.id);
+      if (pairedSet?.exercise_group_id) {
+        setSelectedItemId(pairedSet.exercise_group_id);
+      }
+    }
     await loadWorkout(activeWorkout.id);
   };
 
@@ -994,6 +1512,15 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const handleUngroupSuperset = async (groupId: string) => {
     if (!activeWorkout) return;
     await sessionService.ungroupSuperset(activeWorkout.id, groupId);
+    const refreshed = await sessionService.getActiveWorkout(activeWorkout.id);
+    if (refreshed) {
+      setSets(refreshed.sets);
+      if (supersetSourceExercise) {
+        setSelectedItemId(supersetSourceExercise.id);
+      } else if (refreshed.sets.length > 0) {
+        setSelectedItemId(refreshed.sets[0].exercise_id);
+      }
+    }
     await loadWorkout(activeWorkout.id);
   };
 
@@ -1001,6 +1528,11 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const handleUngroupExercise = async (exerciseId: string) => {
     if (!activeWorkout) return;
     await sessionService.ungroupExercise(activeWorkout.id, exerciseId);
+    const refreshed = await sessionService.getActiveWorkout(activeWorkout.id);
+    if (refreshed) {
+      setSets(refreshed.sets);
+      setSelectedItemId(exerciseId);
+    }
     await loadWorkout(activeWorkout.id);
   };
 
@@ -1014,49 +1546,17 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       .filter((e): e is Exercise => !!e);
   }, [supersetSourceExercise, sets, exerciseMap]);
 
-  type RenderableWorkoutItem =
-    | { type: 'single'; exercise: Exercise; sets: WorkoutSet[] }
-    | { type: 'superset'; groupId: string; items: { exercise: Exercise; sets: WorkoutSet[] }[] };
-
-  const renderableWorkoutItems = useMemo<RenderableWorkoutItem[]>(() => {
-    const result: RenderableWorkoutItem[] = [];
-    const processedExerciseIds = new Set<string>();
-
-    for (const item of exercisesWithSets) {
-      if (processedExerciseIds.has(item.exercise.id)) continue;
-
-      const groupId = item.sets[0]?.exercise_group_id;
-      if (groupId) {
-        // Collect all exercises belonging to this group
-        const groupItems = exercisesWithSets.filter(
-          (other) => other.sets[0]?.exercise_group_id === groupId
-        );
-        groupItems.forEach((g) => processedExerciseIds.add(g.exercise.id));
-        result.push({
-          type: 'superset',
-          groupId,
-          items: groupItems,
-        });
-      } else {
-        processedExerciseIds.add(item.exercise.id);
-        result.push({
-          type: 'single',
-          exercise: item.exercise,
-          sets: item.sets,
-        });
-      }
-    }
-
-    return result;
-  }, [exercisesWithSets]);
-
-  const renderExerciseCard = (exercise: Exercise, exSets: WorkoutSet[]) => {
+  const renderExerciseCard = (
+    exercise: Exercise,
+    exSets: WorkoutSet[],
+    isInsideSuperset: boolean = false,
+    supersetPrefix?: string
+  ) => {
     const ghostSets = ghostSetsByExercise.get(exercise.id) || [];
     const isDumbbell = exercise.load_mode === 'per_hand';
     const firstSetGearId = exSets[0]?.gear_id;
     const gear = firstSetGearId ? gearMap.get(firstSetGearId) : null;
     const isGrouped = !!exSets[0]?.exercise_group_id;
-    const isExpanded = expandedExerciseIds.has(exercise.id);
     const isAllSetsCompleted = exSets.length > 0 && exSets.every((s) => completedSetIds.has(s.id));
 
     // Warm-up Sub-collapsing (Phase 4)
@@ -1072,244 +1572,301 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     return (
       <View
         key={exercise.id}
-        testID={`exercise-card-${exercise.id}`}
+        style={styles.exerciseCardWrapper}
         onLayout={(e) => {
           cardOffsetsRef.current[exercise.id] = e.nativeEvent.layout.y;
         }}
-        style={[
-          styles.exerciseCard,
-          isGrouped && styles.groupedExerciseCard,
-          !isExpanded && isAllSetsCompleted && styles.completedExerciseCard,
-        ]}
       >
-        {/* Exercise Header - 1-Tap Expand / Switch */}
+        <View
+          testID={`exercise-card-${exercise.id}`}
+          style={[
+            styles.exerciseCard,
+            isInsideSuperset && styles.supersetInnerCard,
+            isInsideSuperset && activeSupersetExerciseId === exercise.id && styles.supersetFocusedCard,
+            !isInsideSuperset && isGrouped && styles.groupedExerciseCard,
+            isAllSetsCompleted && styles.completedExerciseCard,
+          ]}
+        >
+        {/* Exercise Header */}
         <TouchableOpacity
           testID={`exercise-card-header-${exercise.id}`}
           style={[
             styles.exerciseCardHeader,
-            !isExpanded && isAllSetsCompleted && styles.completedExerciseCardHeader,
+            isAllSetsCompleted && styles.completedExerciseCardHeader,
           ]}
           onPress={() => handleSelectExercise(exercise.id)}
           activeOpacity={0.8}
         >
-          <View style={styles.exerciseTitleCol}>
-            <View style={styles.exerciseTitleRow}>
+          {/* Row 1: Full-width Exercise Title Row with Chevron */}
+          <View style={styles.exerciseTitleRow}>
+            <View style={styles.exerciseTitleLeft}>
+              {supersetPrefix && (
+                <View style={styles.supersetPrefixBadge}>
+                  <Text style={styles.supersetPrefixBadgeText}>{supersetPrefix}</Text>
+                </View>
+              )}
               <Text
                 style={[
                   styles.exerciseNameText,
-                  !isExpanded && isAllSetsCompleted && styles.completedExerciseNameText,
+                  isAllSetsCompleted && styles.completedExerciseNameText,
                 ]}
               >
                 {exercise.name}
               </Text>
+              {/* Gear Subtext Indicator & 1-Tap Implement Switcher (ADR-025) */}
+              {exercise.category === 'Barbell' || exercise.category === 'Cable' || gear ? (
+                <TouchableOpacity
+                  testID={`change-gear-button-${exercise.id}`}
+                  style={styles.gearPillBtn}
+                  onPress={() => setGearPickerExercise(exercise)}
+                  activeOpacity={0.7}
+                >
+                  <Text testID="gear-subtext-indicator" style={styles.gearSubtextInteractive}>
+                    ⚙ {gear
+                      ? `${gear.name} (${gear.tare_weight_kg} kg bar) ▾`
+                      : exercise.category === 'Barbell'
+                      ? `${exercise.default_bar_weight_kg || 20} kg Bar ▾`
+                      : exercise.default_cable_ratio !== 1.0
+                      ? `Cable Pulley (${exercise.default_cable_ratio}:1) ▾`
+                      : 'Standard Cable (1:1) ▾'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
               {isDumbbell && (
                 <View testID="dumbbell-header-badge" style={styles.dumbbellHeaderBadge}>
                   <Text style={styles.dumbbellHeaderBadgeText}>Dumbbell (×2)</Text>
                 </View>
               )}
-              {isGrouped && (
+              {!isInsideSuperset && isGrouped && (
                 <View style={styles.supersetBadge}>
                   <Text style={styles.supersetBadgeText}>SUPERSET</Text>
                 </View>
               )}
             </View>
-
-            {/* Gear Subtext Indicator & 1-Tap Implement Switcher (ADR-025) */}
-            {exercise.category === 'Barbell' || exercise.category === 'Cable' || gear ? (
-              <TouchableOpacity
-                testID={`change-gear-button-${exercise.id}`}
-                style={styles.gearPillBtn}
-                onPress={() => setGearPickerExercise(exercise)}
-                activeOpacity={0.7}
-              >
-                <Text testID="gear-subtext-indicator" style={styles.gearSubtextInteractive}>
-                  ⚙ {gear
-                    ? `${gear.name} (${gear.tare_weight_kg} kg bar) ▾`
-                    : exercise.category === 'Barbell'
-                    ? `${exercise.default_bar_weight_kg || 20} kg Bar ▾`
-                    : exercise.default_cable_ratio !== 1.0
-                    ? `Cable Pulley (${exercise.default_cable_ratio}:1) ▾`
-                    : 'Standard Cable (1:1) ▾'}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-
-            {/* SFR Warning Badge (ADR-072 / Phase 6) */}
-            {(() => {
-              const cp = calibratedParamsMap.get(exercise.id);
-              if (cp?.sfr_tier === 'POOR_SWAP_RECOMMENDED') {
-                return (
-                  <TouchableOpacity
-                    testID={`sfr-warning-badge-${exercise.id}`}
-                    style={styles.sfrWarningBadge}
-                    onPress={() => handleOpenSubstitution(exercise)}
-                    accessibilityLabel={`Low stimulus-to-fatigue ratio warning. Tap to swap ${exercise.name}`}
-                  >
-                    <Text style={styles.sfrWarningBadgeText}>⚠️ LOW SFR • SWAP RECOMMENDED</Text>
-                  </TouchableOpacity>
-                );
-              }
-              return null;
-            })()}
-          </View>
-
-          <View style={styles.headerRightActions}>
-            {/* Superset Group / Ungroup Action Button */}
-            {isGrouped ? (
-              <TouchableOpacity
-                testID={`ungroup-exercise-button-${exercise.id}`}
-                style={styles.unlinkButton}
-                onPress={() => handleUngroupExercise(exercise.id)}
-                accessibilityLabel={`Unlink ${exercise.name} from superset`}
-              >
-                <Text style={styles.unlinkButtonText}>UNLINK</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                testID={`group-superset-button-${exercise.id}`}
-                style={styles.linkButton}
-                onPress={() => handleOpenSupersetModal(exercise)}
-                accessibilityLabel={`Link ${exercise.name} into a superset`}
-              >
-                <Text style={styles.linkButtonText}>+ LINK</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* 1-Tap Exercise Swap Action (ADR-023) */}
-            <TouchableOpacity
-              testID={`swap-exercise-button-${exercise.id}`}
-              style={styles.swapButton}
-              onPress={() => handleOpenSubstitution(exercise)}
-              accessibilityLabel={`Swap ${exercise.name}`}
-            >
-              <Text style={styles.swapButtonText}>SWAP</Text>
-            </TouchableOpacity>
-
-            {/* In-Gym Pain Report Action */}
-            <TouchableOpacity
-              testID={`report-pain-button-${exercise.id}`}
-              style={styles.painButton}
-              onPress={() => handleOpenPainReport(exercise)}
-              accessibilityLabel={`Report pain for ${exercise.name}`}
-            >
-              <Text style={styles.painButtonText}>🩹 PAIN</Text>
-            </TouchableOpacity>
-
             <Text
               style={[
                 styles.expandChevron,
-                !isExpanded && isAllSetsCompleted && styles.completedExpandChevron,
+                isAllSetsCompleted && styles.completedExpandChevron,
               ]}
             >
-              {isExpanded ? '▼' : '▶'}
+              ▼
             </Text>
+          </View>
+
+          {/* Row 2: Header Sub-row: Left actions + Right stacked PRs */}
+          <View style={styles.exerciseHeaderSubRow}>
+            <View style={styles.headerSubRowLeft}>
+              {/* Action Pills Row: LINK / UNLINK, SWAP, PAIN */}
+              <View style={styles.headerActionPillsRow}>
+                {isGrouped ? (
+                  <TouchableOpacity
+                    testID={`ungroup-exercise-button-${exercise.id}`}
+                    style={styles.unlinkButton}
+                    onPress={() => handleUngroupExercise(exercise.id)}
+                    accessibilityLabel={`Unlink ${exercise.name} from superset`}
+                  >
+                    <Text style={styles.unlinkButtonText}>UNLINK</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    testID={`group-superset-button-${exercise.id}`}
+                    style={styles.linkButton}
+                    onPress={() => handleOpenSupersetModal(exercise)}
+                    accessibilityLabel={`Link ${exercise.name} into a superset`}
+                  >
+                    <Text style={styles.linkButtonText}>+ LINK</Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  testID={`swap-exercise-button-${exercise.id}`}
+                  style={styles.swapButton}
+                  onPress={() => handleOpenSubstitution(exercise)}
+                  accessibilityLabel={`Swap ${exercise.name}`}
+                >
+                  <Text style={styles.swapButtonText}>SWAP</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  testID={`report-pain-button-${exercise.id}`}
+                  style={styles.painButton}
+                  onPress={() => handleOpenPainReport(exercise)}
+                  accessibilityLabel={`Report pain for ${exercise.name}`}
+                >
+                  <Text style={styles.painButtonText}>🩹 PAIN</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* SFR Warning Badge (ADR-072 / Phase 6) */}
+              {(() => {
+                const cp = calibratedParamsMap.get(exercise.id);
+                if (cp?.sfr_tier === 'POOR_SWAP_RECOMMENDED') {
+                  return (
+                    <TouchableOpacity
+                      testID={`sfr-warning-badge-${exercise.id}`}
+                      style={styles.sfrWarningBadge}
+                      onPress={() => handleOpenSubstitution(exercise)}
+                      accessibilityLabel={`Low stimulus-to-fatigue ratio warning. Tap to swap ${exercise.name}`}
+                    >
+                      <Text style={styles.sfrWarningBadgeText}>⚠️ LOW SFR • SWAP RECOMMENDED</Text>
+                    </TouchableOpacity>
+                  );
+                }
+                return null;
+              })()}
+            </View>
+
+            {/* 1RM and e1RM PR Stack (attached to the right, stacked vertically) */}
+            {(() => {
+              const prData = exercisePrMap.get(exercise.id);
+              const best1RMText =
+                prData?.best1RMKg != null
+                  ? `${formatWeight(prData.best1RMKg, unitSystem)} (${prData.best1RMDate || '—'})`
+                  : '—';
+              const bestE1RMText =
+                prData?.bestE1RMKg != null
+                  ? `${formatWeight(prData.bestE1RMKg, unitSystem)} (${prData.bestE1RMDate || '—'})`
+                  : '—';
+
+              return (
+                <View testID={`pr-summary-${exercise.id}`} style={styles.prSummaryStack}>
+                  <Text style={styles.prSummaryText} numberOfLines={1}>
+                    1RM: {best1RMText}
+                  </Text>
+                  <Text style={styles.prSummaryText} numberOfLines={1}>
+                    e1RM: {bestE1RMText}
+                  </Text>
+                </View>
+              );
+            })()}
           </View>
         </TouchableOpacity>
 
-        {/* Show Table and Sets ONLY if expanded */}
-        {isExpanded && (
-          <View testID={`exercise-card-body-${exercise.id}`}>
-            {/* Sets Table Header Columns */}
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.tableHeaderCol, { minWidth: 46, marginRight: 6, textAlign: 'center' }]}>SET</Text>
-              <Text style={[styles.tableHeaderCol, { flex: 1, marginRight: 6 }]}>PREV</Text>
-              <Text style={[styles.tableHeaderCol, { minWidth: 68, marginRight: 6, textAlign: 'center' }]}>
-                {unitSystem.toUpperCase()}
-              </Text>
-              <Text style={[styles.tableHeaderCol, { minWidth: 48, marginRight: 6, textAlign: 'center' }]}>
-                {exercise.is_unilateral ? 'L / R' : 'REPS'}
-              </Text>
-              <Text style={[styles.tableHeaderCol, { minWidth: 48, marginRight: 4, textAlign: 'center' }]}>
-                {intensityMetric}
-              </Text>
-              <Text style={[styles.tableHeaderCol, { width: 24, marginRight: 4 }]} />
-              <Text style={[styles.tableHeaderCol, { width: 38, textAlign: 'center' }]}>✓</Text>
-            </View>
-
-            {/* Sub-Collapsed Completed Warm-Up Sets Banner (Phase 4) */}
-            {shouldSubCollapseWarmups && (
-              <TouchableOpacity
-                testID={`toggle-warmups-${exercise.id}`}
-                style={styles.completedWarmupsBanner}
-                onPress={() => {
-                  setExpandedWarmupExercises((prev) => new Set(prev).add(exercise.id));
-                }}
-                accessibilityLabel={`Show ${completedWarmups.length} completed warm-up sets for ${exercise.name}`}
-              >
-                <Text style={styles.completedWarmupsBannerText}>
-                  ✓ {completedWarmups.length} Warm-up Sets Completed (Tap to show)
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {isWarmupsExpanded && completedWarmups.length >= 2 && (
-              <TouchableOpacity
-                testID={`collapse-warmups-${exercise.id}`}
-                style={styles.collapseWarmupsBanner}
-                onPress={() => {
-                  setExpandedWarmupExercises((prev) => {
-                    const next = new Set(prev);
-                    next.delete(exercise.id);
-                    return next;
-                  });
-                }}
-                accessibilityLabel={`Hide completed warm-up sets for ${exercise.name}`}
-              >
-                <Text style={styles.collapseWarmupsBannerText}>
-                  ▴ Hide Completed Warm-up Sets
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Set Rows */}
-            {setsToRender.map((s) => {
-              const ghostSet = ghostSets.find((g) => g.set_number === s.set_number) || null;
-              const isCompleted = completedSetIds.has(s.id);
-
-              return (
-                <SetRowComponent
-                  key={s.id}
-                  set={s}
-                  exercise={exercise}
-                  ghostSet={ghostSet}
-                  unitSystem={unitSystem}
-                  intensityMetric={intensityMetric}
-                  isCompleted={isCompleted}
-                  isExpanded={expandedSetId === s.id}
-                  onToggleExpand={() =>
-                    setExpandedSetId((prev) => (prev === s.id ? null : s.id))
-                  }
-                  onUpdateSet={(fields) => handleUpdateSet(s.id, fields)}
-                  onDeleteSet={() => handleDeleteSet(s.id)}
-                  onToggleComplete={() => handleToggleCompleteSet(s)}
-                  onOpenPlateCalculator={() => handleOpenPlateCalc(s, exercise)}
-                />
-              );
-            })}
-
-            {/* Add Set & Warm-up Buttons */}
-            <View style={styles.setActionButtonRow}>
-              <TouchableOpacity
-                testID={`add-set-button-${exercise.id}`}
-                style={styles.addSetButton}
-                onPress={() => handleAddSet(exercise.id)}
-                accessibilityLabel={`Add set to ${exercise.name}`}
-              >
-                <Text style={styles.addSetButtonText}>+ ADD SET</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                testID={`generate-warmup-button-${exercise.id}`}
-                style={styles.addWarmupButton}
-                onPress={() => handleGenerateWarmupSets(exercise.id)}
-                accessibilityLabel={`Generate warm-up sets for ${exercise.name}`}
-              >
-                <Text style={styles.addWarmupButtonText}>⚡ WARM-UP</Text>
-              </TouchableOpacity>
-            </View>
+        {/* Sets Table Header & Body */}
+        <View testID={`exercise-card-body-${exercise.id}`}>
+          {/* Sets Table Header Columns */}
+          <View style={styles.tableHeaderRow}>
+            <Text style={[styles.tableHeaderCol, { minWidth: 46, marginRight: 6, textAlign: 'center' }]}>SET</Text>
+            <Text style={[styles.tableHeaderCol, { flex: 1, marginRight: 6 }]}>PREV</Text>
+            <Text style={[styles.tableHeaderCol, { minWidth: 68, marginRight: 6, textAlign: 'center' }]}>
+              {unitSystem.toUpperCase()}
+            </Text>
+            <Text style={[styles.tableHeaderCol, { width: 44, marginRight: 6, textAlign: 'center' }]}>
+              {exercise.is_unilateral ? 'L / R' : 'REPS'}
+            </Text>
+            <Text style={[styles.tableHeaderCol, { minWidth: 48, marginRight: 4, textAlign: 'center' }]}>
+              {intensityMetric}
+            </Text>
+            <Text style={[styles.tableHeaderCol, { width: 24, marginRight: 4 }]} />
+            <Text style={[styles.tableHeaderCol, { width: 26, textAlign: 'center' }]}>✓</Text>
           </View>
-        )}
+
+          {/* Sub-Collapsed Completed Warm-Up Sets Banner (Phase 4) */}
+          {shouldSubCollapseWarmups && (
+            <TouchableOpacity
+              testID={`toggle-warmups-${exercise.id}`}
+              style={styles.completedWarmupsBanner}
+              onPress={() => {
+                setExpandedWarmupExercises((prev) => new Set(prev).add(exercise.id));
+              }}
+              accessibilityLabel={`Show ${completedWarmups.length} completed warm-up sets for ${exercise.name}`}
+            >
+              <Text style={styles.completedWarmupsBannerText}>
+                ✓ {completedWarmups.length} Warm-up Sets Completed (Tap to show)
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {isWarmupsExpanded && completedWarmups.length >= 2 && (
+            <TouchableOpacity
+              testID={`collapse-warmups-${exercise.id}`}
+              style={styles.collapseWarmupsBanner}
+              onPress={() => {
+                setExpandedWarmupExercises((prev) => {
+                  const next = new Set(prev);
+                  next.delete(exercise.id);
+                  return next;
+                });
+              }}
+              accessibilityLabel={`Hide completed warm-up sets for ${exercise.name}`}
+            >
+              <Text style={styles.collapseWarmupsBannerText}>
+                ▴ Hide Completed Warm-up Sets
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Set Rows */}
+          {setsToRender.map((s) => {
+            const ghostSet = ghostSets.find((g) => g.set_number === s.set_number) || null;
+            const isCompleted = completedSetIds.has(s.id);
+            const isLastWarmup = isLastWarmupSet(s, sets);
+
+            return (
+              <SetRowComponent
+                key={s.id}
+                set={s}
+                exercise={exercise}
+                ghostSet={ghostSet}
+                unitSystem={unitSystem}
+                intensityMetric={intensityMetric}
+                isCompleted={isCompleted}
+                isExpanded={expandedSetId === s.id}
+                isLastWarmup={isLastWarmup}
+                onOpenWarmupAssessment={() => handleOpenWarmupAssessment(s, exercise)}
+                onToggleExpand={() =>
+                  setExpandedSetId((prev) => (prev === s.id ? null : s.id))
+                }
+                onUpdateSet={(fields) => handleUpdateSet(s.id, fields)}
+                onDeleteSet={() => handleDeleteSet(s.id)}
+                onToggleComplete={() => handleToggleCompleteSet(s)}
+                onOpenPlateCalculator={() => handleOpenPlateCalc(s, exercise)}
+              />
+            );
+          })}
+
+          {/* Add Set Button */}
+          <View style={styles.setActionButtonRow}>
+            <TouchableOpacity
+              testID={`add-set-button-${exercise.id}`}
+              style={styles.addSetButton}
+              onPress={() => handleAddSet(exercise.id)}
+              accessibilityLabel={`Add set to ${exercise.name}`}
+            >
+              <Text style={styles.addSetButtonText}>+ ADD SET</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
+
+      {/* Last 3 Sessions History (Strictly filtered to this exercise) */}
+      <View testID={`exercise-history-${exercise.id}`} style={styles.exerciseHistoryContainer}>
+        <Text style={styles.exerciseHistoryTitle}>LAST 3 SESSIONS</Text>
+        {(() => {
+          const history = exerciseHistoryMap.get(exercise.id);
+          if (!history || history.length === 0) {
+            return (
+              <Text style={styles.exerciseHistoryEmptyText}>
+                No previous completed sessions
+              </Text>
+            );
+          }
+
+          return history.map((session, idx) => {
+            const summaryText = formatSessionSetsSummary(session.sets, exercise, unitSystem);
+
+            return (
+              <View key={`${session.workoutId}-${idx}`} style={styles.exerciseHistoryRow}>
+                <Text style={styles.exerciseHistoryDateText}>{session.date}:</Text>
+                <Text style={styles.exerciseHistorySetsText} numberOfLines={1}>
+                  {summaryText}
+                </Text>
+              </View>
+            );
+          });
+        })()}
+      </View>
+    </View>
     );
   };
 
@@ -1370,43 +1927,192 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         </View>
       )}
 
-      {/* Main Exercise & Sets Scrollable List */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {renderableWorkoutItems.map((item) => {
-          if (item.type === 'superset') {
+      {/* Horizontal Superset Rail (Sticky Exercise Selector) */}
+      <View testID="exercise-rail" style={styles.railContainer}>
+        <ScrollView
+          ref={railScrollViewRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.railContent}
+        >
+          {renderableWorkoutItems.map((item, index) => {
+            if (item.type === 'superset') {
+              const isSelected = selectedItemId === item.groupId;
+              const totalSets = item.items.reduce((acc, sub) => acc + sub.sets.length, 0);
+              const completedSets = item.items.reduce(
+                (acc, sub) => acc + sub.sets.filter((s) => completedSetIds.has(s.id)).length,
+                0
+              );
+              const isAllDone = totalSets > 0 && completedSets === totalSets;
+              const groupLabel = item.items.map((i) => i.exercise.name).join(' + ');
+
+              return (
+                <TouchableOpacity
+                  key={item.groupId}
+                  testID={`rail-item-${item.groupId}`}
+                  style={[
+                    styles.railPill,
+                    styles.railSupersetPill,
+                    isSelected && styles.railPillSelected,
+                    isSelected && styles.railSupersetPillSelected,
+                    !isSelected && isAllDone && styles.railPillCompleted,
+                  ]}
+                  onPress={() => setSelectedItemId(item.groupId)}
+                  activeOpacity={0.8}
+                  accessibilityLabel={`Superset: ${groupLabel}, ${completedSets} of ${totalSets} sets complete`}
+                >
+                  <View style={styles.railPillContent}>
+                    <Text
+                      style={[
+                        styles.railSupersetIcon,
+                        isSelected && styles.railSupersetIconSelected,
+                        !isSelected && isAllDone && styles.railTextCompleted,
+                      ]}
+                    >
+                      🔗
+                    </Text>
+                    <Text
+                      style={[
+                        styles.railPillText,
+                        isSelected && styles.railPillTextSelected,
+                        !isSelected && isAllDone && styles.railTextCompleted,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {groupLabel}
+                    </Text>
+                    <View
+                      style={[
+                        styles.railCountBadge,
+                        isSelected && styles.railCountBadgeSelected,
+                        !isSelected && isAllDone && styles.railCountBadgeCompleted,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.railCountText,
+                          isSelected && styles.railCountTextSelected,
+                          !isSelected && isAllDone && styles.railCountTextCompleted,
+                        ]}
+                      >
+                        {isAllDone ? '✓' : `${completedSets}/${totalSets}`}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            }
+
+            // Single exercise pill
+            const isSelected = selectedItemId === item.exercise.id;
+            const totalSets = item.sets.length;
+            const completedSets = item.sets.filter((s) => completedSetIds.has(s.id)).length;
+            const isAllDone = totalSets > 0 && completedSets === totalSets;
+
             return (
-              <SupersetBracketGroup
-                key={item.groupId}
-                groupId={item.groupId}
-                exercises={item.items.map((i) => i.exercise)}
-                onUngroup={handleUngroupSuperset}
+              <TouchableOpacity
+                key={item.exercise.id}
+                testID={`rail-item-${item.exercise.id}`}
+                style={[
+                  styles.railPill,
+                  isSelected && styles.railPillSelected,
+                  !isSelected && isAllDone && styles.railPillCompleted,
+                ]}
+                onPress={() => setSelectedItemId(item.exercise.id)}
+                activeOpacity={0.8}
+                accessibilityLabel={`${item.exercise.name}, ${completedSets} of ${totalSets} sets complete`}
               >
-                {item.items.map(({ exercise, sets: exSets }) =>
-                  renderExerciseCard(exercise, exSets)
-                )}
-              </SupersetBracketGroup>
+                <View style={styles.railPillContent}>
+                  <Text
+                    style={[
+                      styles.railIndexBadge,
+                      isSelected && styles.railIndexBadgeSelected,
+                      !isSelected && isAllDone && styles.railIndexBadgeCompleted,
+                    ]}
+                  >
+                    {index + 1}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.railPillText,
+                      isSelected && styles.railPillTextSelected,
+                      !isSelected && isAllDone && styles.railTextCompleted,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {item.exercise.name}
+                  </Text>
+                  <View
+                    style={[
+                      styles.railCountBadge,
+                      isSelected && styles.railCountBadgeSelected,
+                      !isSelected && isAllDone && styles.railCountBadgeCompleted,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.railCountText,
+                        isSelected && styles.railCountTextSelected,
+                        !isSelected && isAllDone && styles.railCountTextCompleted,
+                      ]}
+                    >
+                      {isAllDone ? '✓' : `${completedSets}/${totalSets}`}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
             );
-          }
-          return renderExerciseCard(item.exercise, item.sets);
-        })}
+          })}
 
-        {/* Add Exercise Floating Action / Footer Button */}
-        <TouchableOpacity
-          testID="add-exercise-button"
-          style={styles.addExerciseButton}
-          onPress={() => setShowAddExerciseModal(true)}
-        >
-          <Text style={styles.addExerciseButtonText}>+ ADD EXERCISE</Text>
-        </TouchableOpacity>
+          {/* Quick Add Button in Rail */}
+          <TouchableOpacity
+            testID="rail-add-exercise-btn"
+            style={styles.railAddBtn}
+            onPress={() => setShowAddExerciseModal(true)}
+            activeOpacity={0.7}
+            accessibilityLabel="Add new exercise to workout"
+          >
+            <Text style={styles.railAddBtnText}>+</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
 
-        {/* Discard Session Link */}
-        <TouchableOpacity
-          testID="discard-workout-footer-button"
-          style={styles.discardFooterButton}
-          onPress={handleDiscardCurrentWorkout}
-        >
-          <Text style={styles.discardFooterText}>Discard Workout</Text>
-        </TouchableOpacity>
+      {/* Main Exercise & Sets Viewport */}
+      <ScrollView
+        ref={mainScrollViewRef}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {renderableWorkoutItems.length === 0 ? (
+          <View style={styles.emptySessionContainer}>
+            <Text style={styles.emptySessionTitle}>No Exercises In Session</Text>
+            <Text style={styles.emptySessionSubtitle}>
+              Add an exercise to start logging your training.
+            </Text>
+            <TouchableOpacity
+              testID="add-first-exercise-btn"
+              style={styles.emptyAddBtn}
+              onPress={() => setShowAddExerciseModal(true)}
+            >
+              <Text style={styles.emptyAddBtnText}>+ ADD EXERCISE</Text>
+            </TouchableOpacity>
+          </View>
+        ) : selectedItem?.type === 'superset' ? (
+          <View
+            testID={`superset-group-${selectedItem.groupId}`}
+            style={styles.activeSupersetContainer}
+            onLayout={(e) => {
+              supersetContainerYRef.current = e.nativeEvent.layout.y;
+            }}
+          >
+            {/* Render each paired exercise stacked */}
+            {selectedItem.items.map(({ exercise, sets: exSets }, subIdx) =>
+              renderExerciseCard(exercise, exSets, true, `A${subIdx + 1}`)
+            )}
+          </View>
+        ) : selectedItem?.type === 'single' ? (
+          renderExerciseCard(selectedItem.exercise, selectedItem.sets, false)
+        ) : null}
       </ScrollView>
 
       {/* Docked Rest Timer Banner (ADR-009 / Phase 4) */}
@@ -1518,6 +2224,19 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           onSubmit={handleSubmitPainReport}
         />
       )}
+
+      {/* Warm-Up Set Autoregulation Assessment Modal (ADR-082) */}
+      <WarmupAssessmentModal
+        visible={warmupAssessmentTarget.visible}
+        exercise={warmupAssessmentTarget.exercise}
+        warmupSet={warmupAssessmentTarget.warmupSet}
+        plannedWorkingWeightKg={warmupAssessmentTarget.plannedWorkingWeightKg}
+        remainingWorkSetsCount={warmupAssessmentTarget.remainingWorkSetsCount}
+        unitSystem={unitSystem}
+        hasRecentFatigueFlag={!!painAlertBanner}
+        onApplyAdjustment={handleApplyWarmupAdjustment}
+        onDismiss={handleDismissWarmupAssessment}
+      />
 
       {/* Crash Recovery Dialog */}
       <CrashRecoveryDialog
@@ -1695,6 +2414,31 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
                 <Text style={styles.confirmFinishButtonText}>Save & Finish</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Discard Workout Link with Confirmation Dialog */}
+            <TouchableOpacity
+              testID="discard-workout-finish-modal-button"
+              style={styles.discardModalButton}
+              onPress={() => {
+                Alert.alert(
+                  'Discard Workout?',
+                  'Are you sure you want to discard this workout? All logged sets and progress in this session will be permanently deleted.',
+                  [
+                    { text: 'Keep Lifting', style: 'cancel' },
+                    {
+                      text: 'Discard Workout',
+                      style: 'destructive',
+                      onPress: async () => {
+                        setShowFinishConfirmModal(false);
+                        await handleDiscardCurrentWorkout();
+                      },
+                    },
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.discardModalButtonText}>Discard Workout</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1888,12 +2632,325 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  railContainer: {
+    backgroundColor: '#09090B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#18181B',
+    paddingVertical: 8,
+  },
+  railContent: {
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  railPill: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    maxWidth: 200,
+  },
+  railSupersetPill: {
+    borderColor: '#1E293B',
+    backgroundColor: '#0F172A',
+  },
+  railPillSelected: {
+    backgroundColor: '#0F1A12',
+    borderColor: '#00E676',
+    borderWidth: 1.5,
+  },
+  railSupersetPillSelected: {
+    backgroundColor: '#0F172A',
+    borderColor: '#38BDF8',
+    borderWidth: 1.5,
+  },
+  railPillCompleted: {
+    backgroundColor: '#0F1A12',
+    borderColor: '#14532D',
+  },
+  railPillContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  railIndexBadge: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#71717A',
+  },
+  railIndexBadgeSelected: {
+    color: '#00E676',
+  },
+  railIndexBadgeCompleted: {
+    color: '#34D399',
+  },
+  railSupersetIcon: {
+    fontSize: 12,
+    color: '#60A5FA',
+  },
+  railSupersetIconSelected: {
+    color: '#38BDF8',
+  },
+  railPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#D4D4D8',
+    maxWidth: 110,
+  },
+  railPillTextSelected: {
+    color: '#FAFAFA',
+    fontWeight: '800',
+  },
+  railTextCompleted: {
+    color: '#86EFAC',
+  },
+  railCountBadge: {
+    backgroundColor: '#27272A',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 2,
+  },
+  railCountBadgeSelected: {
+    backgroundColor: '#00E676',
+  },
+  railCountBadgeCompleted: {
+    backgroundColor: '#14532D',
+  },
+  railCountText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#A1A1AA',
+  },
+  railCountTextSelected: {
+    color: '#000000',
+  },
+  railCountTextCompleted: {
+    color: '#86EFAC',
+  },
+  railAddBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1.5,
+    borderColor: '#3F3F46',
+    borderRadius: 18,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  railAddBtnText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#00E676',
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  supersetPrefixBadge: {
+    backgroundColor: '#1D4ED8',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  supersetPrefixBadgeText: {
+    color: '#DBEAFE',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  supersetInnerCard: {
+    marginBottom: 12,
+    borderColor: '#1E3A8A',
+  },
+  supersetFocusedCard: {
+    borderColor: '#3B82F6',
+    borderWidth: 1.5,
+  },
+  activeSupersetContainer: {
+    marginBottom: 16,
+  },
+  supersetQuickNavRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  supersetNavPill: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  supersetNavPillActive: {
+    backgroundColor: '#1E3A8A',
+    borderColor: '#60A5FA',
+  },
+  supersetNavPillDone: {
+    backgroundColor: '#064E3B',
+    borderColor: '#10B981',
+  },
+  supersetNavPillText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  supersetNavPillTextActive: {
+    color: '#FFFFFF',
+  },
+  supersetNavPillTextDone: {
+    color: '#A7F3D0',
+  },
+  supersetBannerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1E3A8A',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  supersetBannerInfo: {
+    flex: 1,
+  },
+  supersetBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  supersetGroupBadge: {
+    backgroundColor: '#1D4ED8',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  supersetGroupBadgeText: {
+    color: '#DBEAFE',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  supersetSubtitle: {
+    color: '#93C5FD',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  supersetExercisesSummary: {
+    color: '#FAFAFA',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  unlinkGroupButton: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  unlinkGroupButtonText: {
+    color: '#F87171',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  railNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#121215',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 10,
+    padding: 8,
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  railNavBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#3F3F46',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  railNavBtnDisabled: {
+    backgroundColor: '#121215',
+    borderColor: '#1E1E22',
+  },
+  railNavBtnText: {
+    color: '#FAFAFA',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  railNavBtnTextDisabled: {
+    color: '#3F3F46',
+  },
+  railNavProgressCenter: {
+    alignItems: 'center',
+  },
+  railNavProgressText: {
+    color: '#FAFAFA',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  railNavProgressSubtext: {
+    color: '#71717A',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+    maxWidth: 140,
+    textAlign: 'center',
+  },
+  emptySessionContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+    backgroundColor: '#09090B',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#18181B',
+    marginVertical: 20,
+  },
+  emptySessionTitle: {
+    color: '#FAFAFA',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  emptySessionSubtitle: {
+    color: '#71717A',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  emptyAddBtn: {
+    backgroundColor: '#00E676',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  emptyAddBtnText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  exerciseCardWrapper: {
+    marginBottom: 16,
+  },
   exerciseCard: {
     backgroundColor: '#09090B',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#18181B',
-    marginBottom: 16,
+    marginBottom: 0,
     overflow: 'hidden',
   },
   completedExerciseCard: {
@@ -1905,9 +2962,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
   },
   exerciseCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: 'column',
     padding: 12,
     backgroundColor: '#121215',
     borderBottomWidth: 1,
@@ -1917,14 +2972,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F1A12',
     borderBottomWidth: 0,
   },
-  exerciseTitleCol: {
-    flex: 1,
-  },
   exerciseTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+  },
+  exerciseTitleLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
+    flex: 1,
+    marginRight: 8,
+  },
+  exerciseHeaderSubRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    width: '100%',
+  },
+  headerSubRowLeft: {
+    flex: 1,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  headerActionPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
   },
   exerciseNameText: {
     fontSize: 16,
@@ -1963,8 +3042,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   gearPillBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
     backgroundColor: '#0F172A',
     borderWidth: 1,
     borderColor: '#1E293B',
@@ -2036,10 +3113,58 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '500',
   },
-  headerRightActions: {
+  prSummaryStack: {
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
+  },
+  prSummaryText: {
+    fontSize: 11,
+    color: '#A1A1AA',
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    lineHeight: 16,
+    textAlign: 'right',
+  },
+  exerciseHistoryContainer: {
+    backgroundColor: '#0C0C0E',
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 6,
+  },
+  exerciseHistoryTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#71717A',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  exerciseHistoryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginTop: 3,
+  },
+  exerciseHistoryDateText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#A1A1AA',
+    marginRight: 6,
+    fontVariant: ['tabular-nums'],
+  },
+  exerciseHistorySetsText: {
+    fontSize: 11,
+    color: '#D4D4D8',
+    flex: 1,
+    fontVariant: ['tabular-nums'],
+  },
+  exerciseHistoryEmptyText: {
+    fontSize: 11,
+    color: '#52525B',
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   expandChevron: {
     fontSize: 14,
@@ -2057,7 +3182,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 6,
-    marginLeft: 8,
   },
   swapButtonText: {
     fontSize: 11,
@@ -2071,7 +3195,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 6,
-    marginLeft: 4,
   },
   painButtonText: {
     fontSize: 11,
@@ -2300,6 +3423,17 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 14,
     fontWeight: '800',
+  },
+  discardModalButton: {
+    marginTop: 16,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discardModalButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#EF4444',
   },
   uncompletedSetsContainer: {
     backgroundColor: '#18181B',

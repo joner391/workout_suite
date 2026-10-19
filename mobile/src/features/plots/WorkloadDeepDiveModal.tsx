@@ -49,6 +49,22 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
   const [volumeMetricMode, setVolumeMetricMode] = useState<'ereps' | 'sets'>('ereps');
   const [deepDive, setDeepDive] = useState<WeeklyWorkloadDeepDive | null>(null);
+  const [expandedSections, setExpandedSections] = useState<{
+    landmarks: boolean;
+    daily: boolean;
+    intensity: boolean;
+  }>({
+    landmarks: true,
+    daily: false,
+    intensity: false,
+  });
+
+  const toggleSection = (section: 'landmarks' | 'daily' | 'intensity') => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -284,133 +300,185 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.cardSectionHeader}>
+              <TouchableOpacity
+                testID="deepdive-toggle-landmarks-btn"
+                style={styles.cardSectionHeaderTouch}
+                onPress={() => toggleSection('landmarks')}
+                activeOpacity={0.7}
+              >
                 <View>
                   <Text style={styles.cardSectionSubtitle}>
                     {volumeMetricMode === 'ereps' ? 'HYPERTROPHY LANDMARKS' : 'VOLUME LANDMARKS'}
                   </Text>
                   <Text style={styles.cardSectionTitle}>Muscle Group Volume</Text>
                 </View>
-                <View style={styles.landmarkLegend}>
-                  <Text style={styles.legendText}>
-                    {volumeMetricMode === 'ereps' ? 'Target: 20–48 eReps/wk' : 'Target: 8–18 sets/wk'}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={styles.landmarkLegend}>
+                    <Text style={styles.legendText}>
+                      {volumeMetricMode === 'ereps' ? 'Target: 20–48 eReps/wk' : 'Target: 8–18 sets/wk'}
+                    </Text>
+                  </View>
+                  <Text style={styles.accordionChevronText}>
+                    {expandedSections.landmarks ? '▲' : '▼'}
                   </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
 
-              {/* Coverage & Rating Disclosure */}
-              {volumeMetricMode === 'ereps' && (
-                <View testID="ereps-coverage-banner" style={styles.coverageBanner}>
-                  <Text style={styles.coverageText}>
-                    ⚡ Rated sets: {deepDive.totalRatedSets}/{deepDive.totalWorkingSets} ({deepDive.ratingCoveragePercent}%)
-                    {deepDive.totalUnratedSets > 0 &&
-                      ` • ${deepDive.totalUnratedSets} unrated sets omitted (0 eReps)`}
-                  </Text>
-                </View>
-              )}
+              {expandedSections.landmarks ? (
+                <>
+                  {/* Coverage & Rating Disclosure */}
+                  {volumeMetricMode === 'ereps' && (
+                    <View testID="ereps-coverage-banner" style={styles.coverageBanner}>
+                      <Text style={styles.coverageText}>
+                        ⚡ Rated sets: {deepDive.totalRatedSets}/{deepDive.totalWorkingSets} ({deepDive.ratingCoveragePercent}%)
+                        {deepDive.totalUnratedSets > 0 &&
+                          ` • ${deepDive.totalUnratedSets} unrated sets omitted (0 eReps)`}
+                      </Text>
+                    </View>
+                  )}
 
-              {deepDive.muscleGroupVolumes.length === 0 ? (
-                <Text style={styles.emptyCardText}>No completed workout sets logged for this week.</Text>
-              ) : (
-                <View style={styles.muscleList}>
-                  {deepDive.muscleGroupVolumes.map((m: MuscleGroupVolumeReport) => {
-                    const isEreps = volumeMetricMode === 'ereps';
-                    const displayVal = isEreps
-                      ? `${m.effectiveReps % 1 === 0 ? m.effectiveReps : m.effectiveReps.toFixed(1)} eReps`
-                      : `${m.workingSets % 1 === 0 ? m.workingSets : m.workingSets.toFixed(1)} sets`;
-                    const tier = isEreps ? m.effectiveRepsTier : m.tier;
-                    const color = getTierColor(tier);
-                    const progressFraction = isEreps
-                      ? Math.min(1.0, m.effectiveReps / 48)
-                      : Math.min(1.0, m.workingSets / 18);
+                  {deepDive.muscleGroupVolumes.length === 0 ? (
+                    <Text style={styles.emptyCardText}>No completed workout sets logged for this week.</Text>
+                  ) : (
+                    <View style={styles.muscleList}>
+                      {deepDive.muscleGroupVolumes.map((m: MuscleGroupVolumeReport) => {
+                        const isEreps = volumeMetricMode === 'ereps';
+                        const displayVal = isEreps
+                          ? `${m.effectiveReps % 1 === 0 ? m.effectiveReps : m.effectiveReps.toFixed(1)} eReps`
+                          : `${m.workingSets % 1 === 0 ? m.workingSets : m.workingSets.toFixed(1)} sets`;
+                        const tier = isEreps ? m.effectiveRepsTier : m.tier;
+                        const color = getTierColor(tier);
+                        const progressFraction = isEreps
+                          ? Math.min(1.0, m.effectiveReps / 48)
+                          : Math.min(1.0, m.workingSets / 18);
 
-                    return (
-                      <View key={m.muscleGroup} style={styles.muscleRow}>
-                        <View style={styles.muscleInfoRow}>
-                          <Text style={styles.muscleName}>{m.muscleGroup}</Text>
-                          <View style={styles.muscleStatsRight}>
-                            <Text style={styles.muscleSetsText}>{displayVal}</Text>
-                            <Text style={styles.muscleTonnageText}>
-                              ({formatWeight(m.totalTonnageKg, unitSystem)})
-                            </Text>
-                            <View style={[styles.tierPill, { backgroundColor: color + '22', borderColor: color }]}>
-                              <Text style={[styles.tierPillText, { color }]}>{getTierLabel(tier)}</Text>
+                        return (
+                          <View key={m.muscleGroup} style={styles.muscleRow}>
+                            <View style={styles.muscleInfoRow}>
+                              <Text style={styles.muscleName}>{m.muscleGroup}</Text>
+                              <View style={styles.muscleStatsRight}>
+                                <Text style={styles.muscleSetsText}>{displayVal}</Text>
+                                <Text style={styles.muscleTonnageText}>
+                                  ({formatWeight(m.totalTonnageKg, unitSystem)})
+                                </Text>
+                                <View style={[styles.tierPill, { backgroundColor: color + '22', borderColor: color }]}>
+                                  <Text style={[styles.tierPillText, { color }]}>{getTierLabel(tier)}</Text>
+                                </View>
+                              </View>
+                            </View>
+                            {/* Progress Bar */}
+                            <View style={styles.progressBarTrack}>
+                              <View
+                                style={[
+                                  styles.progressBarFill,
+                                  { width: `${Math.round(progressFraction * 100)}%`, backgroundColor: color },
+                                ]}
+                              />
                             </View>
                           </View>
-                        </View>
-                        {/* Progress Bar */}
-                        <View style={styles.progressBarTrack}>
-                          <View
-                            style={[
-                              styles.progressBarFill,
-                              { width: `${Math.round(progressFraction * 100)}%`, backgroundColor: color },
-                            ]}
-                          />
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.collapsedSummaryText}>
+                  {deepDive.muscleGroupVolumes.length} muscle groups tracked • Tap to inspect distribution
+                </Text>
               )}
             </View>
 
             {/* SECTION 2: DAILY SESSION WORKLOAD & TONNAGE */}
             <View style={styles.cardSection}>
-              <View style={styles.cardSectionHeader}>
+              <TouchableOpacity
+                testID="deepdive-toggle-daily-btn"
+                style={styles.cardSectionHeaderTouch}
+                onPress={() => toggleSection('daily')}
+                activeOpacity={0.7}
+              >
                 <View>
                   <Text style={styles.cardSectionSubtitle}>WEEKLY DISTRIBUTION</Text>
                   <Text style={styles.cardSectionTitle}>Daily Session Volume</Text>
                 </View>
-              </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.accordionSummaryPill}>
+                    {deepDive.completedWorkoutsCount} sessions
+                  </Text>
+                  <Text style={styles.accordionChevronText}>
+                    {expandedSections.daily ? '▲' : '▼'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
-              <View style={styles.dailyGrid}>
-                {deepDive.dailyWorkloads.map((day: DailyWorkloadSummary) => (
-                  <View
-                    key={day.date}
-                    style={[styles.dailyCard, day.hasWorkout ? styles.dailyCardActive : styles.dailyCardRest]}
-                  >
-                    <View style={styles.dailyCardHeader}>
-                      <Text style={[styles.dailyDayName, day.hasWorkout && styles.dailyDayNameActive]}>
-                        {day.dayName}
-                      </Text>
-                      <Text style={styles.dailyDateSub}>{day.date.slice(5)}</Text>
-                    </View>
+              {expandedSections.daily ? (
+                <View style={styles.dailyGrid}>
+                  {deepDive.dailyWorkloads.map((day: DailyWorkloadSummary) => (
+                    <View
+                      key={day.date}
+                      style={[styles.dailyCard, day.hasWorkout ? styles.dailyCardActive : styles.dailyCardRest]}
+                    >
+                      <View style={styles.dailyCardHeader}>
+                        <Text style={[styles.dailyDayName, day.hasWorkout && styles.dailyDayNameActive]}>
+                          {day.dayName}
+                        </Text>
+                        <Text style={styles.dailyDateSub}>{day.date.slice(5)}</Text>
+                      </View>
 
-                    {day.hasWorkout ? (
-                      <View style={styles.dailyCardBody}>
-                        <Text style={styles.dailyWorkoutName} numberOfLines={1}>
-                          {day.workoutName}
-                        </Text>
-                        <Text style={styles.dailyTonnageValue}>
-                          {formatWeight(day.tonnageKg, unitSystem)}
-                        </Text>
-                        <View style={styles.dailyMetricsRow}>
-                          <Text style={styles.dailySubInfo}>{day.workingSets} sets</Text>
-                          {day.avgRpe && (
-                            <Text style={styles.dailySubInfo}> • {day.avgRpe} RPE</Text>
-                          )}
+                      {day.hasWorkout ? (
+                        <View style={styles.dailyCardBody}>
+                          <Text style={styles.dailyWorkoutName} numberOfLines={1}>
+                            {day.workoutName}
+                          </Text>
+                          <Text style={styles.dailyTonnageValue}>
+                            {formatWeight(day.tonnageKg, unitSystem)}
+                          </Text>
+                          <View style={styles.dailyMetricsRow}>
+                            <Text style={styles.dailySubInfo}>{day.workingSets} sets</Text>
+                            {day.avgRpe && (
+                              <Text style={styles.dailySubInfo}> • {day.avgRpe} RPE</Text>
+                            )}
+                          </View>
                         </View>
-                      </View>
-                    ) : (
-                      <View style={styles.dailyRestBody}>
-                        <Text style={styles.dailyRestText}>Rest Day</Text>
-                      </View>
-                    )}
-                  </View>
-                ))}
-              </View>
+                      ) : (
+                        <View style={styles.dailyRestBody}>
+                          <Text style={styles.dailyRestText}>Rest Day</Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.collapsedSummaryText}>
+                  {deepDive.completedWorkoutsCount} completed sessions ({formatWeight(deepDive.totalTonnageKg, unitSystem)}) • Tap to view daily breakdown
+                </Text>
+              )}
             </View>
 
             {/* SECTION 3: DUAL INTENSITY INTELLIGENCE */}
             <View style={styles.cardSection}>
-              <View style={styles.cardSectionHeader}>
+              <TouchableOpacity
+                testID="deepdive-toggle-intensity-btn"
+                style={styles.cardSectionHeaderTouch}
+                onPress={() => toggleSection('intensity')}
+                activeOpacity={0.7}
+              >
                 <View>
                   <Text style={styles.cardSectionSubtitle}>PROXIMITY & LOAD</Text>
                   <Text style={styles.cardSectionTitle}>Intensity Intelligence</Text>
                 </View>
-              </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.accordionSummaryPill}>
+                    {deepDive.intensity.avgRpe ? `${deepDive.intensity.avgRpe} RPE` : 'Effort & Load'}
+                  </Text>
+                  <Text style={styles.accordionChevronText}>
+                    {expandedSections.intensity ? '▲' : '▼'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
-              {/* 3A: Effort Intensity (RPE) */}
+              {expandedSections.intensity ? (
+                <>
+                  {/* 3A: Effort Intensity (RPE) */}
               <View style={styles.intensityCard}>
                 <View style={styles.intensityCardTitleRow}>
                   <Text style={styles.intensityCardLabel}>1. Effort Intensity (Proximity to Failure)</Text>
@@ -501,8 +569,14 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                   })}
                 </View>
               </View>
-            </View>
-          </ScrollView>
+            </>
+          ) : (
+            <Text style={styles.collapsedSummaryText}>
+              Avg RPE: {deepDive.intensity.avgRpe ?? '—'} • Relative Load: {deepDive.intensity.avgRelativeIntensityPercent ?? '—'}% of e1RM • Tap header to inspect
+            </Text>
+          )}
+        </View>
+      </ScrollView>
         )}
       </View>
     </Modal>
@@ -700,6 +774,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 12,
+  },
+  cardSectionHeaderTouch: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  accordionSummaryPill: {
+    color: '#38BDF8',
+    backgroundColor: '#0C2A38',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  accordionChevronText: {
+    color: '#A1A1AA',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  collapsedSummaryText: {
+    color: '#71717A',
+    fontSize: 11,
+    paddingVertical: 4,
+    fontStyle: 'italic',
   },
   cardSectionSubtitle: {
     color: '#71717A',

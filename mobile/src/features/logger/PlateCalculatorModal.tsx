@@ -13,11 +13,12 @@
  * - "Apply to Set" 1-tap action
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Modal,
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -72,8 +73,20 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
   onApplyWeight,
   onClose,
 }) => {
-  const [targetWeight, setTargetWeight] = useState<number>(initialWeightKg > 0 ? initialWeightKg : initialBarTareKg);
+  const initialValue = initialWeightKg > 0 ? initialWeightKg : initialBarTareKg;
+  const [targetWeight, setTargetWeight] = useState<number>(initialValue);
   const [barTare, setBarTare] = useState<number>(initialBarTareKg);
+  const [rawText, setRawText] = useState<string>(String(initialValue));
+
+  // Sync state whenever modal is opened or initial props change
+  useEffect(() => {
+    if (visible) {
+      const init = initialWeightKg > 0 ? initialWeightKg : initialBarTareKg;
+      setTargetWeight(init);
+      setRawText(String(init));
+      setBarTare(initialBarTareKg);
+    }
+  }, [visible, initialWeightKg, initialBarTareKg]);
 
   // Re-calculate plates per side
   const calculation = useMemo(() => {
@@ -96,8 +109,27 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
   const handleAdjustWeight = (delta: number) => {
     setTargetWeight((prev) => {
       const next = Math.max(0, Math.round((prev + delta) * 100) / 100);
+      setRawText(String(next));
       return next;
     });
+  };
+
+  // Direct numeric input adjustment
+  const handleTextChange = (text: string) => {
+    const normalized = text.replace(',', '.');
+    const cleaned = normalized.replace(/[^0-9.]/g, '');
+    const parts = cleaned.split('.');
+    const sanitized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+    setRawText(sanitized);
+
+    if (sanitized === '' || sanitized === '.') {
+      setTargetWeight(0);
+    } else {
+      const parsed = parseFloat(sanitized);
+      if (!isNaN(parsed) && parsed >= 0) {
+        setTargetWeight(parsed);
+      }
+    }
   };
 
   const handleApply = () => {
@@ -138,11 +170,25 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Target Weight Header & Steppers */}
+            {/* Target Weight Header, Numeric Input & Steppers */}
             <View style={styles.targetSection}>
               <Text style={styles.targetLabel}>TOTAL BARBELL WEIGHT</Text>
-              <Text testID="plate-calc-target-weight" style={styles.targetValueText}>
-                {targetWeight.toFixed(2).replace(/\.00$/, '')} <Text style={styles.targetUnit}>kg</Text>
+              <View style={styles.targetInputContainer}>
+                <TextInput
+                  testID="plate-calc-target-input"
+                  style={styles.targetNumericInput}
+                  keyboardType="decimal-pad"
+                  value={rawText}
+                  onChangeText={handleTextChange}
+                  selectTextOnFocus
+                  placeholder="0"
+                  placeholderTextColor="#71717A"
+                  accessibilityLabel="Target barbell weight in kg"
+                />
+                <Text style={styles.targetUnit}>kg</Text>
+              </View>
+              <Text testID="plate-calc-target-weight" style={styles.targetSubDisplay}>
+                {targetWeight.toFixed(2).replace(/\.00$/, '')} kg
               </Text>
 
               {/* Quick Stepper Row */}
@@ -379,6 +425,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#71717A',
     letterSpacing: 1,
+  },
+  targetInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+    marginBottom: 2,
+    gap: 8,
+  },
+  targetNumericInput: {
+    backgroundColor: '#18181B',
+    borderWidth: 1.5,
+    borderColor: '#38BDF8',
+    borderRadius: 8,
+    color: '#38BDF8',
+    fontSize: 32,
+    fontWeight: '900',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    textAlign: 'center',
+    minWidth: 130,
+  },
+  targetSubDisplay: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#71717A',
+    marginBottom: 4,
   },
   targetValueText: {
     fontSize: 40,

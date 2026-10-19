@@ -4,6 +4,7 @@ import {
   calculateWarmupAutoregulation,
   calculateBackoffLoad,
   calculateHelmsRpeOvershootAdjustment,
+  isLastWarmupSet,
 } from '../warmupEstimator';
 
 describe('warmupEstimator', () => {
@@ -94,16 +95,24 @@ describe('warmupEstimator', () => {
       expect(result.percentageAdjustment).toBe(0);
     });
 
-    it('applies -5% load drop for hard warm-up rating', () => {
-      const result = calculateWarmupAutoregulation(100, 'hard', 2.5, false);
-      expect(result.adjustedLoadKg).toBe(95);
-      expect(result.percentageAdjustment).toBe(-0.05);
+    it('applies -5% load drop for hard/heavy warm-up rating', () => {
+      const resultHard = calculateWarmupAutoregulation(100, 'hard', 2.5, false);
+      expect(resultHard.adjustedLoadKg).toBe(95);
+      expect(resultHard.percentageAdjustment).toBe(-0.05);
+
+      const resultHeavy = calculateWarmupAutoregulation(100, 'heavy', 2.5, false);
+      expect(resultHeavy.adjustedLoadKg).toBe(95);
+      expect(resultHeavy.percentageAdjustment).toBe(-0.05);
     });
 
-    it('applies -7.5% load drop for hard warm-up when fatigue is flagged', () => {
-      const result = calculateWarmupAutoregulation(100, 'hard', 2.5, true);
-      expect(result.adjustedLoadKg).toBe(92.5);
-      expect(result.percentageAdjustment).toBe(-0.075);
+    it('applies -7.5% load drop for hard/heavy warm-up when fatigue is flagged', () => {
+      const resultHard = calculateWarmupAutoregulation(100, 'hard', 2.5, true);
+      expect(resultHard.adjustedLoadKg).toBe(92.5);
+      expect(resultHard.percentageAdjustment).toBe(-0.075);
+
+      const resultHeavy = calculateWarmupAutoregulation(100, 'heavy', 2.5, true);
+      expect(resultHeavy.adjustedLoadKg).toBe(92.5);
+      expect(resultHeavy.percentageAdjustment).toBe(-0.075);
     });
   });
 
@@ -125,6 +134,42 @@ describe('warmupEstimator', () => {
       expect(calculateHelmsRpeOvershootAdjustment(100, 9.0, 8.0, 2.5)).toBe(95); // 100 * 0.96 = 96 -> 95kg quantized
       // Overshoot by 1.5 RPE (9.5 vs 8.0) -> 3 units -> 6% drop
       expect(calculateHelmsRpeOvershootAdjustment(100, 9.5, 8.0, 2.5)).toBe(95); // 100 * 0.94 = 94 -> 95kg quantized
+    });
+  });
+
+  describe('isLastWarmupSet', () => {
+    const mockSets = [
+      { id: 's1', exercise_id: 'ex1', set_type: 'warmup', set_number: 1 },
+      { id: 's2', exercise_id: 'ex1', set_type: 'warmup', set_number: 2 },
+      { id: 's3', exercise_id: 'ex1', set_type: 'warmup', set_number: 3 },
+      { id: 's4', exercise_id: 'ex1', set_type: 'working', set_number: 4 },
+      { id: 's5', exercise_id: 'ex1', set_type: 'working', set_number: 5 },
+      { id: 's6', exercise_id: 'ex2', set_type: 'warmup', set_number: 1 },
+    ];
+
+    it('returns true for the warmup set with the highest set number for the exercise', () => {
+      expect(isLastWarmupSet(mockSets[2], mockSets)).toBe(true);
+    });
+
+    it('returns false for preceding warmup sets for the exercise', () => {
+      expect(isLastWarmupSet(mockSets[0], mockSets)).toBe(false);
+      expect(isLastWarmupSet(mockSets[1], mockSets)).toBe(false);
+    });
+
+    it('returns false for working sets', () => {
+      expect(isLastWarmupSet(mockSets[3], mockSets)).toBe(false);
+      expect(isLastWarmupSet(mockSets[4], mockSets)).toBe(false);
+    });
+
+    it('handles solitary single warmup set for an exercise', () => {
+      expect(isLastWarmupSet(mockSets[5], mockSets)).toBe(true);
+    });
+
+    it('returns false when no warmup sets exist for the exercise', () => {
+      const workingOnlySets = [
+        { id: 'w1', exercise_id: 'ex3', set_type: 'working', set_number: 1 },
+      ];
+      expect(isLastWarmupSet(workingOnlySets[0], workingOnlySets)).toBe(false);
     });
   });
 });

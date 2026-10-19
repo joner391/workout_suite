@@ -698,32 +698,60 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
     }
   }, [workoutRepo, unitSystem]);
 
-  // Master refresh controller
+  // Base metadata loader on mount
+  useEffect(() => {
+    let isMounted = true;
+    loadBaseMetadata();
+    return () => {
+      isMounted = false;
+    };
+  }, [loadBaseMetadata]);
+
+  // Selective lazy-loader conditioned on activeTab
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
-    Promise.all([
-      loadBaseMetadata(),
-      loadE1RMData(),
-      loadBodyweightData(),
-      loadBodyFatData(),
-      loadElbmData(),
-      loadCircumferencesData(),
-      loadVolumeData(),
-    ]).finally(() => {
-      if (isMounted) setLoading(false);
-    });
+
+    const loadActiveChartData = async () => {
+      try {
+        switch (activeTab) {
+          case 'e1rm':
+            await loadE1RMData();
+            break;
+          case 'volume':
+            await loadVolumeData();
+            break;
+          case 'bodyweight':
+            await loadBodyweightData();
+            break;
+          case 'body_fat':
+            await loadBodyFatData();
+            break;
+          case 'elbm':
+            await loadElbmData();
+            break;
+          case 'circumferences':
+            await loadCircumferencesData();
+            break;
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadActiveChartData();
+
     return () => {
       isMounted = false;
     };
   }, [
-    loadBaseMetadata,
+    activeTab,
     loadE1RMData,
+    loadVolumeData,
     loadBodyweightData,
     loadBodyFatData,
     loadElbmData,
     loadCircumferencesData,
-    loadVolumeData,
   ]);
 
   return (

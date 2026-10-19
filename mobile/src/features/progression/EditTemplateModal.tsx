@@ -12,6 +12,8 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { WorkoutTemplate } from '../../core/types';
 
@@ -46,7 +48,10 @@ export const EditTemplateModal: React.FC<EditTemplateModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.overlay}
+      >
         <View testID="edit-template-modal" style={styles.content}>
           <Text style={styles.title}>Edit Workout Day</Text>
 
@@ -88,7 +93,7 @@ export const EditTemplateModal: React.FC<EditTemplateModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

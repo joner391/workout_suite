@@ -56,7 +56,11 @@ export interface SettingsScreenProps {
   importService?: ImportService;
   calibratedParamService?: CalibratedParamService;
   onSettingsChange?: () => void;
+  initialShowImport?: boolean;
+  onNavigateToCalendar?: () => void;
 }
+
+export type SettingsSection = 'preferences' | 'tools' | 'data' | 'about';
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   userSettingsRepo,
@@ -72,16 +76,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   importService,
   calibratedParamService,
   onSettingsChange,
+  initialShowImport = false,
+  onNavigateToCalendar,
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
   const [intensityMetric, setIntensityMetric] = useState<IntensityMetric>('RPE');
   const [pureUtilityMode, setPureUtilityMode] = useState<boolean>(false);
   const [autoWarmupMode, setAutoWarmupMode] = useState<AutoWarmupMode>('smart_compounds');
+  const [activeSection, setActiveSection] = useState<SettingsSection>(
+    initialShowImport ? 'data' : 'preferences'
+  );
 
   const [showExerciseLibrary, setShowExerciseLibrary] = useState<boolean>(false);
-  const [showImportScreen, setShowImportScreen] = useState<boolean>(false);
+  const [showImportScreen, setShowImportScreen] = useState<boolean>(initialShowImport);
   const [showProgramOverview, setShowProgramOverview] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (initialShowImport) {
+      setActiveSection('data');
+      setShowImportScreen(true);
+    }
+  }, [initialShowImport]);
 
   const [exporting, setExporting] = useState<boolean>(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
@@ -219,6 +235,85 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </Text>
       </View>
 
+      {/* Category Segmented Control */}
+      <View style={styles.sectionTabBar} testID="settings-section-tab-bar">
+        <TouchableOpacity
+          testID="settings-tab-preferences"
+          style={[
+            styles.sectionTabBtn,
+            activeSection === 'preferences' && styles.sectionTabBtnActive,
+          ]}
+          onPress={() => setActiveSection('preferences')}
+          accessibilityLabel="Preferences Tab"
+        >
+          <Text
+            style={[
+              styles.sectionTabText,
+              activeSection === 'preferences' && styles.sectionTabTextActive,
+            ]}
+          >
+            Preferences
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          testID="settings-tab-tools"
+          style={[
+            styles.sectionTabBtn,
+            activeSection === 'tools' && styles.sectionTabBtnActive,
+          ]}
+          onPress={() => setActiveSection('tools')}
+          accessibilityLabel="Tools Tab"
+        >
+          <Text
+            style={[
+              styles.sectionTabText,
+              activeSection === 'tools' && styles.sectionTabTextActive,
+            ]}
+          >
+            Tools
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          testID="settings-tab-data"
+          style={[
+            styles.sectionTabBtn,
+            activeSection === 'data' && styles.sectionTabBtnActive,
+          ]}
+          onPress={() => setActiveSection('data')}
+          accessibilityLabel="Data Tab"
+        >
+          <Text
+            style={[
+              styles.sectionTabText,
+              activeSection === 'data' && styles.sectionTabTextActive,
+            ]}
+          >
+            Data
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          testID="settings-tab-about"
+          style={[
+            styles.sectionTabBtn,
+            activeSection === 'about' && styles.sectionTabBtnActive,
+          ]}
+          onPress={() => setActiveSection('about')}
+          accessibilityLabel="About Tab"
+        >
+          <Text
+            style={[
+              styles.sectionTabText,
+              activeSection === 'about' && styles.sectionTabTextActive,
+            ]}
+          >
+            About
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color="#00E676" size="large" />
@@ -230,8 +325,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
         >
-          {/* Section: Units & Calculations */}
-          <Text style={styles.sectionTitle}>UNITS & DISPLAY</Text>
+          {activeSection === 'preferences' && (
+            <>
+              {/* Section: Units & Calculations */}
+              <Text style={styles.sectionTitle}>UNITS & DISPLAY</Text>
 
           <View style={styles.settingCard}>
             <View style={styles.settingHeader}>
@@ -444,7 +541,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
+        </>
+      )}
 
+      {activeSection === 'tools' && (
+        <>
           {/* Section: Gym Equipment & Library */}
           <Text style={styles.sectionTitle}>EXERCISE CATALOG & EQUIPMENT</Text>
 
@@ -492,7 +593,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Text style={styles.disabledText}>Program repository not connected</Text>
             )}
           </View>
+        </>
+      )}
 
+      {activeSection === 'data' && (
+        <>
           {/* Section: Data & Backup (Step 2.3) */}
           <Text style={styles.sectionTitle}>DATA & BACKUP</Text>
 
@@ -605,7 +710,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               )}
             </TouchableOpacity>
           </View>
+        </>
+      )}
 
+      {activeSection === 'about' && (
+        <>
           {/* Section: Storage & Diagnostics */}
           <Text style={styles.sectionTitle}>LOCAL STORAGE & ENGINE</Text>
 
@@ -693,7 +802,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               datSet does not track, sell, or transmit any health or personal data to remote servers or third-party analytics providers.
             </Text>
           </View>
-        </ScrollView>
+        </>
+      )}
+    </ScrollView>
       )}
 
 
@@ -755,6 +866,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               )
             }
             onClose={() => setShowImportScreen(false)}
+            onNavigateToCalendar={() => {
+              setShowImportScreen(false);
+              if (onNavigateToCalendar) {
+                onNavigateToCalendar();
+              }
+            }}
             onImportComplete={(result) => {
               setImportStatus(
                 `Successfully imported ${result.importedWorkoutsCount} workouts (${result.importedSetsCount} sets)`
@@ -794,6 +911,37 @@ const styles = StyleSheet.create({
     color: '#A1A1AA',
     marginTop: 2,
     fontWeight: '600',
+  },
+  sectionTabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#121214',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#27272A',
+    gap: 8,
+  },
+  sectionTabBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1E1E22',
+  },
+  sectionTabBtnActive: {
+    backgroundColor: '#27272A',
+    borderWidth: 1,
+    borderColor: '#00E676',
+  },
+  sectionTabText: {
+    color: '#A1A1AA',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sectionTabTextActive: {
+    color: '#00E676',
+    fontWeight: '800',
   },
   loadingContainer: {
     flex: 1,

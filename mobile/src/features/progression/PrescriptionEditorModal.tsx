@@ -15,6 +15,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { TemplateExercise, GearInventory } from '../../core/types';
 
@@ -81,7 +83,10 @@ export const PrescriptionEditorModal: React.FC<PrescriptionEditorModalProps> = (
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.overlay}
+      >
         <View testID="prescription-editor-modal" style={styles.content}>
           <Text style={styles.title}>Edit Prescription</Text>
           <Text style={styles.exerciseName} numberOfLines={1}>
@@ -268,7 +273,7 @@ export const PrescriptionEditorModal: React.FC<PrescriptionEditorModalProps> = (
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

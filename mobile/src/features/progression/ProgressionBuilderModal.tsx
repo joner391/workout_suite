@@ -31,6 +31,47 @@ import {
   createDynamicDoubleProgressionRule,
 } from '../../core/rules/progressionRuleEngine';
 
+export function formatProgressionRuleSummary(rule: ProgressionRule): string {
+  const def =
+    typeof rule.rule_json === 'string'
+      ? JSON.parse(rule.rule_json)
+      : rule.rule_json;
+
+  const conditionMap: Record<string, (threshold?: number) => string> = {
+    ALL_SETS_HIT_TARGET_REPS: () => 'all sets hit target reps',
+    ANY_SET_HIT_TOP_REP_RANGE: () => 'any set hits top of rep range',
+    AVERAGE_RPE_LESS_THAN: (t) => `average RPE < ${t ?? 8}`,
+    CONSECUTIVE_SUCCESSFUL_SESSIONS: (t) =>
+      `${t ?? 1} consecutive successful session${(t ?? 1) > 1 ? 's' : ''}`,
+    CONSECUTIVE_FAILED_SESSIONS: (t) =>
+      `${t ?? 2} consecutive failed session${(t ?? 2) > 1 ? 's' : ''} (plateau)`,
+  };
+
+  const actionMap: Record<string, (val: number) => string> = {
+    INCREASE_LOAD_FIXED: (v) => `add +${v} kg`,
+    INCREASE_LOAD_PERCENT: (v) => `increase load by ${v}%`,
+    DECREASE_LOAD_FIXED: (v) => `decrease load by ${v} kg`,
+    INCREASE_TARGET_REPS: (v) => `increase target reps by +${v || 1}`,
+    TRIGGER_DELOAD: (v) => `trigger deload (-${v || 10}%)`,
+  };
+
+  const conditionText = def.conditions
+    ?.map((c: any) =>
+      conditionMap[c.type]
+        ? conditionMap[c.type](c.threshold)
+        : `${c.type}${c.threshold != null ? ` (${c.threshold})` : ''}`
+    )
+    .join(' AND ');
+
+  const actionText = def.actions
+    ?.map((a: any) =>
+      actionMap[a.type] ? actionMap[a.type](a.value) : `${a.type}: ${a.value}`
+    )
+    .join(', ');
+
+  return `When ${conditionText} ➔ ${actionText}`;
+}
+
 export interface ProgressionBuilderModalProps {
   visible: boolean;
   templateExercise: TemplateExercise | null;
@@ -162,22 +203,8 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
     }
   };
 
-  const formatRuleSummary = (rule: ProgressionRule): string => {
-    const def =
-      typeof rule.rule_json === 'string'
-        ? JSON.parse(rule.rule_json)
-        : rule.rule_json;
+  const formatRuleSummary = formatProgressionRuleSummary;
 
-    const conditionText = def.conditions
-      ?.map((c: any) => `${c.type}${c.threshold != null ? ` (${c.threshold})` : ''}`)
-      .join(' AND ');
-
-    const actionText = def.actions
-      ?.map((a: any) => `${a.type}: ${a.value}`)
-      .join(', ');
-
-    return `IF [${conditionText}] ➔ THEN [${actionText}]`;
-  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -290,6 +317,28 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
                   <Text style={styles.radioLabel}>{cond.label}</Text>
                 </TouchableOpacity>
               ))}
+
+              {(conditionType === 'AVERAGE_RPE_LESS_THAN' ||
+                conditionType === 'CONSECUTIVE_SUCCESSFUL_SESSIONS' ||
+                conditionType === 'CONSECUTIVE_FAILED_SESSIONS') && (
+                <View style={[styles.inputCol, { marginTop: 8, marginBottom: 4 }]}>
+                  <Text style={styles.label}>
+                    {conditionType === 'AVERAGE_RPE_LESS_THAN'
+                      ? 'Condition Threshold (Target RPE, e.g. 8.0)'
+                      : 'Condition Threshold (Session Count, e.g. 2)'}
+                  </Text>
+                  <TextInput
+                    testID="condition-threshold-input"
+                    style={styles.textInput}
+                    keyboardType="numeric"
+                    value={conditionThreshold}
+                    onChangeText={setConditionThreshold}
+                    placeholder={conditionType === 'AVERAGE_RPE_LESS_THAN' ? '8.0' : '2'}
+                    placeholderTextColor="#71717A"
+                    accessibilityLabel="Condition threshold value"
+                  />
+                </View>
+              )}
 
               <Text style={[styles.label, { marginTop: 12 }]}>THEN Action:</Text>
               {[

@@ -7,6 +7,8 @@ import {
   TextInput,
   StyleSheet,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Exercise, PainType, JointLocation } from '../../core/types';
 import { resolveExerciseJoints } from '../../services/exerciseSubstitutionService';
@@ -158,7 +160,10 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
       onRequestClose={onDismiss}
       testID="pain-report-modal"
     >
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.modalOverlay}
+      >
         <View style={styles.modalContent}>
           {/* Header */}
           <View style={styles.headerRow}>
@@ -419,7 +424,7 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

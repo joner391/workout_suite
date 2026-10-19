@@ -48,4 +48,18 @@ describe('WorkloadDeepDiveModal Component Suite', () => {
     expect(element.props.visible).toBe(true);
     expect(element.props.onClose).toBe(onClose);
   });
+
+  test('accepts optional userSettingsRepo for unit-system aware rendering', () => {
+    const element = React.createElement(WorkloadDeepDiveModal, {
+      visible: true,
+      workoutRepo,
+      exerciseRepo,
+      userSettingsRepo,
+      onClose: jest.fn(),
+    });
+
+    expect(element).toBeDefined();
+    expect(element.props.userSettingsRepo).toBe(userSettingsRepo);
+  });
 });
+

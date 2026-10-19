@@ -59,6 +59,8 @@ export interface HomeScreenProps {
   userProfileRepo?: IUserProfileRepository;
   onNavigateToWorkout?: () => void;
   onNavigateToProfile?: () => void;
+  onNavigateToCalendar?: () => void;
+  onNavigateToAnalytics?: (targetGroup?: 'performance' | 'body_composition') => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -72,6 +74,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   userProfileRepo,
   onNavigateToWorkout,
   onNavigateToProfile,
+  onNavigateToCalendar,
+  onNavigateToAnalytics,
 }) => {
   const [showBodyMetricsModal, setShowBodyMetricsModal] = useState<boolean>(false);
   const [showRadarModal, setShowRadarModal] = useState<boolean>(false);
@@ -227,7 +231,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
           {/* Next Scheduled Workout Quick Card */}
           {activeInfo && nextTemplate ? (
-            <View testID="next-workout-card" style={styles.nextWorkoutCard}>
+            <TouchableOpacity
+              testID="next-workout-card"
+              style={styles.nextWorkoutCard}
+              onPress={onNavigateToWorkout}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Start next workout: ${nextTemplate.name}`}
+            >
               <View style={styles.nextWorkoutLeft}>
                 <Text style={styles.nextWorkoutTag}>NEXT WORKOUT</Text>
                 <Text testID="next-workout-name" style={styles.nextWorkoutTitle}>
@@ -239,7 +250,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </Text>
                 )}
               </View>
-            </View>
+              <View style={styles.startNowBtn}>
+                <Text style={styles.startNowBtnText}>START ⚡</Text>
+              </View>
+            </TouchableOpacity>
           ) : (
             <View testID="next-workout-empty-card" style={styles.noProgramCard}>
               <Text style={styles.noProgramCardText}>
@@ -287,17 +301,58 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* ==================================================================== */}
         {/* 2. MIDDLE SECTION — INTERACTIVE CALENDAR AGENDA                      */}
         {/* ==================================================================== */}
+        {/* ==================================================================== */}
+        {/* 2. MIDDLE SECTION — TRAINING CALENDAR & AGENDA                       */}
+        {/* ==================================================================== */}
         <View testID="home-calendar-section" style={styles.calendarSection}>
-          <Text style={styles.sectionTitle}>TRAINING CALENDAR & AGENDA</Text>
-          <View style={styles.calendarWrapper}>
-            <CalendarScreen
-              workoutRepo={workoutRepo}
-              exerciseRepo={exerciseRepo}
-              gearRepo={gearRepo}
-              userSettingsRepo={userSettingsRepo}
-              programBlockService={programBlockService}
-            />
+          <View style={styles.analyticsHeaderRow}>
+            <View>
+              <Text style={styles.sectionSubtitle}>SCHEDULE & PERIODIZATION</Text>
+              <Text style={styles.sectionTitle}>Training Calendar</Text>
+            </View>
+            {onNavigateToCalendar && (
+              <TouchableOpacity
+                testID="home-open-calendar-btn"
+                style={styles.openFullViewBtn}
+                onPress={onNavigateToCalendar}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.openFullViewBtnText}>Full View ➔</Text>
+              </TouchableOpacity>
+            )}
           </View>
+
+          {onNavigateToCalendar ? (
+            <TouchableOpacity
+              testID="home-calendar-summary-card"
+              style={[styles.hubSummaryCard, styles.calendarSummaryCard]}
+              onPress={onNavigateToCalendar}
+              activeOpacity={0.8}
+            >
+              <View style={styles.hubSummaryLeft}>
+                <Text style={styles.hubSummaryTag}>SCHEDULED TRAINING</Text>
+                <Text style={styles.hubSummaryTitle}>
+                  {activeInfo ? `${activeInfo.program.name} • Active Meso` : 'Calendar & Periodization'}
+                </Text>
+                <Text style={styles.hubSummaryDesc}>
+                  Tap to view monthly workout calendar, inspect past logged sessions, and view scheduled template sequence.
+                </Text>
+              </View>
+              <View style={styles.hubSummaryAction}>
+                <Text style={styles.hubSummaryActionText}>Open ➔</Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.calendarWrapper}>
+              <CalendarScreen
+                workoutRepo={workoutRepo}
+                exerciseRepo={exerciseRepo}
+                gearRepo={gearRepo}
+                userSettingsRepo={userSettingsRepo}
+                programBlockService={programBlockService}
+              />
+            </View>
+          )}
         </View>
 
         {/* ==================================================================== */}
@@ -310,14 +365,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <Text style={styles.sectionTitle}>Performance Analytics</Text>
             </View>
 
-            <TouchableOpacity
-              testID="home-workload-deep-dive-btn"
-              style={styles.deepDiveHeaderBtn}
-              onPress={() => setShowWorkloadModal(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.deepDiveHeaderBtnText}>Workload Deep Dive 🔍</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                testID="home-workload-deep-dive-btn"
+                style={styles.deepDiveHeaderBtn}
+                onPress={() => setShowWorkloadModal(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.deepDiveHeaderBtnText}>Deep Dive 🔍</Text>
+              </TouchableOpacity>
+              {onNavigateToAnalytics && (
+                <TouchableOpacity
+                  testID="home-open-analytics-btn"
+                  style={styles.openFullViewBtn}
+                  onPress={() => onNavigateToAnalytics('performance')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.openFullViewBtnText}>Charts ➔</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           {/* Allometric Strength & DOTS Intelligence Card (Always Displayed) */}
@@ -346,19 +413,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </Text>
           </TouchableOpacity>
 
-          {/* Performance Plots: e1RM Trends & Volume Tonnage */}
-          <PlotsScreen
-            workoutRepo={workoutRepo}
-            exerciseRepo={exerciseRepo}
-            bodyMetricsRepo={bodyMetricsRepo}
-            userProfileRepo={userProfileRepo}
-            programRepo={programRepo}
-            programBlockService={programBlockService}
-            userSettingsRepo={userSettingsRepo}
-            targetGroup="performance"
-            initialChartType="e1rm"
-            isInline={true}
-          />
+          {onNavigateToAnalytics ? (
+            <TouchableOpacity
+              testID="home-performance-summary-card"
+              style={styles.hubSummaryCard}
+              onPress={() => onNavigateToAnalytics('performance')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.hubSummaryLeft}>
+                <Text style={styles.hubSummaryTag}>ESTIMATED 1RM & VOLUME</Text>
+                <Text style={styles.hubSummaryTitle}>Performance Progression</Text>
+                <Text style={styles.hubSummaryDesc}>
+                  Track estimated 1RMs, weekly tonnage, set volume across muscle groups, and RPE distributions.
+                </Text>
+              </View>
+              <View style={styles.hubSummaryAction}>
+                <Text style={styles.hubSummaryActionText}>Open ➔</Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <PlotsScreen
+              workoutRepo={workoutRepo}
+              exerciseRepo={exerciseRepo}
+              bodyMetricsRepo={bodyMetricsRepo}
+              userProfileRepo={userProfileRepo}
+              programRepo={programRepo}
+              programBlockService={programBlockService}
+              userSettingsRepo={userSettingsRepo}
+              targetGroup="performance"
+              initialChartType="e1rm"
+              isInline={true}
+            />
+          )}
         </View>
 
         {/* ==================================================================== */}
@@ -371,31 +457,62 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <Text style={styles.sectionTitle}>Body Composition</Text>
             </View>
 
-            {bodyMetricsRepo && (
-              <TouchableOpacity
-                testID="home-log-body-metrics-btn"
-                style={styles.logMetricsBtn}
-                onPress={() => setShowBodyMetricsModal(true)}
-              >
-                <Text style={styles.logMetricsBtnText}>Log Body ⚖️</Text>
-              </TouchableOpacity>
-            )}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {bodyMetricsRepo && (
+                <TouchableOpacity
+                  testID="home-log-body-metrics-btn"
+                  style={styles.logMetricsBtn}
+                  onPress={() => setShowBodyMetricsModal(true)}
+                >
+                  <Text style={styles.logMetricsBtnText}>Log Body ⚖️</Text>
+                </TouchableOpacity>
+              )}
+              {onNavigateToAnalytics && (
+                <TouchableOpacity
+                  testID="home-open-body-plots-btn"
+                  style={styles.openFullViewBtn}
+                  onPress={() => onNavigateToAnalytics('body_composition')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.openFullViewBtnText}>Trends ➔</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
-          {/* Body Composition Plots: Bodyweight, Body Fat %, Circumferences */}
-          <PlotsScreen
-            workoutRepo={workoutRepo}
-            exerciseRepo={exerciseRepo}
-            bodyMetricsRepo={bodyMetricsRepo}
-            userProfileRepo={userProfileRepo}
-            programRepo={programRepo}
-            programBlockService={programBlockService}
-            userSettingsRepo={userSettingsRepo}
-            targetGroup="body_composition"
-            initialChartType="bodyweight"
-            isInline={true}
-            onNavigateToBodyMetrics={() => setShowBodyMetricsModal(true)}
-          />
+          {onNavigateToAnalytics ? (
+            <TouchableOpacity
+              testID="home-body-composition-summary-card"
+              style={styles.hubSummaryCard}
+              onPress={() => onNavigateToAnalytics('body_composition')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.hubSummaryLeft}>
+                <Text style={styles.hubSummaryTag}>METRICS & PROGRESS</Text>
+                <Text style={styles.hubSummaryTitle}>Weight & Body Fat Trends</Text>
+                <Text style={styles.hubSummaryDesc}>
+                  Track weigh-ins, moving averages, and anthropometric circumference trends. Tap to inspect charts.
+                </Text>
+              </View>
+              <View style={styles.hubSummaryAction}>
+                <Text style={styles.hubSummaryActionText}>Open ➔</Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <PlotsScreen
+              workoutRepo={workoutRepo}
+              exerciseRepo={exerciseRepo}
+              bodyMetricsRepo={bodyMetricsRepo}
+              userProfileRepo={userProfileRepo}
+              programRepo={programRepo}
+              programBlockService={programBlockService}
+              userSettingsRepo={userSettingsRepo}
+              targetGroup="body_composition"
+              initialChartType="bodyweight"
+              isInline={true}
+              onNavigateToBodyMetrics={() => setShowBodyMetricsModal(true)}
+            />
+          )}
         </View>
       </ScrollView>
 
@@ -744,6 +861,69 @@ const styles = StyleSheet.create({
   },
   deepDiveHeaderBtnText: {
     color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  openFullViewBtn: {
+    backgroundColor: '#18181B',
+    borderColor: '#27272A',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  openFullViewBtnText: {
+    color: '#00E676',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  hubSummaryCard: {
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#1E1E22',
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 4,
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  calendarSummaryCard: {
+    marginHorizontal: 16,
+  },
+  hubSummaryLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  hubSummaryTag: {
+    color: '#00E676',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  hubSummaryTitle: {
+    color: '#FAFAFA',
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  hubSummaryDesc: {
+    color: '#71717A',
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  hubSummaryAction: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  hubSummaryActionText: {
+    color: '#00E676',
     fontSize: 11,
     fontWeight: '700',
   },

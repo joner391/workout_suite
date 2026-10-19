@@ -9,7 +9,7 @@
  * - Intra-session neuromuscular fatigue drift back-off drops (5-10%) and Helms step-downs
  */
 
-export type WarmupPerceptionRating = 'light' | 'normal' | 'hard';
+export type WarmupPerceptionRating = 'light' | 'normal' | 'hard' | 'heavy';
 
 export interface WarmupStep {
   setNumber: number;
@@ -168,6 +168,7 @@ export function calculateWarmupAutoregulation(
       recommendation = 'Warm-up on target. Maintain planned working load.';
       break;
     case 'hard':
+    case 'heavy':
       // More aggressive downward adjustment (-7.5%) if fatigue flagged, else -5.0%
       rawDeltaPercent = hasRecentFatigueFlag ? -0.075 : -0.05;
       recommendation =
@@ -235,4 +236,40 @@ export function calculateHelmsRpeOvershootAdjustment(
 
   const raw = currentLoadKg * (1 - reductionPercent);
   return quantizeLoad(raw, minimumIncrementKg);
+}
+
+/**
+ * Structural identification contract for set classification.
+ */
+export interface WarmupSetCandidate {
+  id: string;
+  exercise_id: string;
+  set_type: string;
+  set_number: number;
+}
+
+/**
+ * Determines whether a given set is the final/diagnostic warm-up set for an exercise.
+ *
+ * Rules:
+ * 1. The target set must have set_type === 'warmup'.
+ * 2. It must be the set with the highest set_number among all 'warmup' sets for that exercise.
+ */
+export function isLastWarmupSet<T extends WarmupSetCandidate>(
+  targetSet: T,
+  allSets: T[]
+): boolean {
+  if (targetSet.set_type !== 'warmup') {
+    return false;
+  }
+
+  const exerciseWarmups = allSets
+    .filter((s) => s.exercise_id === targetSet.exercise_id && s.set_type === 'warmup')
+    .sort((a, b) => a.set_number - b.set_number);
+
+  if (exerciseWarmups.length === 0) {
+    return false;
+  }
+
+  return exerciseWarmups[exerciseWarmups.length - 1].id === targetSet.id;
 }

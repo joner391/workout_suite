@@ -20,7 +20,12 @@ import {
   GearInventory,
 } from '../core/types';
 import { normalizeExerciseLoad } from '../core/math/loadNormalizer';
-import { generateWarmupSets } from '../core/math/warmupEstimator';
+import {
+  generateWarmupSets,
+  calculateWarmupAutoregulation,
+  WarmupPerceptionRating,
+  AutoregulatedLoadAdjustment,
+} from '../core/math/warmupEstimator';
 import { IWorkoutRepository } from '../domain/repositories/IWorkoutRepository';
 import { IExerciseRepository } from '../domain/repositories/IExerciseRepository';
 import { IGearRepository } from '../domain/repositories/IGearRepository';
@@ -682,6 +687,93 @@ export class ActiveSessionService {
     await this.workoutRepo.saveSets([...createdWarmupSets, ...shiftedWorkingSets]);
 
     return createdWarmupSets;
+  }
+
+  /**
+   * Applies subjective warm-up autoregulation (Light, Normal, Hard/Heavy) from the diagnostic
+   * warm-up single to all remaining uncompleted working sets for the specified exercise.
+   *
+   * Implements ADR-082 & Warm_up_estimator.md:
+   * - Light: +2.5% to +5.0%
+   * - Normal: 0.0%
+   * - Heavy / Hard: -5.0% to -7.5%
+   * - Boundary clamping: [-10.0%, +5.0%]
+   * - Immediate write-through normalization and persistence to SQLite.
+   */
+  public async applyWarmupAutoregulation(
+    workoutId: string,
+    exerciseId: string,
+    rating: WarmupPerceptionRating,
+    options?: {
+      minimumIncrementKg?: number;
+      hasRecentFatigueFlag?: boolean;
+      completedSetIds?: Set<string>;
+    }
+  ): Promise<{
+    adjustment: AutoregulatedLoadAdjustment;
+    updatedSets: WorkoutSet[];
+  }> {
+    const workout = await this.workoutRepo.findById(workoutId);
+    if (!workout) {
+      throw new Error(`Workout with ID '${workoutId}' not found.`);
+    }
+
+    const exercise = await this.resolveExercise(exerciseId);
+    if (!exercise) {
+      throw new Error(`Exercise with ID '${exerciseId}' not found in catalog.`);
+    }
+
+    const existingSets = await this.workoutRepo.getSetsByWorkoutId(workoutId);
+    const exerciseSets = existingSets
+      .filter((s) => s.exercise_id === exerciseId)
+      .sort((a, b) => a.set_number - b.set_number);
+
+    const completedIds = options?.completedSetIds ?? new Set<string>();
+    const uncompletedWorkSets = exerciseSets.filter(
+      (s) => s.set_type !== 'warmup' && !completedIds.has(s.id)
+    );
+
+    if (uncompletedWorkSets.length === 0) {
+      throw new Error(`No uncompleted working sets found for exercise '${exerciseId}'.`);
+    }
+
+    const firstWorkSet = uncompletedWorkSets[0];
+    const workingWeight = firstWorkSet.raw_input_weight > 0
+      ? firstWorkSet.raw_input_weight
+      : firstWorkSet.weight;
+
+    const minIncrement = options?.minimumIncrementKg ?? 2.5;
+    const hasFatigue = options?.hasRecentFatigueFlag ?? false;
+
+    const adjustment = calculateWarmupAutoregulation(
+      workingWeight,
+      rating,
+      minIncrement,
+      hasFatigue
+    );
+
+    const gear = firstWorkSet.gear_id ? await this.resolveGear(firstWorkSet.gear_id) : null;
+
+    const updatedSets: WorkoutSet[] = uncompletedWorkSets.map((s) => {
+      const normalized = normalizeExerciseLoad(
+        adjustment.adjustedLoadKg,
+        exercise,
+        gear
+      );
+      return {
+        ...s,
+        raw_input_weight: normalized.rawInputWeightKg,
+        weight: normalized.effectiveWeightKg,
+        added_weight: normalized.addedWeightKg,
+      };
+    });
+
+    await this.workoutRepo.saveSets(updatedSets);
+
+    return {
+      adjustment,
+      updatedSets,
+    };
   }
 
   // ==========================================================================

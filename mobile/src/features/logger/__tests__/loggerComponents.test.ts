@@ -14,6 +14,7 @@ import { formatTimeRemaining } from '../RestTimerBanner';
 import { formatElapsedDuration } from '../ActiveLoggerScreen';
 import { formatCompactGhostDisplay } from '../SetRowComponent';
 import { calculatePlateLoading, DEFAULT_BAR_TARE_KG } from '../../../core/math/plateCalculator';
+import { isLastWarmupSet } from '../../../core/math/warmupEstimator';
 import {
   Workout,
   WorkoutSet,
@@ -1242,6 +1243,122 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
 
       expect(pMap.get(mockSquat.id)?.sfr_tier).toBe('POOR_SWAP_RECOMMENDED');
       expect(pMap.get(mockSquat.id)?.recommended_swap_exercise_id).toBe('ex-leg-press');
+    });
+  });
+
+  describe('Diagnostic Warm-Up Autoregulation Integration (ADR-082)', () => {
+    it('accurately identifies diagnostic warm-up single among exercise sets', () => {
+      const warmup1: WorkoutSet = {
+        id: 'set-warm-1',
+        workout_id: 'w-1',
+        exercise_id: mockSquat.id,
+        gear_id: null,
+        set_number: 1,
+        weight: 20,
+        raw_input_weight: 20,
+        added_weight: null,
+        reps: 5,
+        reps_right: null,
+        rpe: null,
+        rir: null,
+        set_type: 'warmup',
+        set_notes: 'Empty bar',
+        exercise_group_id: null,
+        created_at: '2026-10-19T10:00:00Z',
+      };
+
+      const warmupDiagnostic: WorkoutSet = {
+        id: 'set-warm-diagnostic',
+        workout_id: 'w-1',
+        exercise_id: mockSquat.id,
+        gear_id: null,
+        set_number: 2,
+        weight: 87.5,
+        raw_input_weight: 87.5,
+        added_weight: null,
+        reps: 1,
+        reps_right: null,
+        rpe: null,
+        rir: null,
+        set_type: 'warmup',
+        set_notes: '87.5% diagnostic single',
+        exercise_group_id: null,
+        created_at: '2026-10-19T10:02:00Z',
+      };
+
+      const workingSet: WorkoutSet = {
+        id: 'set-work-1',
+        workout_id: 'w-1',
+        exercise_id: mockSquat.id,
+        gear_id: null,
+        set_number: 3,
+        weight: 100,
+        raw_input_weight: 100,
+        added_weight: null,
+        reps: 5,
+        reps_right: null,
+        rpe: 8,
+        rir: 2,
+        set_type: 'working',
+        set_notes: null,
+        exercise_group_id: null,
+        created_at: '2026-10-19T10:05:00Z',
+      };
+
+      const sets = [warmup1, warmupDiagnostic, workingSet];
+      expect(isLastWarmupSet(warmup1, sets)).toBe(false);
+      expect(isLastWarmupSet(warmupDiagnostic, sets)).toBe(true);
+      expect(isLastWarmupSet(workingSet, sets)).toBe(false);
+    });
+
+    it('correctly detects last warmup set and updates working sets via activeSessionService', async () => {
+      const activeWorkout = await sessionService.startWorkout();
+      // Warmup 1
+      const w1 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 20,
+        reps: 5,
+        setType: 'warmup',
+      });
+      // Warmup 2 (Last warmup / diagnostic single)
+      const w2 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 87.5,
+        reps: 1,
+        setType: 'warmup',
+      });
+      // Work set 1
+      const s1 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+      // Work set 2
+      const s2 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+
+      const currentSets = await workoutRepo.getSetsByWorkoutId(activeWorkout.id);
+
+      expect(isLastWarmupSet(w1, currentSets)).toBe(false);
+      expect(isLastWarmupSet(w2, currentSets)).toBe(true);
+      expect(isLastWarmupSet(s1, currentSets)).toBe(false);
+
+      // When user reports "light" on w2:
+      const { adjustment, updatedSets } = await sessionService.applyWarmupAutoregulation(
+        activeWorkout.id,
+        mockSquat.id,
+        'light'
+      );
+
+      expect(adjustment.adjustedLoadKg).toBe(105);
+      expect(updatedSets.length).toBe(2);
+      expect(updatedSets[0].raw_input_weight).toBe(105);
+      expect(updatedSets[1].raw_input_weight).toBe(105);
     });
   });
 });

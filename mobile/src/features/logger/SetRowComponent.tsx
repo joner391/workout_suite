@@ -37,6 +37,8 @@ export interface SetRowProps {
   intensityMetric?: IntensityMetric;
   isCompleted?: boolean;
   isExpanded?: boolean;
+  isLastWarmup?: boolean;
+  onOpenWarmupAssessment?: () => void;
   onToggleExpand?: () => void;
   onUpdateSet: (updatedFields: Partial<WorkoutSet>) => void;
   onDeleteSet: () => void;
@@ -84,6 +86,8 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
   intensityMetric = 'RPE',
   isCompleted = false,
   isExpanded: propIsExpanded,
+  isLastWarmup = false,
+  onOpenWarmupAssessment,
   onToggleExpand,
   onUpdateSet,
   onDeleteSet,
@@ -390,7 +394,6 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                 onChangeText={handleWeightChange}
                 onBlur={handleWeightBlur}
                 editable={!isCompleted}
-                onFocus={() => { if (!isExpanded) toggleExpand(); }}
               />
               {isDumbbell && (
                 <View testID="dumbbell-badge" style={styles.dumbbellBadge}>
@@ -417,7 +420,6 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                   onChangeText={handleRepsChange}
                   onBlur={handleRepsBlur}
                   editable={!isCompleted}
-                  onFocus={() => { if (!isExpanded) toggleExpand(); }}
                   accessibilityLabel="Left limb reps"
                 />
               </View>
@@ -434,7 +436,6 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                   onChangeText={handleRepsRightChange}
                   onBlur={handleRepsRightBlur}
                   editable={!isCompleted}
-                  onFocus={() => { if (!isExpanded) toggleExpand(); }}
                   accessibilityLabel="Right limb reps"
                 />
               </View>
@@ -442,7 +443,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
           ) : (
             <TextInput
               testID="reps-input"
-              style={[styles.input, isCompleted && styles.completedInput]}
+              style={[styles.repsInput, isCompleted && styles.completedInput]}
               keyboardType="number-pad"
               selectTextOnFocus={true}
               placeholder={ghostSet ? `${ghostSet.reps}` : '0'}
@@ -451,7 +452,6 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
               onChangeText={handleRepsChange}
               onBlur={handleRepsBlur}
               editable={!isCompleted}
-              onFocus={() => { if (!isExpanded) toggleExpand(); }}
             />
           )}
         </View>
@@ -475,7 +475,6 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
             onChangeText={handleIntensityChange}
             onBlur={handleIntensityBlur}
             editable={!isCompleted}
-            onFocus={() => { if (!isExpanded) toggleExpand(); }}
           />
         </View>
 
@@ -495,6 +494,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
           testID="complete-set-checkbox"
           style={[styles.checkbox, isCompleted && styles.completedCheckbox]}
           onPress={() => {
+            flushPendingUpdates();
             if (!isCompleted) {
               const needsWeight = (!set.raw_input_weight || set.raw_input_weight === 0) && !!ghostSet && ghostSet.raw_input_weight > 0;
               const needsReps = (!set.reps || set.reps === 0) && !!ghostSet && ghostSet.reps > 0;
@@ -539,10 +539,28 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
       </View>
 
       {/* Accordion Editor Drawer (reveals steppers, plate calculator, and clear button) */}
-      {isExpanded && !isCompleted && (
+      {isExpanded && (!isCompleted || (isLastWarmup && !!onOpenWarmupAssessment)) && (
         <View style={styles.editorDrawer}>
-          {/* Row 1: Weight Steppers & Plate Calculator */}
-          <View style={styles.drawerControlGroup}>
+          {/* Diagnostic Warm-Up Assessment Trigger (ADR-082) */}
+          {isLastWarmup && onOpenWarmupAssessment && (
+            <View style={styles.warmupAssessmentDrawerGroup}>
+              <TouchableOpacity
+                testID="warmup-assessment-trigger-btn"
+                style={styles.warmupAssessmentDrawerButton}
+                onPress={onOpenWarmupAssessment}
+                accessibilityLabel="Open warm-up assessment"
+              >
+                <Text style={styles.warmupAssessmentDrawerButtonText}>
+                  ⚡ Warm-Up Assessment (Light / Normal / Heavy)
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!isCompleted && (
+            <>
+              {/* Row 1: Weight Steppers & Plate Calculator */}
+              <View style={styles.drawerControlGroup}>
             <Text style={styles.drawerControlLabel}>WEIGHT ({unitSystem.toUpperCase()})</Text>
             <View style={styles.pillRow}>
               {isBarbell && (
@@ -755,10 +773,18 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
               />
             </View>
           )}
+        </>
+      )}
+
+      {isCompleted && set.set_notes && (
+        <View style={styles.completedNotesBadge}>
+          <Text style={styles.completedNotesText}>Note: {set.set_notes}</Text>
         </View>
       )}
     </View>
-  );
+  )}
+</View>
+);
 };
 
 export const SetRowComponent = React.memo(
@@ -771,7 +797,9 @@ export const SetRowComponent = React.memo(
       prev.unitSystem === next.unitSystem &&
       prev.intensityMetric === next.intensityMetric &&
       prev.isCompleted === next.isCompleted &&
-      prev.isExpanded === next.isExpanded
+      prev.isExpanded === next.isExpanded &&
+      prev.isLastWarmup === next.isLastWarmup &&
+      prev.onOpenWarmupAssessment === next.onOpenWarmupAssessment
     );
   }
 );
@@ -781,7 +809,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#09090B',
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
-    paddingVertical: 6,
+    paddingVertical: 3,
     paddingHorizontal: 8,
   },
   completedRow: {
@@ -795,15 +823,15 @@ const styles = StyleSheet.create({
   },
   typeBadge: {
     minWidth: 46,
-    height: 34,
-    paddingHorizontal: 6,
-    borderRadius: 6,
+    height: 26,
+    paddingHorizontal: 4,
+    borderRadius: 4,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 6,
   },
   typeBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
     includeFontPadding: false,
@@ -833,17 +861,17 @@ const styles = StyleSheet.create({
   input: {
     minWidth: 68,
     flexShrink: 0,
-    height: 38,
+    height: 26,
     backgroundColor: '#18181B',
-    borderRadius: 6,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: '#27272A',
     color: '#FAFAFA',
     textAlign: 'center',
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
     paddingHorizontal: 4,
-    paddingVertical: 6,
+    paddingVertical: 2,
     includeFontPadding: false,
     fontVariant: ['tabular-nums'],
   },
@@ -866,28 +894,15 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   repsColumn: {
-    minWidth: 48,
+    width: 44,
     flexShrink: 0,
     marginRight: 6,
   },
-  unilateralContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  unilateralInputWrapper: {
-    flex: 1,
-  },
-  unilateralSeparator: {
-    color: '#71717A',
-    fontSize: 12,
-  },
-  miniInput: {
-    width: '100%',
-    minWidth: 24,
-    height: 38,
+  repsInput: {
+    width: 44,
+    height: 26,
     backgroundColor: '#18181B',
-    borderRadius: 6,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: '#27272A',
     color: '#FAFAFA',
@@ -895,7 +910,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     paddingHorizontal: 2,
-    paddingVertical: 6,
+    paddingVertical: 2,
+    includeFontPadding: false,
+    fontVariant: ['tabular-nums'],
+  },
+  unilateralContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    width: 44,
+  },
+  unilateralInputWrapper: {
+    flex: 1,
+  },
+  unilateralSeparator: {
+    color: '#71717A',
+    fontSize: 11,
+  },
+  miniInput: {
+    width: '100%',
+    height: 26,
+    backgroundColor: '#18181B',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    color: '#FAFAFA',
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '600',
+    paddingHorizontal: 1,
+    paddingVertical: 2,
     includeFontPadding: false,
     fontVariant: ['tabular-nums'],
   },
@@ -907,38 +951,38 @@ const styles = StyleSheet.create({
   intensityInput: {
     minWidth: 48,
     flexShrink: 0,
-    height: 38,
+    height: 26,
     backgroundColor: '#18181B',
-    borderRadius: 6,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: '#27272A',
     color: '#FAFAFA',
     textAlign: 'center',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     paddingHorizontal: 4,
-    paddingVertical: 6,
+    paddingVertical: 2,
     includeFontPadding: false,
     fontVariant: ['tabular-nums'],
   },
   expandToggleButton: {
     width: 24,
-    height: 38,
+    height: 26,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 4,
   },
   expandToggleText: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#71717A',
   },
   expandToggleTextActive: {
     color: '#00E676',
   },
   checkbox: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 6,
     borderWidth: 2,
     borderColor: '#3F3F46',
     backgroundColor: '#18181B',
@@ -951,13 +995,13 @@ const styles = StyleSheet.create({
   },
   checkmarkText: {
     color: '#000000',
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '900',
   },
   emptyCheckboxDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: '#52525B',
   },
   // Expanded Drawer Styles
@@ -1100,5 +1144,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     padding: 8,
     minHeight: 40,
+  },
+  warmupAssessmentDrawerGroup: {
+    marginBottom: 6,
+  },
+  warmupAssessmentDrawerButton: {
+    backgroundColor: '#3B82F618',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    borderRadius: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  warmupAssessmentDrawerButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#93C5FD',
+  },
+  completedNotesBadge: {
+    marginTop: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    backgroundColor: '#18181B',
+    borderRadius: 4,
+  },
+  completedNotesText: {
+    fontSize: 11,
+    color: '#A1A1AA',
+    fontStyle: 'italic',
   },
 });

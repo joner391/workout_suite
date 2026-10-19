@@ -8,6 +8,8 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {
   IBodyMetricsRepository,
@@ -312,7 +314,11 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
   const lenUnit = unitSystem === 'lbs' ? 'in' : 'cm';
 
   return (
-    <View testID="body-metrics-screen" style={styles.container}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={{ flex: 1 }}
+    >
+      <View testID="body-metrics-screen" style={styles.container}>
       {/* Header Row */}
       <View style={styles.headerRow}>
         <View>
@@ -741,6 +747,7 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
         </View>
       </ScrollView>
     </View>
+    </KeyboardAvoidingView>
   );
 };
 

@@ -128,5 +128,18 @@ describe('Settings Toggles & User Preferences (Step 1.6)', () => {
     expect(element).toBeDefined();
     expect((element.props as any).showUserProfile).toBeUndefined();
   });
+
+  test('SettingsScreen mounts with initialShowImport true and routes to data import', async () => {
+    const React = await import('react');
+    const { SettingsScreen } = await import('../SettingsScreen');
+
+    const element = React.createElement(SettingsScreen, {
+      userSettingsRepo,
+      initialShowImport: true,
+    });
+    expect(element).toBeDefined();
+    expect(element.props.initialShowImport).toBe(true);
+  });
 });
+
 

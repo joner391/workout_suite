@@ -64,6 +64,12 @@ c:/Programmering/Eget/Workout_suite/
 │       │   └── types/
 │       │       ├── index.ts
 │       │       └── __tests__/types.test.ts
+│       ├── context/
+│       │   ├── index.ts
+│       │   ├── RepositoryContext.tsx
+│       │   ├── NavigationContext.tsx
+│       │   └── __tests__/
+│       │       └── contextAndNavigation.test.ts
 │       ├── domain/
 │       │   └── repositories/
 │       │       ├── index.ts
@@ -118,9 +124,12 @@ c:/Programmering/Eget/Workout_suite/
 │       │   │   ├── SupersetBracketGroup.tsx
 │       │   │   ├── ProgressionProposalBanner.tsx
 │       │   │   ├── PainReportModal.tsx
+│       │   │   ├── WarmupAssessmentModal.tsx
 │       │   │   └── __tests__/
 │       │   │       ├── loggerComponents.test.ts
-│       │   │       └── progressionProposalBanner.test.ts
+│       │   │       ├── progressionProposalBanner.test.ts
+│       │   │       ├── activeLoggerRail.test.ts
+│       │   │       └── warmupAssessmentModal.test.ts
 │       │   ├── profile/
 │       │   │   ├── index.ts
 │       │   │   ├── UserProfileScreen.tsx
@@ -279,7 +288,8 @@ c:/Programmering/Eget/Workout_suite/
     ├── ARCHITECTURE.md         # Subsystem responsibilities, data flow, and build commands
     ├── CODEMAP.md              # Current navigation index and symbol directory
     ├── DECISIONS.md            # Architecture Decision Records (ADRs)
-    └── TRAINING_AND_BODY_DATA.md # Training & body data specifications, companion calculations & gap analysis
+    ├── TRAINING_AND_BODY_DATA.md # Training & body data specifications, companion calculations & gap analysis
+    └── THEORY_VOLUME_VS_EREPS.md # Hypertrophic volume vs. eReps unification & dynamic program synthesis RFC
 ```
 
 ### 1.1 Workspace Boundary & Execution Invariants
@@ -335,6 +345,18 @@ c:/Programmering/Eget/Workout_suite/
     - *Workload Analysis Engine (`workloadAnalysisService.ts`)*: Implemented calendar-aware Monday–Sunday weekly workload synthesizer calculating hypertrophy volume landmarks per muscle group (categorized into Low/Maintenance, Optimal MAV 8–18 sets, High, and Fatigue Risk), daily session tonnage and working set distributions across all 7 days, and dual intensity profiling.
     - *Dual-Faceted Intensity Intelligence*: Developed simultaneous calculation of Effort Intensity (mean working RPE, stimulating set ratio for RPE $\ge 8.0$, and 4-tier distribution) alongside Relative Load Intensity (volume-load weighted % of e1RM via Lombardi power law, with Heavy $>85\%$, Moderate $70–85\%$, and Light $<70\%$ training load zones).
     - *Workload Deep Dive Modal (`WorkloadDeepDiveModal.tsx`)*: Full-screen interactive inspection modal accessible via `home-workload-deep-dive-btn` in the Home screen's Performance Analytics header. Includes calendar week navigation (with "THIS WEEK" active indicator), 4-metric KPI summary strip, muscle group landmark progress tracks, daily session comparison cards, and dual intensity distribution charts. (674 mobile tests passing across 51 test suites, `npx tsc --noEmit` verified).
+  - **Step 4.11 (Active Logger Horizontal Superset Rail & Single-Movement Viewport)**: `[x]` Completed —
+    - Implemented ADR-079: Replaced vertical accordion scroller in `ActiveLoggerScreen.tsx` with sticky top horizontal rail (`exercise-rail`) featuring linked superset twin pills, live completion indicators (`✓` or `X/Y`), and trailing `+ ADD` action (`rail-add-exercise-btn`).
+    - Single-movement active viewport: renders exclusively the active movement or both paired movements stacked in a dedicated `activeSupersetContainer` with alphabetical prefixes (`A1:`, `A2:`).
+    - Superset intra-round auto-scrolling: completing a set on one superset exercise smoothly auto-scrolls the viewport to the other paired exercise (`resolveNextSupersetExercise`), with interactive sub-navigation pills (`[ A1: Bench (1/3) ] [ A2: Row (0/3) ]`) and visual focus borders.
+    - Implemented ADR-080: Streamlined active logger ergonomics and synchronous state synchronization (`completedSetIdsRef`) eliminating set un-ticking race conditions; removed redundant blue superset banner box and bottom "1 of 4" / add-exercise buttons; added circular `+` quick-add node in sticky subway menu; relocated Discard Workout to Finish confirmation modal behind explicit destructive dialog; narrowed reps input pill to compact 44px tabular layout.
+    - Implemented ADR-081: Visual polish & compact set rows: removed redundant `⚡ WARM-UP` button (`addSetButton` now spans full row width); scaled down set row element heights from 38px/34px to 26px and padding from 6px to 3px (~33px total row height, ~2/3 of previous height); embedded all-time 1RM and peak e1RM with occurrence dates in small 11px font in empty header space below SWAP and PAIN; rendered strictly isolated last 3 completed sessions history per exercise in compact OLED card below exercise box.
+  - **Step 4.12 (Diagnostic Warm-Up Set Autoregulation & Subjective Perception Reporting — ADR-083)**: `[x]` Completed —
+    - Extended `WarmupPerceptionRating` type and math engine in `warmupEstimator.ts` to support 'light', 'normal', 'hard', and 'heavy' ratings with structural helper `isLastWarmupSet`.
+    - Added `applyWarmupAutoregulation` in `ActiveSessionService` with $2.5\text{ kg}$ plate quantization and SQLite write-through.
+    - Implemented `WarmupAssessmentModal.tsx` OLED dark modal providing 3 perception cards (⚡ Light $+5\%$, 🎯 Normal $0\%$, 🛡️ Heavy $-5\%$) with fatigue modifier scaling, plus Groove Fallacy 90s rest & retry protocol.
+    - Integrated automatic modal trigger into `ActiveLoggerScreen.tsx` upon checking off the last warm-up single, alongside persistent drawer re-inspection button `warmup-assessment-trigger-btn` in `SetRowComponent.tsx`.
+    - 63 mobile test suites, 876 unit tests passing, 0 TypeScript errors.
 - **Phase 5: Anthropometry, Body Composition & Longitudinal Plotting**
   - **Step 5.1: U.S. Navy Body Fat, Rolling Averages & Body Metrics Repository**: `[x]` Completed — Implemented ADR-041: Official DoD metric body density formula with Siri equation (`navyBodyFat.ts`) with male and female circumference equations in cm, strict anatomical guards, physiological bounds clamping, dual-curve bodyweight smoothing (calendar-aware 7-day SMA and exponential smoothing EMA $\alpha=0.25$), abstract repository interface (`IBodyMetricsRepository.ts`), in-memory mock (`MockBodyMetricsRepository.ts`), and concrete SQLite repository (`SQLiteBodyMetricsRepository.ts`) with automatic active `user_profiles` resolution and persistence (618 mobile tests passing total across 47 test suites, `npx tsc --noEmit` and `npm run lint` verified).
   - **Step 5.2: Body Metrics Screen & Longitudinal Plots with Program Era Shading**: `[x]` Completed — Implemented ADR-042, ADR-045 & ADR-061: Reusable SVG time-series chart wrapper with meso-cycle program era shading (`ProgramEraShadedChart.tsx`), complete 6-chart longitudinal suite (`PlotsScreen.tsx` for e1RM progression, bodyweight with 7-day rolling SMA/EMA, body fat %, estimated Lean Body Mass (eLBM), circumferences, and Monday-bucketed volume tonnage), anthropometry logger (`BodyMetricsScreen.tsx` with live Navy BF% and eLBM estimates, rolling average banner, and historical logs), bidirectional metric/imperial unit conversion (`unitConversion.ts`), robust circumference-only optional bodyweight export synchronization (`schemas/workout_export.schema.json` & `schemas.py`), and HomeScreen inline integration (737 mobile tests passing total across 54 test suites, `npx tsc --noEmit` and `pytest companion/tests` passing verified).
@@ -361,6 +383,7 @@ c:/Programmering/Eget/Workout_suite/
 | [docs/ARCHITECTURE.md](file:///c:/Programmering/Eget/Workout_suite/docs/ARCHITECTURE.md) | Architecture | Subsystem boundaries, runtime execution flows, and build/test commands. |
 | [docs/DECISIONS.md](file:///c:/Programmering/Eget/Workout_suite/docs/DECISIONS.md) | Architecture Decisions | Documented design rationales (ADRs) explaining technical trade-offs. |
 | [docs/TRAINING_AND_BODY_DATA.md](file:///c:/Programmering/Eget/Workout_suite/docs/TRAINING_AND_BODY_DATA.md) | Data & Metrics Spec | Detailed description of saved training/body metrics, Companion calculations, and gap analysis. |
+| [docs/THEORY_VOLUME_VS_EREPS.md](file:///c:/Programmering/Eget/Workout_suite/docs/THEORY_VOLUME_VS_EREPS.md) | Theory & RFC | Theoretical unification of Volume (sets) vs. Effective Reps (eReps), fatigue mechanics, and dynamic programSynthesizer volume adaptation. |
 
 ---
 
@@ -390,18 +413,21 @@ When code generation begins in subsequent phases, components must be placed into
   - `types/` — Shared domain types (Exercise, Set, SetType, Unit, RPE/RIR, ProgressionRule, UserProfile, StrengthStandard, LiftType, GearItem, PainType, PainReport).
 - `mobile/src/domain/repositories/` — Abstract repository interfaces (Ports).
   - `IProgramRepository.ts`, `IWorkoutRepository.ts`, `IExerciseRepository.ts`, `IGearRepository.ts`, `IBodyMetricsRepository.ts`, `IProgramBlockRepository.ts`, `IProgressionRuleRepository.ts`, `ICalibratedParamRepository.ts`, `IUserProfileRepository.ts`, `IPainReportRepository.ts`.
+- `mobile/src/context/` — React Context & Navigation Architecture (ADR-077).
+  - `RepositoryContext.tsx` — Centralized React context and hooks (`useRepositories()`, `useOptionalRepositories()`) exposing SQLite repositories and domain services across the component hierarchy without prop drilling.
+  - `NavigationContext.tsx` — Lightweight internal navigation stack coordinator managing sub-screen routing, parameter passing, and Android `BackHandler` back-stack interception.
 - `mobile/src/features/` — Vertical feature slices (encapsulated screens, hooks, and local components).
-  - `features/home/` — `HomeScreen.tsx`, Quick Status Dashboard (active program, next workout quick card, weekly metrics: workouts this week, tonnage, streak), interactive calendar agenda, reserved analytics mount point.
-  - `features/logger/` — `WorkoutTabRouter.tsx` (resolving State A active logger, State B circular template pre-flight screen, State C empty state), `ActiveLoggerScreen.tsx` (with on-the-fly implement switcher `GearPickerModal` and PlateCalculator tare synchronization), `PlateCalculatorModal.tsx`, `ExerciseSubstitutionModal.tsx`, `PainReportModal.tsx` (in-session joint vs muscle discomfort modal, 1–10 severity rating, automatic pruning of uncompleted sets when severity > 6, and physiotherapist disclaimer banner), ghosting logic, set checklist, spelled-out set type selector (`Reg`, `Warm`, `Drop`, `Myo`, `DC`), per-set notes, superset bracket UI, set-type-specific rest timer triggers (0s drop, 10s myo, 30s dc), crash recovery Resume/Discard prompt.
+  - `features/home/` — `HomeScreen.tsx`, Focused training dashboard (active program, next workout interactive CTA with `START ⚡`, weekly metrics: workouts this week, tonnage, streak, and launcher summary cards for Calendar and Analytics navigating to dedicated full-screen views, ADR-077).
+  - `features/logger/` — `WorkoutTabRouter.tsx` (resolving State A active logger, State B circular template pre-flight screen, State C empty state), `ActiveLoggerScreen.tsx` (sticky top horizontal exercise rail `exercise-rail` with linked superset twin pills, single/paired active movement viewport, circular `+` quick-add node in subway rail, full-width exercise header title row, sub-row action pills `LINK`/`SWAP`/`PAIN`, vertically stacked right-attached 1RM & e1RM PR indicator, compact set rows, run-length encoded 3-session historical ledger with identical set compaction via `formatSessionSetsSummary`, synchronous ref-backed set completion tracking `completedSetIdsRef`, intra-superset auto-scroll, finish modal discard with destructive alert guardrail, ADR-079, ADR-080, ADR-081, ADR-082, ADR-083), `WarmupAssessmentModal.tsx` (diagnostic single subjective perception reporting 'light' / 'normal' / 'heavy', 3-choice OLED modal with Helms/RTS autoregulation and 90s Groove Fallacy rest & retry, ADR-083), `PlateCalculatorModal.tsx` (direct numeric text input `plate-calc-target-input` and reactive prop state synchronization, ADR-077), `SetRowComponent.tsx` (compact 44px tabular reps pill, scaled down ~33px height, immediate debounce flush on set completion, chevron-only drawer expansion preventing focus layout jitter, ADR-077, ADR-080, ADR-081, persistent `warmup-assessment-trigger-btn` for diagnostic set re-assessment, ADR-083), `ExerciseSubstitutionModal.tsx`, `PainReportModal.tsx` (in-session joint vs muscle discomfort modal, 1–10 severity rating, automatic pruning of uncompleted sets when severity > 6, physiotherapist disclaimer banner, and `KeyboardAvoidingView`), ghosting logic, set checklist, spelled-out set type selector (`Reg`, `Warm`, `Drop`, `Myo`, `DC`), per-set notes, superset bracket UI, set-type-specific rest timer triggers (0s drop, 10s myo, 30s dc), crash recovery Resume/Discard prompt.
   - `features/calendar/` — `CalendarScreen.tsx`, monthly agenda, meso-cycle swap indicators.
   - `features/inspection/` — `ExerciseDetailScreen.tsx`, Rep-Max Record PR board (all-time / per-program toggle), SBD Strength Standards tier badge, progress bar to next tier, set e1RM benchmarks, variant hierarchy display.
-  - `features/progression/` — `ProgramOverviewScreen.tsx` (full CRUD builder with cloning protection, template CRUD/reordering, exercise CRUD/reordering/swap/superset), `ProgressionBuilderModal.tsx` (visual IF/THEN/ELSE condition-action rule builder with LP/DP/DDP presets), `CatalogPickerModal.tsx`, `PrescriptionEditorModal.tsx` (with implement/gear assignment chips), `EditTemplateModal.tsx`.
-  - `features/gear/` — `GearInventoryScreen.tsx`, accessible gym equipment inventory, specialty barbell tare weights, custom machine cable ratios manager, accessed via Profile hub Equipment Access modal.
+  - `features/progression/` — `ProgramOverviewScreen.tsx` (full CRUD builder with cloning protection, template CRUD/reordering, consolidated row actions overflow menu `•••` with $\ge 44\text{ dp}$ touch targets, and `KeyboardAvoidingView` on modals, ADR-077), `ProgressionBuilderModal.tsx` (visual IF/THEN/ELSE condition-action rule builder with LP/DP/DDP presets, numeric threshold input for plateau/RPE conditions, and humanized plain-English summaries via `formatProgressionRuleSummary`, ADR-077), `CatalogPickerModal.tsx`, `PrescriptionEditorModal.tsx` (with implement/gear assignment chips and `KeyboardAvoidingView`), `EditTemplateModal.tsx` (with `KeyboardAvoidingView`).
+  - `features/gear/` — `GearInventoryScreen.tsx`, accessible gym equipment inventory, specialty barbell tare weights, custom machine cable ratios manager, wrapped in `KeyboardAvoidingView` (ADR-077), accessed via Profile hub Equipment Access modal.
   - `features/profile/` — `UserProfileScreen.tsx`, Training Mentality matrix (`fury`, `precision`, `get_out`), demographics, logistics (including 15m duration), Equipment Access hub (`GearInventoryScreen` modal integration), 1-tap generator, active program banner.
-  - `features/bodyMetrics/` — `BodyMetricsScreen.tsx`, tape measurement inputs, body fat estimator, 7-day rolling average.
+  - `features/bodyMetrics/` — `BodyMetricsScreen.tsx`, tape measurement inputs, body fat estimator, 7-day rolling average, wrapped in `KeyboardAvoidingView` (ADR-077).
   - `features/plots/` — `PlotsScreen.tsx`, `timeSpanUtils.ts` (time span window calculation & point filtering: All data, Year, 3 months, Month, Week), time-series charts with program era shaded bands, SBD Symmetry & Balance Radar chart, demographic cohort percentiles.
-  - `features/import/` — `ImportScreen.tsx`, `dummyDataPresets.ts`, Strong CSV / Hevy CSV / Liftosaur CSV / StrengthLog Training & Body Comp CSV parsers, 1-tap Expo Go evaluation preset loaders, exercise mapping wizard UI, duplicate session detection, and date range filtering.
-  - `features/settings/` — `SettingsScreen.tsx`, units, RPE/RIR preferences, `pure_utility_mode` toggle, export trigger, calibrated parameter import trigger.
+  - `features/import/` — `ImportScreen.tsx`, `dummyDataPresets.ts`, Strong CSV / Hevy CSV / Liftosaur CSV / StrengthLog Training & Body Comp CSV parsers, 1-tap Expo Go evaluation preset loaders, exercise mapping wizard UI, duplicate session detection, date range filtering, and seamless calendar handoff (ADR-077).
+  - `features/settings/` — `SettingsScreen.tsx`, units, RPE/RIR preferences, `pure_utility_mode` toggle, export trigger, calibrated parameter import trigger, and import wizard deep-linking (ADR-077).
 - `mobile/src/services/` — Application orchestration services.
   - `programCloneService.ts` — Deep cloning service protecting pre-built/synthesized templates by cloning to custom (`prog_custom_<ts>_<hash>`).
   - `dashboardMetricsService.ts` — Computes weekly workouts count, total tonnage in kg, and consecutive active training streak.

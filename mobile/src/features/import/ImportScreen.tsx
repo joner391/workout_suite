@@ -56,6 +56,7 @@ export interface DocumentPickerResult {
 export interface ImportScreenProps {
   importService: ImportService;
   onClose: () => void;
+  onNavigateToCalendar?: () => void;
   onImportComplete?: (result: ImportExecutionResult) => void;
   documentPicker?: () => Promise<DocumentPickerResult>;
   fileReader?: (uri: string) => Promise<string>;
@@ -66,6 +67,7 @@ type WizardStep = 'select' | 'analyzing' | 'preview' | 'importing' | 'complete';
 export const ImportScreen: React.FC<ImportScreenProps> = ({
   importService,
   onClose,
+  onNavigateToCalendar,
   onImportComplete,
   documentPicker,
   fileReader,
@@ -639,7 +641,13 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
           <TouchableOpacity
             testID="import-done-btn"
             style={styles.doneBtn}
-            onPress={onClose}
+            onPress={() => {
+              if (onNavigateToCalendar) {
+                onNavigateToCalendar();
+              } else {
+                onClose();
+              }
+            }}
             activeOpacity={0.8}
           >
             <Text style={styles.doneBtnText}>View Workouts in Calendar ➔</Text>

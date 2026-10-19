@@ -853,6 +853,148 @@ describe('ActiveSessionService', () => {
       expect(secondGen[0].id).toBe(firstGen[0].id);
     });
   });
+
+  describe('applyWarmupAutoregulation', () => {
+    it('applies light warm-up rating (+5%) to remaining uncompleted working sets', async () => {
+      const activeWorkout = await sessionService.startWorkout();
+      // Add warmup set
+      await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 87.5,
+        reps: 1,
+        setType: 'warmup',
+      });
+      // Add 2 working sets @ 100kg
+      const s1 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+      const s2 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+
+      const result = await sessionService.applyWarmupAutoregulation(
+        activeWorkout.id,
+        'barbell_bench',
+        'light'
+      );
+
+      expect(result.adjustment.adjustedLoadKg).toBe(105);
+      expect(result.adjustment.percentageAdjustment).toBe(0.05);
+      expect(result.updatedSets.length).toBe(2);
+      expect(result.updatedSets[0].raw_input_weight).toBe(105);
+      expect(result.updatedSets[1].raw_input_weight).toBe(105);
+
+      // Verify persisted in repository
+      const allSets = await workoutRepo.getSetsByWorkoutId(activeWorkout.id);
+      const workSets = allSets.filter((s) => s.set_type === 'working');
+      expect(workSets[0].raw_input_weight).toBe(105);
+      expect(workSets[1].raw_input_weight).toBe(105);
+    });
+
+    it('applies heavy warm-up rating (-5%) and maintains normal rating (0%)', async () => {
+      const activeWorkout = await sessionService.startWorkout();
+      await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+
+      // Test heavy
+      const heavyResult = await sessionService.applyWarmupAutoregulation(
+        activeWorkout.id,
+        'barbell_bench',
+        'heavy'
+      );
+      expect(heavyResult.adjustment.adjustedLoadKg).toBe(95);
+      expect(heavyResult.adjustment.percentageAdjustment).toBe(-0.05);
+
+      // Test normal
+      const normalResult = await sessionService.applyWarmupAutoregulation(
+        activeWorkout.id,
+        'barbell_bench',
+        'normal'
+      );
+      expect(normalResult.adjustment.adjustedLoadKg).toBe(95); // baseline was now 95
+      expect(normalResult.adjustment.percentageAdjustment).toBe(0);
+    });
+
+    it('respects completedSetIds by leaving completed working sets untouched', async () => {
+      const activeWorkout = await sessionService.startWorkout();
+      const s1 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+      const s2 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+
+      // Mark s1 as completed
+      const completedSetIds = new Set<string>([s1.id]);
+
+      const result = await sessionService.applyWarmupAutoregulation(
+        activeWorkout.id,
+        'barbell_bench',
+        'light',
+        { completedSetIds }
+      );
+
+      // Only s2 should be updated
+      expect(result.updatedSets.length).toBe(1);
+      expect(result.updatedSets[0].id).toBe(s2.id);
+      expect(result.updatedSets[0].raw_input_weight).toBe(105);
+
+      const allSets = await workoutRepo.getSetsByWorkoutId(activeWorkout.id);
+      const dbS1 = allSets.find((s) => s.id === s1.id);
+      const dbS2 = allSets.find((s) => s.id === s2.id);
+      expect(dbS1?.raw_input_weight).toBe(100);
+      expect(dbS2?.raw_input_weight).toBe(105);
+    });
+
+    it('applies conservative adjustments when hasRecentFatigueFlag is true', async () => {
+      const activeWorkout = await sessionService.startWorkout();
+      await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 100,
+        reps: 5,
+        setType: 'working',
+      });
+
+      const fatigueLight = await sessionService.applyWarmupAutoregulation(
+        activeWorkout.id,
+        'barbell_bench',
+        'light',
+        { hasRecentFatigueFlag: true }
+      );
+      expect(fatigueLight.adjustment.adjustedLoadKg).toBe(102.5); // +2.5%
+      expect(fatigueLight.adjustment.percentageAdjustment).toBe(0.025);
+    });
+
+    it('throws when no uncompleted working sets exist', async () => {
+      const activeWorkout = await sessionService.startWorkout();
+      const s1 = await sessionService.addSet(activeWorkout.id, {
+        exerciseId: 'barbell_bench',
+        rawInputWeight: 80,
+        reps: 5,
+        setType: 'warmup',
+      });
+
+      await expect(
+        sessionService.applyWarmupAutoregulation(activeWorkout.id, 'barbell_bench', 'light')
+      ).rejects.toThrow('No uncompleted working sets found');
+    });
+  });
 });
 
 

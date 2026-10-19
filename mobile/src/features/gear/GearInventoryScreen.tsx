@@ -27,6 +27,8 @@ import {
   Alert,
   Switch,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {
   GearInventory,
@@ -433,7 +435,10 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
         animationType="slide"
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
@@ -613,7 +618,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

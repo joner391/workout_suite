@@ -19,6 +19,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   BackHandler,
+  Modal,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -48,10 +49,14 @@ import {
 import { ProgramBlockService } from './src/services/programBlockService';
 import { WorkoutTabRouter } from './src/features/logger';
 import { HomeScreen } from './src/features/home';
+import { CalendarScreen } from './src/features/calendar';
+import { PlotsScreen } from './src/features/plots';
+import { BodyMetricsScreen } from './src/features/bodyMetrics';
 import { UserProfileScreen } from './src/features/profile';
 import { SettingsScreen } from './src/features/settings';
 import { OnboardingWizardModal } from './src/features/onboarding';
 import { Workout } from './src/core/types';
+import { RepositoryProvider } from './src/context/RepositoryContext';
 
 export type RootTab = 'home' | 'workout' | 'profile' | 'settings' | 'logger' | 'calendar';
 
@@ -86,6 +91,11 @@ export default function App({
   db: propDb,
 }: AppProps = {}) {
   const [activeTab, setActiveTab] = useState<RootTab>(initialTab);
+  const [activeSubScreen, setActiveSubScreen] = useState<'calendar' | 'analytics' | null>(
+    initialTab === 'calendar' ? 'calendar' : null
+  );
+  const [analyticsGroup, setAnalyticsGroup] = useState<'performance' | 'body_composition'>('performance');
+  const [showBodyMetricsModal, setShowBodyMetricsModal] = useState<boolean>(false);
   const [tabHistory, setTabHistory] = useState<RootTab[]>([initialTab]);
   const [dbReady, setDbReady] = useState<boolean>(!!propWorkoutRepo);
   const [hasActiveWorkout, setHasActiveWorkout] = useState<boolean>(false);
@@ -95,8 +105,13 @@ export default function App({
     initialWorkoutId
   );
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
+  const [settingsInitialShowImport, setSettingsInitialShowImport] = useState<boolean>(false);
 
   const handleNavigateToTab = useCallback((newTab: RootTab) => {
+    setActiveSubScreen(null);
+    if (newTab !== 'settings') {
+      setSettingsInitialShowImport(false);
+    }
     setActiveTab(newTab);
     setTabHistory((prev) => {
       if (prev[prev.length - 1] === newTab) return prev;
@@ -107,6 +122,10 @@ export default function App({
   // Intercept Android hardware back button (Back-Stack navigation)
   useEffect(() => {
     const onHardwareBack = () => {
+      if (activeSubScreen) {
+        setActiveSubScreen(null);
+        return true;
+      }
       if (tabHistory.length > 1) {
         const nextHistory = [...tabHistory];
         nextHistory.pop();
@@ -125,7 +144,7 @@ export default function App({
 
     const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
     return () => sub.remove();
-  }, [tabHistory, activeTab]);
+  }, [tabHistory, activeTab, activeSubScreen]);
 
   // Normalize legacy tab names
   const currentTab = ((): 'home' | 'workout' | 'profile' | 'settings' => {
@@ -309,26 +328,96 @@ export default function App({
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.rootContainer} edges={['top', 'bottom', 'left', 'right']}>
-        <StatusBar style="light" />
+      <RepositoryProvider repositories={repos}>
+        <SafeAreaView style={styles.rootContainer} edges={['top', 'bottom', 'left', 'right']}>
+          <StatusBar style="light" />
 
         {/* Screen Body Container */}
         <View style={styles.bodyContainer}>
           {/* TAB 1: HOME (Dashboard, Calendar & Analytics Hub) */}
           {currentTab === 'home' && (
             <View style={[styles.tabContentContainer, styles.visibleContent]}>
-              <HomeScreen
-                workoutRepo={repos.workoutRepo}
-                exerciseRepo={repos.exerciseRepo}
-                gearRepo={repos.gearRepo}
-                userSettingsRepo={repos.userSettingsRepo}
-                programRepo={repos.programRepo}
-                programBlockService={repos.programBlockService}
-                bodyMetricsRepo={repos.bodyMetricsRepo}
-                userProfileRepo={repos.userProfileRepo}
-                onNavigateToWorkout={() => setActiveTab('workout')}
-                onNavigateToProfile={() => setActiveTab('profile')}
-              />
+              {activeSubScreen === 'calendar' ? (
+                <View style={styles.subScreenContainer}>
+                  <View style={styles.subScreenHeader}>
+                    <TouchableOpacity
+                      testID="subscreen-back-btn"
+                      style={styles.subScreenBackBtn}
+                      onPress={() => setActiveSubScreen(null)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.subScreenBackBtnText}>← Back</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.subScreenHeaderTitle}>Calendar & Periodization</Text>
+                    <View style={{ width: 60 }} />
+                  </View>
+                  <CalendarScreen
+                    workoutRepo={repos.workoutRepo}
+                    exerciseRepo={repos.exerciseRepo}
+                    gearRepo={repos.gearRepo}
+                    userSettingsRepo={repos.userSettingsRepo}
+                    programBlockService={repos.programBlockService}
+                    onStartWorkout={(dateIso) => {
+                      setActiveSubScreen(null);
+                      handleNavigateToTab('workout');
+                    }}
+                    onSelectWorkout={(workoutId) => {
+                      setCurrentWorkoutId(workoutId);
+                      setHasActiveWorkout(true);
+                      setActiveSubScreen(null);
+                      handleNavigateToTab('workout');
+                    }}
+                  />
+                </View>
+              ) : activeSubScreen === 'analytics' ? (
+                <View style={styles.subScreenContainer}>
+                  <View style={styles.subScreenHeader}>
+                    <TouchableOpacity
+                      testID="subscreen-back-btn"
+                      style={styles.subScreenBackBtn}
+                      onPress={() => setActiveSubScreen(null)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.subScreenBackBtnText}>← Back</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.subScreenHeaderTitle}>
+                      {analyticsGroup === 'body_composition' ? 'Body Composition' : 'Performance Analytics'}
+                    </Text>
+                    <View style={{ width: 60 }} />
+                  </View>
+                  <PlotsScreen
+                    workoutRepo={repos.workoutRepo}
+                    exerciseRepo={repos.exerciseRepo}
+                    bodyMetricsRepo={repos.bodyMetricsRepo}
+                    userProfileRepo={repos.userProfileRepo}
+                    programRepo={repos.programRepo}
+                    programBlockService={repos.programBlockService}
+                    userSettingsRepo={repos.userSettingsRepo}
+                    targetGroup={analyticsGroup}
+                    initialChartType={analyticsGroup === 'body_composition' ? 'bodyweight' : 'e1rm'}
+                    isInline={false}
+                    onNavigateToBodyMetrics={() => setShowBodyMetricsModal(true)}
+                  />
+                </View>
+              ) : (
+                <HomeScreen
+                  workoutRepo={repos.workoutRepo}
+                  exerciseRepo={repos.exerciseRepo}
+                  gearRepo={repos.gearRepo}
+                  userSettingsRepo={repos.userSettingsRepo}
+                  programRepo={repos.programRepo}
+                  programBlockService={repos.programBlockService}
+                  bodyMetricsRepo={repos.bodyMetricsRepo}
+                  userProfileRepo={repos.userProfileRepo}
+                  onNavigateToWorkout={() => setActiveTab('workout')}
+                  onNavigateToProfile={() => setActiveTab('profile')}
+                  onNavigateToCalendar={() => setActiveSubScreen('calendar')}
+                  onNavigateToAnalytics={(grp) => {
+                    setAnalyticsGroup(grp || 'performance');
+                    setActiveSubScreen('analytics');
+                  }}
+                />
+              )}
             </View>
           )}
 
@@ -390,6 +479,11 @@ export default function App({
                 programBlockService={repos.programBlockService}
                 db={database}
                 onSettingsChange={checkActiveWorkout}
+                initialShowImport={settingsInitialShowImport}
+                onNavigateToCalendar={() => {
+                  setSettingsInitialShowImport(false);
+                  handleNavigateToTab('home');
+                }}
               />
             </View>
           )}
@@ -525,11 +619,30 @@ export default function App({
             onComplete={() => setShowOnboarding(false)}
             onNavigateToImport={() => {
               setShowOnboarding(false);
+              setSettingsInitialShowImport(true);
               handleNavigateToTab('settings');
             }}
           />
         )}
-      </SafeAreaView>
+
+        {/* Body Metrics Logging Full-Screen Modal */}
+        {repos && repos.bodyMetricsRepo && (
+          <Modal
+            visible={showBodyMetricsModal}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={() => setShowBodyMetricsModal(false)}
+          >
+            <BodyMetricsScreen
+              bodyMetricsRepo={repos.bodyMetricsRepo}
+              userProfileRepo={repos.userProfileRepo}
+              userSettingsRepo={repos.userSettingsRepo}
+              onClose={() => setShowBodyMetricsModal(false)}
+            />
+          </Modal>
+        )}
+        </SafeAreaView>
+      </RepositoryProvider>
     </SafeAreaProvider>
   );
 }
@@ -618,5 +731,38 @@ const styles = StyleSheet.create({
   tabLabelTextActive: {
     color: '#00E676',
     fontWeight: '800',
+  },
+  subScreenContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  subScreenHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#09090B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#27272A',
+  },
+  subScreenBackBtn: {
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  subScreenBackBtnText: {
+    color: '#00E676',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  subScreenHeaderTitle: {
+    color: '#FAFAFA',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });
