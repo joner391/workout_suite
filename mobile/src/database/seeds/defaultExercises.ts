@@ -34,6 +34,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 65,
     required_gear: ['barbell'],
     exercise_tier: 1,
+    secondary_muscles: ['Glutes'],
   },
   {
     id: 'barbell_front_squat',
@@ -58,6 +59,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 70,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes'],
   },
   {
     id: 'barbell_low_bar_squat',
@@ -82,6 +84,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 60,
     required_gear: ['barbell'],
     exercise_tier: 1,
+    secondary_muscles: ['Glutes', 'Hamstrings'],
   },
   {
     id: 'barbell_box_squat',
@@ -106,6 +109,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 65,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes'],
   },
   {
     id: 'barbell_bench_press',
@@ -130,6 +134,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 75,
     required_gear: ['barbell'],
     exercise_tier: 1,
+    secondary_muscles: ['Triceps', 'Shoulders'],
   },
   {
     id: 'barbell_incline_bench_press',
@@ -154,6 +159,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 75,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Triceps', 'Shoulders'],
   },
   {
     id: 'barbell_close_grip_bench_press',
@@ -178,6 +184,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 75,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Chest', 'Shoulders'],
   },
   {
     id: 'barbell_deadlift',
@@ -202,6 +209,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 55,
     required_gear: ['barbell'],
     exercise_tier: 1,
+    secondary_muscles: ['Glutes', 'Hamstrings', 'Traps', 'Forearms'],
   },
   {
     id: 'barbell_sumo_deadlift',
@@ -226,6 +234,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 60,
     required_gear: ['barbell'],
     exercise_tier: 1,
+    secondary_muscles: ['Quads', 'Glutes', 'Traps', 'Forearms'],
   },
   {
     id: 'barbell_rdl',
@@ -250,6 +259,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 75,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes', 'Back'],
   },
   {
     id: 'barbell_deficit_deadlift',
@@ -274,6 +284,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 50,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes', 'Hamstrings', 'Traps'],
   },
   {
     id: 'barbell_overhead_press',
@@ -298,6 +309,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 70,
     required_gear: ['barbell'],
     exercise_tier: 1,
+    secondary_muscles: ['Triceps', 'Traps'],
   },
   {
     id: 'barbell_push_press',
@@ -322,6 +334,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 65,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Triceps', 'Traps', 'Quads'],
   },
   {
     id: 'barbell_bent_over_row',
@@ -346,6 +359,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 65,
     required_gear: ['barbell'],
     exercise_tier: 1,
+    secondary_muscles: ['Biceps', 'Forearms'],
   },
   {
     id: 'barbell_pendlay_row',
@@ -370,6 +384,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 65,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Biceps', 'Forearms'],
   },
   {
     id: 'barbell_hip_thrust',
@@ -394,6 +409,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 85,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Hamstrings'],
   },
   {
     id: 'barbell_good_morning',
@@ -418,6 +434,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 55,
     required_gear: ['barbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes', 'Back'],
   },
   {
     id: 'barbell_bicep_curl',
@@ -494,6 +511,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 85,
     required_gear: ['dumbbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Triceps', 'Shoulders'],
   },
   {
     id: 'dumbbell_incline_bench_press',
@@ -518,6 +536,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 85,
     required_gear: ['dumbbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Triceps', 'Shoulders'],
   },
   {
     id: 'dumbbell_shoulder_press',
@@ -542,6 +561,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 85,
     required_gear: ['dumbbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Triceps'],
   },
   {
     id: 'dumbbell_lateral_raise',
@@ -686,6 +706,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 80,
     required_gear: ['dumbbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes', 'Back'],
   },
   {
     id: 'dumbbell_goblet_squat',
@@ -710,6 +731,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 80,
     required_gear: ['dumbbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes'],
   },
   {
     id: 'dumbbell_bulgarian_split_squat',
@@ -734,6 +756,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 80,
     required_gear: ['dumbbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes'],
   },
   {
     id: 'dumbbell_walking_lunge',
@@ -758,6 +781,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 75,
     required_gear: ['dumbbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes'],
   },
   {
     id: 'dumbbell_single_arm_row',
@@ -782,6 +806,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 88,
     required_gear: ['dumbbell'],
     exercise_tier: 2,
+    secondary_muscles: ['Biceps', 'Forearms'],
   },
   {
     id: 'dumbbell_rear_delt_fly',
@@ -858,6 +883,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 90,
     required_gear: ['cable'],
     exercise_tier: 2,
+    secondary_muscles: ['Biceps', 'Forearms'],
   },
   {
     id: 'cable_seated_row',
@@ -882,6 +908,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 90,
     required_gear: ['cable'],
     exercise_tier: 2,
+    secondary_muscles: ['Biceps', 'Forearms'],
   },
   {
     id: 'cable_tricep_pushdown',
@@ -1030,6 +1057,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 85,
     required_gear: ['machine'],
     exercise_tier: 2,
+    secondary_muscles: ['Glutes'],
   },
   {
     id: 'machine_leg_extension',
@@ -1126,6 +1154,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 90,
     required_gear: ['machine'],
     exercise_tier: 2,
+    secondary_muscles: ['Triceps', 'Shoulders'],
   },
 
   // ==========================================================================
@@ -1154,6 +1183,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 80,
     required_gear: ['bodyweight', 'pull_up_bar'],
     exercise_tier: 2,
+    secondary_muscles: ['Biceps', 'Forearms'],
   },
   {
     id: 'bodyweight_chin_up',
@@ -1178,6 +1208,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 80,
     required_gear: ['bodyweight', 'pull_up_bar'],
     exercise_tier: 2,
+    secondary_muscles: ['Biceps', 'Forearms'],
   },
   {
     id: 'bodyweight_dip',
@@ -1202,6 +1233,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 75,
     required_gear: ['bodyweight', 'dip_station'],
     exercise_tier: 2,
+    secondary_muscles: ['Triceps', 'Shoulders'],
   },
   {
     id: 'bodyweight_push_up',
@@ -1226,6 +1258,7 @@ export const DEFAULT_EXERCISES: Exercise[] = [
     baseline_sfr: 85,
     required_gear: ['bodyweight'],
     exercise_tier: 2,
+    secondary_muscles: ['Triceps', 'Shoulders'],
   },
   {
     id: 'bodyweight_hanging_knee_raise',

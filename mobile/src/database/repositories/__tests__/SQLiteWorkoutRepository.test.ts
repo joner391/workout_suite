@@ -287,7 +287,7 @@ describe('SQLiteWorkoutRepository', () => {
         workoutDate: '2026-10-13',
       };
 
-      mockDb.mockData.set('PARTITION BY s.reps', [mockRepMaxRow]);
+      mockDb.mockData.set('PARTITION BY s.exercise_id, s.reps', [mockRepMaxRow]);
 
       const results = await repo.getRepMaxSets({
         exerciseIds: ['barbell_bench_press', 'incline_dumbbell_press'],
@@ -302,7 +302,7 @@ describe('SQLiteWorkoutRepository', () => {
 
       const executedSql = mockDb.executedQueries[0].sql;
       expect(executedSql).toContain('ROW_NUMBER() OVER');
-      expect(executedSql).toContain('PARTITION BY s.reps');
+      expect(executedSql).toContain('PARTITION BY s.exercise_id, s.reps');
       expect(executedSql).toContain('w.date >= ?');
       expect(executedSql).toContain('w.date <= ?');
       expect(mockDb.executedQueries[0].params).toEqual([
@@ -354,7 +354,7 @@ describe('SQLiteWorkoutRepository', () => {
     });
 
     it('queries best e1RM by exercise using SQL aggregate and maps results', async () => {
-      mockDb.mockData.set('MAX(weight * (1.0 + reps / 30.0))', [
+      mockDb.mockData.set('max_e1rm', [
         { exercise_id: 'bench_press', max_e1rm: 125.5 },
         { exercise_id: 'squat', max_e1rm: 180.0 },
       ]);
@@ -364,7 +364,7 @@ describe('SQLiteWorkoutRepository', () => {
       expect(results.get('bench_press')).toBe(125.5);
       expect(results.get('squat')).toBe(180.0);
 
-      expect(mockDb.executedQueries[0].sql).toContain('GROUP BY exercise_id');
+      expect(mockDb.executedQueries[0].sql).toContain('GROUP BY s.exercise_id');
     });
   });
 });

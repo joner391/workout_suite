@@ -8,7 +8,7 @@
  * 4. Multi-Vector Program Evolution:
  *    - Vector 1: Axial & SFR Rebalance (e.g. Barbell Back Squat -> Leg Press)
  *    - Vector 2: Rep brackets & rest interval updates
- *    - Vector 3: Bromley 3-week AMRAP wave on Tier 1; DDP on Tier 2/3
+ *    - Vector 3: effort-adjusted capacity on Tier 1; DDP on Tier 2/3
  *    - Vector 4: Isometric eRep invariance (~32 weekly stimulating reps)
  * 5. Program block closure & Meso N+1 activation
  * 6. Deterministic offline Markdown diff generation
@@ -440,7 +440,7 @@ describe('ProgramEvolutionService (Step 8.3)', () => {
       expect(swapDiff?.title).toContain('Barbell Back Squat Replaced with Leg Press');
     });
 
-    test('Vector 2 & 3: migrates Tier 1 compound to Bromley 3-week AMRAP wave and Tier 2 to DDP', async () => {
+    test('Vector 2 & 3: migrates Tier 1 compound to effort-adjusted capacity and Tier 2 to DDP', async () => {
       // Profile: Powerbuilding (Archetype II)
       await userProfileRepo.saveProfile({
         ...defaultProfile,
@@ -457,28 +457,28 @@ describe('ProgramEvolutionService (Step 8.3)', () => {
       expect(squatTe?.target_reps_min).toBe(3);
       expect(squatTe?.target_reps_max).toBe(6);
 
-      // Vector 3: Tier 1 rules contain Bromley 3-week AMRAP wave
+      // Vector 3: Tier 1 rules contain effort-adjusted capacity
       const squatRules = await programRepo.findRulesByTemplateExerciseId(squatTeId);
       expect(squatRules.length).toBe(3);
       expect(
         squatRules.some((r) =>
-          (typeof r.rule_json === 'string' ? r.rule_json : JSON.stringify(r.rule_json)).includes('INCREASE_LOAD_AMRAP_OVER_CAP')
+          (typeof r.rule_json === 'string' ? r.rule_json : JSON.stringify(r.rule_json)).includes('INCREASE_LOAD_FROM_ESTIMATED_CAPACITY')
         )
       ).toBe(true);
       expect(
         squatRules.some((r) =>
           (typeof r.rule_json === 'string' ? r.rule_json : JSON.stringify(r.rule_json)).includes('SCHEDULE_AMRAP_MIDWAY')
         )
-      ).toBe(true);
+      ).toBe(false);
       expect(
         squatRules.some((r) =>
           (typeof r.rule_json === 'string' ? r.rule_json : JSON.stringify(r.rule_json)).includes('SCHEDULE_AMRAP_FINAL_WEEK')
         )
-      ).toBe(true);
+      ).toBe(false);
 
       // Vector 3: Tier 2 rules contain DDP (success rule + plateau rule)
       const lateralRules = await programRepo.findRulesByTemplateExerciseId(lateralTeId);
-      expect(lateralRules.length).toBe(2);
+      expect(lateralRules.length).toBe(3);
       expect(
         lateralRules.some((r) =>
           (typeof r.rule_json === 'string' ? r.rule_json : JSON.stringify(r.rule_json)).includes('ANY_SET_HIT_TOP_REP_RANGE')

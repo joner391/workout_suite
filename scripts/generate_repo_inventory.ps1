@@ -20,7 +20,12 @@ function Get-InventoryPaths([string]$Directory) {
                 Get-InventoryPaths $entry.FullName
             }
         } else {
-            $relative = [System.IO.Path]::GetRelativePath($taskRoot, $entry.FullName).Replace('\', '/')
+            $full = $entry.FullName
+            if ($full.StartsWith($taskRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $relative = $full.Substring($taskRoot.Length).TrimStart('\', '/').Replace('\', '/')
+            } else {
+                $relative = $full.Replace('\', '/')
+            }
             if ($relative -notin $generatedPaths -and
                 $entry.Name -notlike '*.pyc' -and $entry.Name -notlike '*.tsbuildinfo' -and
                 $entry.Name -ne '.coverage') {

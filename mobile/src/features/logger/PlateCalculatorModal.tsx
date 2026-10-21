@@ -27,7 +27,9 @@ import {
   calculatePlateLoading,
   DEFAULT_BAR_TARE_KG,
   DEFAULT_PLATE_DENOMINATIONS_KG,
+  DEFAULT_PLATE_DENOMINATIONS_LBS,
 } from '../../core/math/plateCalculator';
+import { WeightUnit } from '../../core/types';
 
 export interface PlateCalculatorModalProps {
   visible: boolean;
@@ -35,6 +37,7 @@ export interface PlateCalculatorModalProps {
   initialBarTareKg?: number;
   exerciseName?: string;
   gearName?: string | null;
+  unitSystem?: WeightUnit;
   onApplyWeight?: (weightKg: number) => void;
   onClose: () => void;
 }
@@ -44,17 +47,25 @@ interface BarTarePreset {
   weightKg: number;
 }
 
-const BAR_PRESETS: BarTarePreset[] = [
+const BAR_PRESETS_KG: BarTarePreset[] = [
   { label: 'Olympic (20 kg)', weightKg: 20.0 },
   { label: 'SSB (29 kg)', weightKg: 29.0 },
   { label: 'Trap Bar (25 kg)', weightKg: 25.0 },
   { label: 'Tech Bar (15 kg)', weightKg: 15.0 },
 ];
 
+const BAR_PRESETS_LBS: BarTarePreset[] = [
+  { label: 'Olympic (45 lbs)', weightKg: 45.0 },
+  { label: 'SSB (65 lbs)', weightKg: 65.0 },
+  { label: 'Trap Bar (55 lbs)', weightKg: 55.0 },
+  { label: 'Tech Bar (35 lbs)', weightKg: 35.0 },
+];
+
 /**
  * Standard IWF Olympic plate colors and visual heights.
  */
 const PLATE_STYLES: Record<number, { bg: string; text: string; height: number; width: number }> = {
+  // Metric (kg)
   25: { bg: '#DC2626', text: '#FFFFFF', height: 90, width: 22 }, // Red
   20: { bg: '#2563EB', text: '#FFFFFF', height: 86, width: 20 }, // Blue
   15: { bg: '#CA8A04', text: '#000000', height: 78, width: 18 }, // Yellow
@@ -62,39 +73,49 @@ const PLATE_STYLES: Record<number, { bg: string; text: string; height: number; w
   5: { bg: '#E4E4E7', text: '#000000', height: 56, width: 14 }, // White
   2.5: { bg: '#3F3F46', text: '#FFFFFF', height: 46, width: 12 }, // Black/Dark
   1.25: { bg: '#94A3B8', text: '#000000', height: 38, width: 10 }, // Chrome/Silver
+  // Imperial (lbs)
+  45: { bg: '#2563EB', text: '#FFFFFF', height: 90, width: 22 }, // Blue
+  35: { bg: '#CA8A04', text: '#000000', height: 82, width: 20 }, // Yellow
 };
 
 export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
   visible,
   initialWeightKg,
-  initialBarTareKg = DEFAULT_BAR_TARE_KG,
+  initialBarTareKg,
   exerciseName,
   gearName,
+  unitSystem = 'kg',
   onApplyWeight,
   onClose,
 }) => {
-  const initialValue = initialWeightKg > 0 ? initialWeightKg : initialBarTareKg;
+  const isLbs = unitSystem === 'lbs';
+  const defaultBarTare = initialBarTareKg ?? (isLbs ? 45.0 : DEFAULT_BAR_TARE_KG);
+  const initialValue = initialWeightKg > 0 ? initialWeightKg : defaultBarTare;
   const [targetWeight, setTargetWeight] = useState<number>(initialValue);
-  const [barTare, setBarTare] = useState<number>(initialBarTareKg);
+  const [barTare, setBarTare] = useState<number>(defaultBarTare);
   const [rawText, setRawText] = useState<string>(String(initialValue));
 
   // Sync state whenever modal is opened or initial props change
   useEffect(() => {
     if (visible) {
-      const init = initialWeightKg > 0 ? initialWeightKg : initialBarTareKg;
+      const bar = initialBarTareKg ?? (isLbs ? 45.0 : DEFAULT_BAR_TARE_KG);
+      const init = initialWeightKg > 0 ? initialWeightKg : bar;
       setTargetWeight(init);
       setRawText(String(init));
-      setBarTare(initialBarTareKg);
+      setBarTare(bar);
     }
-  }, [visible, initialWeightKg, initialBarTareKg]);
+  }, [visible, initialWeightKg, initialBarTareKg, isLbs]);
+
+  const barPresets = isLbs ? BAR_PRESETS_LBS : BAR_PRESETS_KG;
+  const availablePlates = isLbs ? DEFAULT_PLATE_DENOMINATIONS_LBS : DEFAULT_PLATE_DENOMINATIONS_KG;
 
   // Re-calculate plates per side
   const calculation = useMemo(() => {
     return calculatePlateLoading(targetWeight, {
       barTareKg: barTare,
-      availablePlatesKg: DEFAULT_PLATE_DENOMINATIONS_KG,
+      availablePlatesKg: availablePlates,
     });
-  }, [targetWeight, barTare]);
+  }, [targetWeight, barTare, availablePlates]);
 
   // Aggregate plate counts for display (e.g. { 25: 2, 10: 1 })
   const plateCounts = useMemo(() => {
@@ -185,10 +206,10 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
                   placeholderTextColor="#71717A"
                   accessibilityLabel="Target barbell weight in kg"
                 />
-                <Text style={styles.targetUnit}>kg</Text>
+                <Text style={styles.targetUnit}>{unitSystem}</Text>
               </View>
               <Text testID="plate-calc-target-weight" style={styles.targetSubDisplay}>
-                {targetWeight.toFixed(2).replace(/\.00$/, '')} kg
+                {targetWeight.toFixed(2).replace(/\.00$/, '')} {unitSystem}
               </Text>
 
               {/* Quick Stepper Row */}
@@ -210,16 +231,16 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
                 <TouchableOpacity
                   testID="plate-stepper-minus-1.25"
                   style={styles.stepperChip}
-                  onPress={() => handleAdjustWeight(-1.25)}
+                  onPress={() => handleAdjustWeight(isLbs ? -1.25 : -1.25)}
                 >
-                  <Text style={styles.stepperChipText}>-1.25</Text>
+                  <Text style={styles.stepperChipText}>{isLbs ? '-1.25' : '-1.25'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   testID="plate-stepper-plus-1.25"
                   style={styles.stepperChip}
-                  onPress={() => handleAdjustWeight(1.25)}
+                  onPress={() => handleAdjustWeight(isLbs ? 1.25 : 1.25)}
                 >
-                  <Text style={styles.stepperChipText}>+1.25</Text>
+                  <Text style={styles.stepperChipText}>{isLbs ? '+1.25' : '+1.25'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   testID="plate-stepper-plus-2.5"
@@ -242,7 +263,7 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
             <View style={styles.barSection}>
               <Text style={styles.sectionHeader}>BARBELL TARE</Text>
               <View style={styles.barPresetsRow}>
-                {BAR_PRESETS.map((preset) => {
+                {barPresets.map((preset) => {
                   const isSelected = barTare === preset.weightKg;
                   return (
                     <TouchableOpacity
@@ -306,7 +327,7 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
               <View style={styles.breakdownRow}>
                 <Text style={styles.breakdownLabel}>Weight per side:</Text>
                 <Text testID="plate-weight-per-side" style={styles.breakdownValue}>
-                  {calculation.weightPerSideKg.toFixed(2).replace(/\.00$/, '')} kg
+                  {calculation.weightPerSideKg.toFixed(2).replace(/\.00$/, '')} {unitSystem}
                 </Text>
               </View>
 
@@ -314,7 +335,7 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
               {calculation.remainderKg > 0 && (
                 <View testID="plate-remainder-warning" style={styles.remainderWarningBox}>
                   <Text style={styles.remainderWarningText}>
-                    ⚠ Remainder: {calculation.remainderKg} kg cannot be evenly loaded with available plates.
+                    ⚠ Remainder: {calculation.remainderKg} {unitSystem} cannot be evenly loaded with available plates.
                   </Text>
                 </View>
               )}
@@ -337,7 +358,7 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
                           style={[styles.plateCountBadge, { borderColor: styleInfo.bg }]}
                         >
                           <Text style={[styles.plateBadgeWeight, { color: styleInfo.bg }]}>
-                            {weightStr} kg
+                            {weightStr} {unitSystem}
                           </Text>
                           <Text style={styles.plateBadgeCount}>× {count}</Text>
                         </View>

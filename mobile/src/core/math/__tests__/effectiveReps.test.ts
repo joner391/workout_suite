@@ -48,15 +48,15 @@ describe('effectiveReps math module', () => {
       expect(res.isStimulating).toBe(false);
     });
 
-    test('unrated working sets yield 0 effective reps and isRated = false', () => {
+    test('unrated working sets yield 3 effective reps (assuming 2 RIR) and isRated = false', () => {
       const res = calculateHypertrophicEffectiveReps(10, {
         set_type: 'working',
       });
-      expect(res.effectiveReps).toBe(0);
+      expect(res.effectiveReps).toBe(3);
       expect(res.isRated).toBe(false);
-      expect(res.isStimulating).toBe(false);
-      expect(res.effRpe).toBeNull();
-      expect(res.effRir).toBeNull();
+      expect(res.isStimulating).toBe(true);
+      expect(res.effRpe).toBe(8.0);
+      expect(res.effRir).toBe(2.0);
     });
 
     test('AMRAP set type defaults to RPE 10.0 (0 RIR) and yields min(reps, 5)', () => {
@@ -71,9 +71,9 @@ describe('effectiveReps math module', () => {
       expect(res2.effectiveReps).toBe(3);
     });
 
-    test('DC, Myorep, and Drop sets default to failure RPE 10.0', () => {
+    test('DC, Myorep, and Drop sets default to failure RPE 10.0 with rest-pause bonus', () => {
       const dcRes = calculateHypertrophicEffectiveReps(8, { set_type: 'dc' });
-      expect(dcRes.effectiveReps).toBe(5);
+      expect(dcRes.effectiveReps).toBe(6.5);
       expect(dcRes.isRated).toBe(true);
 
       const myoRes = calculateHypertrophicEffectiveReps(4, { set_type: 'myorep' });
@@ -81,7 +81,7 @@ describe('effectiveReps math module', () => {
       expect(myoRes.isRated).toBe(true);
 
       const dropRes = calculateHypertrophicEffectiveReps(6, { set_type: 'drop' });
-      expect(dropRes.effectiveReps).toBe(5);
+      expect(dropRes.effectiveReps).toBe(5.5);
       expect(dropRes.isRated).toBe(true);
     });
 

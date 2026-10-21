@@ -73,7 +73,8 @@ export function calculateEffectiveReps(
     return 0;
   }
 
-  let reserve = 0;
+  // Default to 2 RIR for unrated sets per project specification
+  let reserve = 2.0;
 
   if (intensity?.rir != null && !isNaN(intensity.rir)) {
     reserve = Math.max(0, intensity.rir);

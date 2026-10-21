@@ -27,7 +27,12 @@ export const ProgressionProposalBanner: React.FC<ProgressionProposalBannerProps>
     return null;
   }
 
-  const isDeload = proposal.isDeload || proposal.actionType === 'TRIGGER_DELOAD';
+  const isDeload = Boolean(
+    proposal.isDeload ||
+    proposal.actionType === 'TRIGGER_DELOAD' ||
+    proposal.actionType === 'RESET_WEIGHT_PERCENT' ||
+    proposal.actionType === 'DECREASE_LOAD_FIXED'
+  );
 
   return (
     <View

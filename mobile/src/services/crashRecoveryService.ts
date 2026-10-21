@@ -12,6 +12,7 @@
 
 import { Workout, WorkoutSet, WorkoutWithSets } from '../core/types';
 import { IWorkoutRepository } from '../domain/repositories/IWorkoutRepository';
+import { IUserSettingsRepository } from '../domain/repositories/IUserSettingsRepository';
 
 // ============================================================================
 // Service DTOs & Output Types
@@ -49,7 +50,10 @@ function formatElapsedDuration(totalSeconds: number): string {
 }
 
 export class CrashRecoveryService {
-  constructor(private readonly workoutRepo: IWorkoutRepository) {}
+  constructor(
+    private readonly workoutRepo: IWorkoutRepository,
+    private readonly userSettingsRepo?: IUserSettingsRepository
+  ) {}
 
   /**
    * Checks whether an interrupted in-progress workout exists in SQLite.
@@ -80,7 +84,27 @@ export class CrashRecoveryService {
     }
 
     const uniqueExercises = new Set(sets.map((s) => s.exercise_id)).size;
-    const completedSets = sets.filter((s) => s.reps > 0).length;
+
+    let completedSets: number | null = null;
+    if (this.userSettingsRepo) {
+      try {
+        const saved = await this.userSettingsRepo.get(`active_completed_set_ids_${activeWorkout.id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            completedSets = parsed.length;
+          }
+        }
+      } catch {
+        // Fall back to heuristic filter below
+      }
+    }
+
+    if (completedSets === null) {
+      completedSets = sets.filter(
+        (s) => s.reps > 0 && (s.weight > 0 || s.rpe != null || s.rir != null)
+      ).length;
+    }
 
     const summary: CrashRecoverySummary = {
       totalSets: sets.length,

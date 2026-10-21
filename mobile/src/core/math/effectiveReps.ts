@@ -96,7 +96,13 @@ export function calculateHypertrophicEffectiveReps(
       resolvedRpe = Math.min(10.0, Math.max(0.0, 10.0 - resolvedRir));
     }
 
-    const effectiveReps = Math.min(reps, 5);
+    const norm = (setType || '').trim().toLowerCase();
+    const isRestPause = norm === 'myorep' || norm === 'drop' || norm === 'dc';
+    const baseEreps = Math.min(reps, 5);
+    const effectiveReps = isRestPause
+      ? Math.min(reps, baseEreps + 0.5 * Math.max(0, reps - 5))
+      : baseEreps;
+
     return {
       effectiveReps,
       isRated: true,
@@ -110,17 +116,7 @@ export function calculateHypertrophicEffectiveReps(
   const hasRpe = options?.rpe != null && !isNaN(options.rpe);
   const hasRir = options?.rir != null && !isNaN(options.rir);
 
-  if (!hasRpe && !hasRir) {
-    // Missing exertion signal: Omitted from effective reps per user specification
-    return {
-      effectiveReps: 0,
-      isRated: false,
-      isStimulating: false,
-      effRpe: null,
-      effRir: null,
-    };
-  }
-
+  let isRated = true;
   let resolvedRir = 0.0;
   let resolvedRpe = 10.0;
 
@@ -130,6 +126,11 @@ export function calculateHypertrophicEffectiveReps(
   } else if (hasRpe) {
     resolvedRpe = Math.min(10.0, Math.max(0.0, options!.rpe!));
     resolvedRir = Math.max(0.0, 10.0 - resolvedRpe);
+  } else {
+    // Missing exertion signal: Assume 2 RIR per project specification
+    resolvedRir = 2.0;
+    resolvedRpe = 8.0;
+    isRated = false;
   }
 
   // Check heavy load threshold (>= 85% 1RM or (reps <= 5 and RPE >= 8.0) under Henneman's Size Principle)
@@ -156,7 +157,7 @@ export function calculateHypertrophicEffectiveReps(
 
   return {
     effectiveReps,
-    isRated: true,
+    isRated,
     isStimulating: effectiveReps > 0,
     effRpe: resolvedRpe,
     effRir: resolvedRir,

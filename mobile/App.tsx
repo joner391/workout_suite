@@ -56,6 +56,7 @@ import { CalendarScreen } from './src/features/calendar';
 import { PlotsScreen } from './src/features/plots';
 import { BodyMetricsScreen } from './src/features/bodyMetrics';
 import { UserProfileScreen } from './src/features/profile';
+import { ProgramOverviewScreen } from './src/features/progression/ProgramOverviewScreen';
 import { SettingsScreen } from './src/features/settings';
 import { OnboardingWizardModal } from './src/features/onboarding';
 import { Workout } from './src/core/types';
@@ -103,6 +104,9 @@ export default function App({
   );
   const [analyticsGroup, setAnalyticsGroup] = useState<'performance' | 'body_composition'>('performance');
   const [showBodyMetricsModal, setShowBodyMetricsModal] = useState<boolean>(false);
+  const [showPrograms, setShowPrograms] = useState(false);
+  const [showProgramSetup, setShowProgramSetup] = useState(false);
+  const [programRevision, setProgramRevision] = useState(0);
   const [tabHistory, setTabHistory] = useState<RootTab[]>([initialTab]);
   const [dbReady, setDbReady] = useState<boolean>(!!propWorkoutRepo);
   const [hasActiveWorkout, setHasActiveWorkout] = useState<boolean>(false);
@@ -418,8 +422,10 @@ export default function App({
                   programBlockService={repos.programBlockService}
                   bodyMetricsRepo={repos.bodyMetricsRepo}
                   userProfileRepo={repos.userProfileRepo}
-                  onNavigateToWorkout={() => setActiveTab('workout')}
-                  onNavigateToProfile={() => setActiveTab('profile')}
+                  key={`home-${programRevision}`}
+                  onNavigateToWorkout={() => handleNavigateToTab('workout')}
+                  onNavigateToProfile={() => handleNavigateToTab('profile')}
+                  onNavigateToPrograms={() => { handleNavigateToTab('workout'); setShowPrograms(true); }}
                   onNavigateToCalendar={() => setActiveSubScreen('calendar')}
                   onNavigateToAnalytics={(grp) => {
                     setAnalyticsGroup(grp || 'performance');
@@ -451,14 +457,15 @@ export default function App({
               hasActiveWorkout={hasActiveWorkout}
               currentWorkoutId={currentWorkoutId}
               isActiveTab={currentTab === 'workout'}
+              programRevision={programRevision}
               onStartSession={handleStartSession}
               onFinishSession={handleFinishSession}
               onDiscardSession={handleDiscardSession}
-              onOpenProgramPlanner={() => setActiveTab('profile')}
+              onOpenProgramPlanner={() => setShowPrograms(true)}
             />
           </View>
 
-          {/* TAB 3: PROFILE (Training Psychology & Program Planner) */}
+          {/* TAB 3: PROFILE (Performance Records & Athlete Setup) */}
           {currentTab === 'profile' && (
             <View style={[styles.tabContentContainer, styles.visibleContent]}>
               <UserProfileScreen
@@ -471,6 +478,7 @@ export default function App({
                 bodyMetricsRepo={repos.bodyMetricsRepo}
                 workoutRepo={repos.workoutRepo}
                 painReportRepo={repos.painReportRepo}
+                onOpenProgramOverview={() => { handleNavigateToTab('workout'); setShowPrograms(true); }}
                 onProgramGenerated={(progId) => {
                   checkActiveWorkout();
                 }}
@@ -619,6 +627,22 @@ export default function App({
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Workout program management and focused generation/evolution setup */}
+        {showPrograms && <Modal visible animationType="slide" onRequestClose={() => { setShowPrograms(false); setProgramRevision(n => n + 1); }}>
+          <SafeAreaView style={styles.rootContainer}>
+            <View style={styles.subScreenHeader}>
+              <TouchableOpacity accessibilityRole="button" style={styles.subScreenBackBtn} onPress={() => { setShowPrograms(false); setProgramRevision(n => n + 1); }}><Text style={styles.subScreenBackBtnText}>← Back</Text></TouchableOpacity>
+              <TouchableOpacity testID="program-hub-setup-btn" accessibilityRole="button" style={styles.subScreenBackBtn} onPress={() => { setShowPrograms(false); setShowProgramSetup(true); }}><Text style={styles.subScreenBackBtnText}>Create / evolve →</Text></TouchableOpacity>
+            </View>
+            <ProgramOverviewScreen programRepo={repos.programRepo} programBlockService={repos.programBlockService} exerciseRepo={repos.exerciseRepo} gearRepo={repos.gearRepo} onClose={() => { setShowPrograms(false); setProgramRevision(n => n + 1); }} />
+          </SafeAreaView>
+        </Modal>}
+        {showProgramSetup && <Modal visible animationType="slide" onRequestClose={() => { setShowProgramSetup(false); setShowPrograms(true); }}>
+          <SafeAreaView style={styles.rootContainer}>
+            <UserProfileScreen userProfileRepo={repos.userProfileRepo} programRepo={repos.programRepo} programBlockService={repos.programBlockService} exerciseRepo={repos.exerciseRepo} gearRepo={repos.gearRepo} userSettingsRepo={repos.userSettingsRepo} bodyMetricsRepo={repos.bodyMetricsRepo} workoutRepo={repos.workoutRepo} painReportRepo={repos.painReportRepo} initialEditor="programs" onClose={() => { setShowProgramSetup(false); setShowPrograms(true); setProgramRevision(n => n + 1); }} />
+          </SafeAreaView>
+        </Modal>}
 
         {/* First-Time User 3-Step Onboarding Wizard */}
         {showOnboarding && repos && (

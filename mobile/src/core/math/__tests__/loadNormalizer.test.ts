@@ -54,6 +54,19 @@ describe('Mechanical Load Normalization Engine', () => {
       expect(result.effectiveWeightKg).toBe(70);
       expect(result.addedWeightKg).toBeNull();
     });
+
+    it('should compose per-hand multiplier and cable pulley ratio multiplicatively', () => {
+      // 20 kg per hand on a dual 2:1 cable setup: 20 * 2 (both hands) * 0.5 (pulley) = 20 kg
+      const result = normalizeLoad({
+        rawInputWeightKg: 20,
+        loadMode: 'per_hand',
+        cableRatio: 0.5,
+      });
+
+      expect(result.rawInputWeightKg).toBe(20);
+      expect(result.effectiveWeightKg).toBe(20);
+      expect(result.addedWeightKg).toBeNull();
+    });
   });
 
   describe('Bodyweight, Weighted, and Assisted Exercises (ADR-018 & Edge Cases)', () => {

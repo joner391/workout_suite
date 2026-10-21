@@ -267,9 +267,9 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
               <View style={styles.dotsHeaderLeft}>
                 <Text style={styles.dotsCardIcon}>🏆</Text>
                 <View>
-                  <Text style={styles.dotsCardTitle}>Composite SBD DOTS Score</Text>
+                  <Text style={styles.dotsCardTitle}>Estimated SBD DOTS Score</Text>
                   <Text style={styles.dotsCardSubtext}>
-                    Official powerlifting bodyweight-scaled score ({gender}, {formatWeight(bodyweightKg, unitSystem)})
+                    Based on best e1RM estimates ({gender}, {formatWeight(bodyweightKg, unitSystem)})
                   </Text>
                 </View>
               </View>
@@ -284,7 +284,7 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
             <View style={styles.noBwContent}>
               <Text style={styles.noBwTitle}>DOTS Score Requires Bodyweight</Text>
               <Text style={styles.noBwSubtext}>
-                Set your bodyweight in your profile to calculate your official composite powerlifting DOTS score.
+                Log your bodyweight to calculate an estimated DOTS score from your lift estimates.
               </Text>
             </View>
             {onOpenProfile && (

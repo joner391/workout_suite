@@ -1,7 +1,7 @@
 /**
  * Workout Suite — UserProfileScreen
  *
- * Implements Step 4.4: Questionnaire UI, Psychological Matrix & Program Generator
+ * Athlete hub with direct performance destinations and focused preference editors.
  * Implements ADR-014: Multi-Dimensional User Profile & Psychological Preference Matrix
  * Implements ADR-038: Profile-Driven Program Synthesizer Pure Generator
  */
@@ -50,6 +50,9 @@ import { synthesizeProgram } from '../../core/generator/programSynthesizer';
 import { ProgramOverviewScreen } from '../progression/ProgramOverviewScreen';
 import { GearInventoryScreen } from '../gear/GearInventoryScreen';
 import { BodyMetricsScreen } from '../bodyMetrics/BodyMetricsScreen';
+import { PersonalRecordsScreen } from './PersonalRecordsScreen';
+import { StrengthOverviewScreen } from './StrengthOverviewScreen';
+import { mergeProfileEditorChanges, ProfileEditorSection } from '../../services/profilePreferencesService';
 
 export interface UserProfileScreenProps {
   userProfileRepo: IUserProfileRepository;
@@ -67,6 +70,7 @@ export interface UserProfileScreenProps {
   onClose?: () => void;
   onProgramGenerated?: (programId: string) => void;
   onOpenProgramOverview?: () => void;
+  initialEditor?: ProfileEditorSection;
 }
 
 export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
@@ -85,6 +89,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   onClose,
   onProgramGenerated,
   onOpenProgramOverview,
+  initialEditor,
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -99,12 +104,15 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const [showBodyMetrics, setShowBodyMetrics] = useState<boolean>(false);
   const [showEvolutionModal, setShowEvolutionModal] = useState<boolean>(false);
   const [evolutionResult, setEvolutionResult] = useState<EvolutionResult | null>(null);
-  const [questionnaireExpanded, setQuestionnaireExpanded] = useState<boolean>(initialQuestionnaireExpanded);
+  const [editorSection, setEditorSection] = useState<ProfileEditorSection | null>(initialEditor ?? (initialQuestionnaireExpanded ? 'training' : null));
+  const [showRecords, setShowRecords] = useState(false);
+  const [showStrength, setShowStrength] = useState(false);
+  const [savedProfile, setSavedProfile] = useState<UserProfile | null>(null);
 
   // Form State
   const [gender, setGender] = useState<Gender>('male');
-  const [birthdate, setBirthdate] = useState<string>('1995-01-01');
-  const [heightCm, setHeightCm] = useState<string>('180');
+  const [birthdate, setBirthdate] = useState<string>('');
+  const [heightCm, setHeightCm] = useState<string>('');
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>('intermediate');
   const [trainingMentality, setTrainingMentality] = useState<TrainingMentality>('precision');
   const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal>('hypertrophy');
@@ -171,13 +179,14 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       }
 
       const existing = await userProfileRepo.getProfile();
+      setSavedProfile(existing);
       if (existing) {
         setProfileId(existing.id);
         setGender(existing.gender);
-        if (existing.birthdate) setBirthdate(existing.birthdate);
-        if (existing.height_cm != null) setHeightCm(String(existing.height_cm));
-        if (existing.experience_level) setExperienceLevel(existing.experience_level);
-        if (existing.pending_meso_mood != null) setPendingMesoMood(Boolean(existing.pending_meso_mood));
+        setBirthdate(existing.birthdate ?? '');
+        setHeightCm(existing.height_cm != null ? String(existing.height_cm) : '');
+        setExperienceLevel(existing.experience_level ?? 'intermediate');
+        setPendingMesoMood(Boolean(existing.pending_meso_mood));
         setTrainingMentality(
           existing.training_mentality ??
           (existing.intensity_style === 'high_intensity_low_volume'
@@ -187,7 +196,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             : 'precision')
         );
         setPrimaryGoal(existing.primary_goal);
-        if (existing.secondary_goals) setSecondaryGoals(existing.secondary_goals);
+        setSecondaryGoals(existing.secondary_goals ?? []);
         setPreferredDays(existing.preferred_days_per_week);
         setPreferredDurationMins(existing.preferred_session_duration_mins);
         setEquipmentAccess(existing.equipment_access);
@@ -197,7 +206,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [userProfileRepo, programBlockService]);
+  }, [userProfileRepo, programBlockService, programRepo, programEvolutionService, workoutRepo, painReportRepo, exerciseRepo, userSettingsRepo, isBetaPhase]);
 
   useEffect(() => {
     loadProfile();
@@ -207,6 +216,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const buildCurrentProfile = (): UserProfile => {
     const parsedHeight = parseFloat(heightCm);
     return {
+      ...savedProfile,
       id: profileId,
       gender,
       birthdate: birthdate.trim() || null,
@@ -231,7 +241,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       preferred_session_duration_mins: preferredDurationMins,
       equipment_access: equipmentAccess,
       pending_meso_mood: pendingMesoMood,
-      created_at: new Date().toISOString(),
+      created_at: savedProfile?.created_at ?? new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
   };
@@ -248,13 +258,30 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     try {
       setSaving(true);
       setStatusMessage(null);
-      const profile = buildCurrentProfile();
+      const draft = buildCurrentProfile();
+      const existing = await userProfileRepo.getProfile();
+      const profile = mergeProfileEditorChanges(existing, draft, editorSection ?? 'training', !!activeInfo);
       await userProfileRepo.saveProfile(profile);
-      setStatusMessage('Athlete demographics & preferences saved successfully.');
+      if (editorSection === 'details') await userSettingsRepo?.setUserGender(profile.gender);
+      setSavedProfile(profile); setPendingMesoMood(!!profile.pending_meso_mood);
+      setEditorSection(initialEditor === 'programs' ? 'programs' : null);
+      if (editorSection === 'equipment') setShowGearInventory(true);
+      setStatusMessage('Changes saved.');
     } catch (err: any) {
       setStatusMessage(`Failed to save: ${err?.message ?? 'Unknown error'}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const closeEditor = () => {
+    if (saving || generating || evolving) return;
+    if (initialEditor === 'programs' && editorSection !== 'programs') {
+      setEditorSection('programs'); loadProfile();
+    } else {
+      setEditorSection(null);
+      if (initialEditor) onClose?.(); else loadProfile();
+      if (editorSection === 'equipment') setShowGearInventory(true);
     }
   };
 
@@ -295,6 +322,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       });
 
       setEvolutionResult(result);
+      setEditorSection(null);
       setShowEvolutionModal(true);
       setPendingMesoMood(false);
       setLastGeneratedProgramId(result.programId);
@@ -324,12 +352,13 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       const profile = buildCurrentProfile();
       await userProfileRepo.saveProfile(profile);
 
-      // Discard any abandoned in-progress workout from superseded program
+      // Keep an active session intact when creating programs from the Workout hub.
       if (workoutRepo) {
         try {
           const oldInProgress = await workoutRepo.getInProgressWorkout();
           if (oldInProgress) {
-            await workoutRepo.delete(oldInProgress.id);
+            setStatusMessage('Generation failed: finish or discard your active workout before creating a new program.');
+            return;
           }
         } catch {
           // Safe fallback
@@ -363,6 +392,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       }
 
       // Open Program Overview so athlete can inspect and make manual adjustments
+      setEditorSection(null);
       setShowProgramOverview(true);
 
       if (onProgramGenerated) {
@@ -379,148 +409,23 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#00E676" />
-        <Text style={styles.loadingText}>Loading athlete profile matrix...</Text>
+        <Text style={styles.loadingText}>Loading your profile...</Text>
       </View>
     );
   }
 
-  return (
-    <View testID="user-profile-screen" style={styles.screen}>
-      {/* Top Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Training Profile</Text>
-          <Text style={styles.headerSubtitle}>
-            Psychological & logistical matrix for custom program generation
-          </Text>
-        </View>
-        {onClose && (
-          <TouchableOpacity
-            testID="close-user-profile-btn"
-            style={styles.closeBtn}
-            onPress={onClose}
-          >
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Active Program Banner & Program Overview Hub */}
-        <View testID="active-program-banner-card" style={styles.activeProgramCard}>
-          <View style={styles.activeProgramHeader}>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.activeProgramBadge}>ACTIVE PROGRAM</Text>
-                {pendingMesoMood && (
-                  <View style={styles.pendingMoodBadge}>
-                    <Text style={styles.pendingMoodBadgeText}>⚡ Mood Staged for Meso N+1</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={styles.activeProgramTitle} numberOfLines={1}>
-                {activeInfo ? activeInfo.program.name : 'No Program Active'}
-              </Text>
-              {activeInfo && (
-                <Text style={styles.activeProgramMeta}>
-                  Active since {activeInfo.block.start_date || 'recently'}
-                </Text>
-              )}
-            </View>
-            <TouchableOpacity
-              testID="open-program-overview-btn"
-              style={styles.openOverviewBtn}
-              onPress={() => {
-                if (onOpenProgramOverview) {
-                  onOpenProgramOverview();
-                } else {
-                  setShowProgramOverview(true);
-                }
-              }}
-            >
-              <Text style={styles.openOverviewBtnText}>Programs 📋</Text>
-            </TouchableOpacity>
+  const editor = editorSection ? (
+        <View style={styles.screen}>
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>{editorSection === 'training' ? 'Training preferences' : editorSection === 'details' ? 'Personal details' : editorSection === 'equipment' ? 'Equipment access' : 'Program setup'}</Text>
+            <TouchableOpacity testID="profile-editor-close" accessibilityRole="button" style={styles.closeBtn} disabled={saving || generating || evolving} onPress={closeEditor}><Text style={styles.closeBtnText}>✕</Text></TouchableOpacity>
           </View>
-        </View>
-
-        {/* Status Notification Banner */}
-        {statusMessage && (
-          <View
-            style={[
-              styles.statusBanner,
-              statusMessage.includes('failed') || statusMessage.includes('Failed')
-                ? styles.statusBannerError
-                : styles.statusBannerSuccess,
-            ]}
-          >
-            <Text style={styles.statusBannerText}>{statusMessage}</Text>
-          </View>
-        )}
-
-        {/* Generated Summary Card */}
-        {generatedSummary && (
-          <View testID="generated-program-summary-card" style={styles.summaryCard}>
-            <View style={styles.summaryHeader}>
-              <Text style={styles.summaryBadge}>PROGRAM ACTIVATED</Text>
-              <Text style={styles.summarySplitTitle}>
-                {generatedSummary.splitType.replace('_', ' ').toUpperCase()} • {generatedSummary.daysPerWeek} DAYS/WK
-              </Text>
-            </View>
-            <View style={styles.summaryMetricsRow}>
-              <View style={styles.summaryMetricItem}>
-                <Text style={styles.metricLabel}>Session Duration</Text>
-                <Text style={styles.metricValue}>~{generatedSummary.estimatedSessionDurationMins} min</Text>
-              </View>
-              <View style={styles.summaryMetricItem}>
-                <Text style={styles.metricLabel}>Weekly Sets</Text>
-                <Text style={styles.metricValue}>{generatedSummary.totalWeeklySets} sets</Text>
-              </View>
-              <View style={styles.summaryMetricItem}>
-                <Text style={styles.metricLabel}>Antagonist Pairs</Text>
-                <Text style={styles.metricValue}>{generatedSummary.hasSupersets ? 'Active' : 'Sequential'}</Text>
-              </View>
-            </View>
-            <Text style={styles.summaryProgressionText}>
-              ⚙️ {generatedSummary.progressionSchemeSummary}
-            </Text>
-          </View>
-        )}
-
-        {/* Athlete Questionnaire Collapsible Section */}
-        <View style={styles.questionnaireSection}>
-          <TouchableOpacity
-            testID="toggle-questionnaire-btn"
-            style={[
-              styles.questionnaireHeaderCard,
-              questionnaireExpanded && styles.questionnaireHeaderCardExpanded,
-            ]}
-            onPress={() => setQuestionnaireExpanded((prev) => !prev)}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="Toggle Athlete Questionnaire"
-          >
-            <View style={styles.questionnaireHeaderLeft}>
-              <View style={styles.questionnaireTitleRow}>
-                <Text style={styles.questionnaireTitle}>Athlete Questionnaire</Text>
-              </View>
-              <Text style={styles.questionnaireSubtitle}>
-                {gender.charAt(0).toUpperCase() + gender.slice(1)} • {trainingMentality.toUpperCase()} • {primaryGoal.toUpperCase()} • {preferredDays}d/wk • {preferredDurationMins}m
-              </Text>
-              <Text style={styles.questionnaireHint}>
-                {questionnaireExpanded ? 'Tap to collapse questionnaire' : 'Tap to expand & customize preferences'}
-              </Text>
-            </View>
-            <View style={styles.questionnaireChevronContainer}>
-              <Text style={styles.questionnaireChevron}>
-                {questionnaireExpanded ? '▲' : '▼'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          {questionnaireExpanded && (
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
             <View testID="questionnaire-body" style={styles.questionnaireBody}>
+              {statusMessage?.toLowerCase().includes('failed') && <Text accessibilityRole="alert" style={styles.hubSubtitle}>{statusMessage}</Text>}
+              {editorSection === 'details' && <>
               {/* Section 1: Demographics */}
-              <Text style={[styles.sectionTitle, { marginTop: 0 }]}>1. ATHLETE DEMOGRAPHICS</Text>
+              <Text style={[styles.sectionTitle, { marginTop: 0 }]}>PERSONAL DETAILS</Text>
               <View style={styles.card}>
                 <Text style={styles.inputLabel}>Biological Sex (for strength standards & Navy body fat)</Text>
                 <View style={styles.toggleRow}>
@@ -582,24 +487,15 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                   ))}
                 </View>
 
-                {bodyMetricsRepo && (
-                  <TouchableOpacity
-                    testID="profile-open-body-metrics-btn"
-                    style={styles.openBodyMetricsBtn}
-                    onPress={() => setShowBodyMetrics(true)}
-                  >
-                    <Text style={styles.openBodyMetricsBtnText}>
-                      Anthropometry, Tape Measurements & Navy BF% ⚖️
-                    </Text>
-                  </TouchableOpacity>
-                )}
               </View>
 
+              </>}
+              {editorSection === 'training' && <>
               {/* Section 2: Dynamic Training Mood */}
-              <Text style={styles.sectionTitle}>2. DYNAMIC TRAINING MOOD</Text>
+              <Text style={styles.sectionTitle}>TRAINING MOOD & GOALS</Text>
               <View style={styles.card}>
                 <Text style={styles.cardDescription}>
-                  Select your current training mood and philosophy. Changes staged here will dynamically evolve Meso N+1 upon accumulation completion.
+                  {activeInfo ? 'These changes apply to your next training cycle. Your current workouts stay as planned.' : 'These preferences will be used when you create a program.'}
                 </Text>
                 {[
                   {
@@ -750,8 +646,10 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 </View>
               </View>
 
+              </>}
+              {editorSection === 'equipment' && <>
               {/* Section 3: Logistics & Equipment Inventory */}
-              <Text style={styles.sectionTitle}>3. LOGISTICS & EQUIPMENT INVENTORY</Text>
+              <Text style={styles.sectionTitle}>EQUIPMENT ACCESS</Text>
               <View style={styles.card}>
                 <Text style={styles.inputLabel}>Equipment Access</Text>
                 {[
@@ -783,32 +681,16 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                   </TouchableOpacity>
                 ))}
 
-                {/* Section: Gym Equipment & Gear Inventory (ADR-025) */}
-                <View style={styles.gearCard}>
-                  <View style={styles.gearCardHeader}>
-                    <Text style={styles.gearCardTitle}>Gear & Equipment Inventory</Text>
-                  </View>
-                  <Text style={styles.gearCardDesc}>
-                    Configure your gym's specific barbells (Olympic, Safety Squat Bar, Trap Bar) and cable machines. Equipment saved here is available for selection across exercises, workout sessions, and program templates.
-                  </Text>
-                  {gearRepo ? (
-                    <TouchableOpacity
-                      testID="open-gear-inventory-btn"
-                      style={styles.openGearBtn}
-                      onPress={() => setShowGearInventory(true)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.openGearBtnText}>Manage Equipment Inventory ➔</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <Text style={styles.gearDisabledText}>Gear repository not connected</Text>
-                  )}
-                </View>
               </View>
+              </>}
 
               {/* Action Buttons (3 Distinct Paths: Step 8.3 & Beta Gating) */}
               <View style={styles.actionButtonsContainer}>
-                {(!isBeta || isCycleCompleted) && (
+                {editorSection === 'programs' && <>
+                  <Text style={styles.hubTitle}>{primaryGoal} · {preferredDays} days/week · {preferredDurationMins} minutes</Text>
+                  <Text style={styles.hubSubtitle}>Using your saved preferences and equipment access. Evolving a cycle opens a review. Creating a new program activates it immediately.</Text>
+                  <TouchableOpacity style={styles.hubRow} onPress={() => setEditorSection('training')}><Text style={styles.hubTitle}>Edit training preferences →</Text></TouchableOpacity>
+                {activeInfo && (!isBeta || isCycleCompleted) && (
                   <TouchableOpacity
                     testID="evolve-ongoing-program-btn"
                     style={[
@@ -846,7 +728,8 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                   )}
                 </TouchableOpacity>
 
-                <TouchableOpacity
+                </>}
+                {editorSection !== 'programs' && <TouchableOpacity
                   testID="save-profile-btn"
                   style={[styles.saveProfileBtn, saving && styles.btnDisabled]}
                   onPress={handleSaveProfile}
@@ -856,14 +739,139 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                   {saving ? (
                     <ActivityIndicator size="small" color="#00E676" />
                   ) : (
-                    <Text style={styles.saveProfileBtnText}>Save Preferences Only</Text>
+                    <Text style={styles.saveProfileBtnText}>Save changes</Text>
                   )}
-                </TouchableOpacity>
+                </TouchableOpacity>}
               </View>
             </View>
-          )}
+          </ScrollView>
         </View>
+  ) : null;
+  if (initialEditor && editor) return editor;
+
+  return (
+    <View testID="user-profile-screen" style={styles.screen}>
+      {/* Top Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <Text style={styles.headerSubtitle}>
+            Your performance and training setup
+          </Text>
+        </View>
+        {onClose && (
+          <TouchableOpacity
+            testID="close-user-profile-btn"
+            style={styles.closeBtn}
+            onPress={onClose}
+          >
+            <Text style={styles.closeBtnText}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.performanceLinks}>
+          {workoutRepo && exerciseRepo && <>
+            <TouchableOpacity testID="profile-records-btn" accessibilityRole="button" style={styles.performanceLink} onPress={() => setShowRecords(true)}><Text style={styles.hubTitle}>Personal records →</Text><Text style={styles.hubSubtitle}>Search your lifts and rep PRs</Text></TouchableOpacity>
+            <TouchableOpacity testID="profile-strength-btn" accessibilityRole="button" style={styles.performanceLink} onPress={() => setShowStrength(true)}><Text style={styles.hubTitle}>SBD / DOTS →</Text><Text style={styles.hubSubtitle}>Lift estimates, total and history</Text></TouchableOpacity>
+          </>}
+        </View>
+        <TouchableOpacity testID="profile-training-preferences-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setEditorSection('training')}>
+          <Text style={styles.hubTitle}>Training preferences →</Text>
+          <Text style={styles.hubSubtitle}>{primaryGoal} · {preferredDays} days/week · {preferredDurationMins} minutes</Text>
+          <Text style={styles.hubSubtitle}>Mood: {trainingMentality.replace('_', ' ')}{pendingMesoMood ? ' · Changes saved for next cycle' : ''}</Text>
+        </TouchableOpacity>
+        {gearRepo && <TouchableOpacity testID="profile-gear-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setShowGearInventory(true)}><Text style={styles.hubTitle}>Gear & equipment →</Text><Text style={styles.hubSubtitle}>Manage your gym inventory</Text></TouchableOpacity>}
+        {bodyMetricsRepo && <TouchableOpacity testID="profile-open-body-metrics-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setShowBodyMetrics(true)}><Text style={styles.hubTitle}>Bodyweight & measurements →</Text><Text style={styles.hubSubtitle}>Weigh-ins, body composition and measurements</Text></TouchableOpacity>}
+        <TouchableOpacity testID="profile-personal-details-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setEditorSection('details')}><Text style={styles.hubTitle}>Personal details →</Text><Text style={styles.hubSubtitle}>Sex, height, birthdate and experience</Text></TouchableOpacity>
+        {/* Active Program Banner & Program Overview Hub */}
+        <View testID="active-program-banner-card" style={styles.activeProgramCard}>
+          <View style={styles.activeProgramHeader}>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.activeProgramBadge}>ACTIVE PROGRAM</Text>
+                {pendingMesoMood && (
+                  <View style={styles.pendingMoodBadge}>
+                    <Text style={styles.pendingMoodBadgeText}>⚡ Mood Staged for Meso N+1</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.activeProgramTitle} numberOfLines={1}>
+                {activeInfo ? activeInfo.program.name : 'No Program Active'}
+              </Text>
+              {activeInfo && (
+                <Text style={styles.activeProgramMeta}>
+                  Active since {activeInfo.block.start_date || 'recently'}
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              testID="open-program-overview-btn"
+              style={styles.openOverviewBtn}
+              onPress={() => {
+                if (onOpenProgramOverview) {
+                  onOpenProgramOverview();
+                } else {
+                  setShowProgramOverview(true);
+                }
+              }}
+            >
+              <Text style={styles.openOverviewBtnText}>Programs 📋</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <TouchableOpacity testID="profile-program-setup-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setEditorSection('programs')}><Text style={styles.hubTitle}>Create or evolve a program →</Text><Text style={styles.hubSubtitle}>Review your setup before generating changes</Text></TouchableOpacity>
+
+        {/* Status Notification Banner */}
+        {statusMessage && (
+          <View
+            style={[
+              styles.statusBanner,
+              statusMessage.includes('failed') || statusMessage.includes('Failed')
+                ? styles.statusBannerError
+                : styles.statusBannerSuccess,
+            ]}
+          >
+            <Text style={styles.statusBannerText}>{statusMessage}</Text>
+          </View>
+        )}
+
+        {/* Generated Summary Card */}
+        {generatedSummary && (
+          <View testID="generated-program-summary-card" style={styles.summaryCard}>
+            <View style={styles.summaryHeader}>
+              <Text style={styles.summaryBadge}>PROGRAM ACTIVATED</Text>
+              <Text style={styles.summarySplitTitle}>
+                {generatedSummary.splitType.replace('_', ' ').toUpperCase()} • {generatedSummary.daysPerWeek} DAYS/WK
+              </Text>
+            </View>
+            <View style={styles.summaryMetricsRow}>
+              <View style={styles.summaryMetricItem}>
+                <Text style={styles.metricLabel}>Session Duration</Text>
+                <Text style={styles.metricValue}>~{generatedSummary.estimatedSessionDurationMins} min</Text>
+              </View>
+              <View style={styles.summaryMetricItem}>
+                <Text style={styles.metricLabel}>Weekly Sets</Text>
+                <Text style={styles.metricValue}>{generatedSummary.totalWeeklySets} sets</Text>
+              </View>
+              <View style={styles.summaryMetricItem}>
+                <Text style={styles.metricLabel}>Antagonist Pairs</Text>
+                <Text style={styles.metricValue}>{generatedSummary.hasSupersets ? 'Active' : 'Sequential'}</Text>
+              </View>
+            </View>
+            <Text style={styles.summaryProgressionText}>
+              ⚙️ {generatedSummary.progressionSchemeSummary}
+            </Text>
+          </View>
+        )}
+
       </ScrollView>
+      {!initialEditor && editor && <Modal visible animationType="slide" onRequestClose={closeEditor}>{editor}</Modal>}
+
+      {showRecords && workoutRepo && exerciseRepo && <Modal visible animationType="slide" onRequestClose={() => setShowRecords(false)}><PersonalRecordsScreen workoutRepo={workoutRepo} exerciseRepo={exerciseRepo} gearRepo={gearRepo} userSettingsRepo={userSettingsRepo} programBlockService={programBlockService} onClose={() => setShowRecords(false)} /></Modal>}
+      {showStrength && workoutRepo && exerciseRepo && <Modal visible animationType="slide" onRequestClose={() => setShowStrength(false)}><StrengthOverviewScreen workoutRepo={workoutRepo} exerciseRepo={exerciseRepo} userSettingsRepo={userSettingsRepo} userProfileRepo={userProfileRepo} bodyMetricsRepo={bodyMetricsRepo} onClose={() => setShowStrength(false)} /></Modal>}
 
       {/* Mesocycle Evolution Diff Modal */}
       {showEvolutionModal && evolutionResult && (
@@ -924,7 +932,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           onRequestClose={() => {
             setShowProgramOverview(false);
             setLastGeneratedProgramId(null);
-            loadProfile();
+            if (initialEditor) onClose?.(); else loadProfile();
           }}
         >
           <ProgramOverviewScreen
@@ -936,7 +944,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             onClose={() => {
               setShowProgramOverview(false);
               setLastGeneratedProgramId(null);
-              loadProfile();
+              if (initialEditor) onClose?.(); else loadProfile();
             }}
           />
         </Modal>
@@ -952,6 +960,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           <GearInventoryScreen
             gearRepo={gearRepo}
             userSettingsRepo={userSettingsRepo}
+            onEditAccess={() => { setShowGearInventory(false); setEditorSection('equipment'); }}
             onClose={() => setShowGearInventory(false)}
           />
         </Modal>
@@ -977,6 +986,11 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
+  performanceLinks: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
+  performanceLink: { flex: 1, minWidth: 140, backgroundColor: '#14251D', borderRadius: 14, borderWidth: 1, borderColor: '#315744', padding: 16, gap: 8 },
+  hubRow: { backgroundColor: '#18181B', borderRadius: 12, padding: 16, gap: 6, marginBottom: 12 },
+  hubTitle: { color: '#FAFAFA', fontWeight: '700', fontSize: 16 },
+  hubSubtitle: { color: '#A1A1AA', lineHeight: 20, fontSize: 12 },
   activeProgramCard: {
     backgroundColor: '#121214',
     borderWidth: 1,
@@ -1263,12 +1277,6 @@ const styles = StyleSheet.create({
     color: '#00E676',
     fontWeight: '700',
   },
-  optionDesc: {
-    color: '#71717A',
-    fontSize: 11,
-    marginTop: 2,
-    lineHeight: 15,
-  },
   goalPillContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1475,140 +1483,6 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     opacity: 0.6,
-  },
-  gearCard: {
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-  },
-  gearCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  gearCardTitle: {
-    color: '#FAFAFA',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  gearBadge: {
-    backgroundColor: '#27272A',
-    color: '#00E676',
-    fontSize: 10,
-    fontWeight: '800',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  gearCardDesc: {
-    color: '#A1A1AA',
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 12,
-  },
-  openGearBtn: {
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#00E676',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  openGearBtnText: {
-    color: '#00E676',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  gearDisabledText: {
-    color: '#71717A',
-    fontSize: 12,
-    fontStyle: 'italic',
-  },
-  openBodyMetricsBtn: {
-    backgroundColor: '#14291B',
-    borderWidth: 1,
-    borderColor: '#00E676',
-    borderRadius: 8,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  openBodyMetricsBtnText: {
-    color: '#00E676',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  questionnaireSection: {
-    marginBottom: 20,
-  },
-  questionnaireHeaderCard: {
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  questionnaireHeaderCardExpanded: {
-    borderColor: '#00E676',
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  questionnaireHeaderLeft: {
-    flex: 1,
-  },
-  questionnaireTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  questionnaireTitle: {
-    color: '#FAFAFA',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  questionnaireBadge: {
-    color: '#00E676',
-    fontSize: 10,
-    fontWeight: '900',
-    backgroundColor: '#002914',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  questionnaireSubtitle: {
-    color: '#A1A1AA',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  questionnaireHint: {
-    color: '#71717A',
-    fontSize: 11,
-    marginTop: 4,
-  },
-  questionnaireChevronContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  questionnaireChevron: {
-    color: '#00E676',
-    fontSize: 13,
-    fontWeight: '700',
   },
   questionnaireBody: {
     backgroundColor: '#09090B',

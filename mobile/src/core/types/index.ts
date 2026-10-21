@@ -445,6 +445,7 @@ export interface StrengthStandard {
 // ============================================================================
 
 export type ProgressionConditionType =
+  | 'ESTIMATED_CAPACITY_SUPPORTS_INCREASE'
   | 'ALL_SETS_HIT_TARGET_REPS'
   | 'ANY_SET_HIT_TOP_REP_RANGE'
   | 'AVERAGE_RPE_LESS_THAN'
@@ -457,6 +458,7 @@ export type ProgressionConditionType =
   | 'AMRAP_COMPLETED';
 
 export type ProgressionActionType =
+  | 'INCREASE_LOAD_FROM_ESTIMATED_CAPACITY'
   | 'INCREASE_LOAD_FIXED'
   | 'INCREASE_LOAD_PERCENT'
   | 'DECREASE_LOAD_FIXED'

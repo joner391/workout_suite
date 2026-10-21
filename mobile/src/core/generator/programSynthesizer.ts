@@ -36,9 +36,7 @@ import {
   createLinearProgressionRule,
   createDoubleProgressionRule,
   createDynamicDoubleProgressionRule,
-  createAmrapFinalWeekRule,
-  createAmrapMidwayRule,
-  createAmrapProgressionRule,
+  createEstimatedCapacityProgressionRule,
 } from '../rules/progressionRuleEngine';
 import { DEFAULT_EXERCISES } from '../../database/seeds/defaultExercises';
 import {
@@ -1426,16 +1424,9 @@ export function synthesizeProgram(
 
       progressionRules.push(...rulesForExercise);
 
-      // Pillar 8 & Pillar 3: AMRAP diagnostic checkpoints & 1%-over-cap progression
+      // Ordinary effort-rated sets provide progression evidence throughout the cycle.
       if (!isBeginner) {
-        if (isPrimaryCompound) {
-          progressionRules.push(createAmrapFinalWeekRule(teId));
-          progressionRules.push(createAmrapProgressionRule(teId, { incrementKg: 2.5 }));
-        } else {
-          // Mid-mesocycle diagnostic AMRAP on accessory movements (Week 2 of Meso 0 / midway)
-          progressionRules.push(createAmrapMidwayRule(teId));
-          progressionRules.push(createAmrapProgressionRule(teId, { incrementKg: 1.25 }));
-        }
+        progressionRules.push(createEstimatedCapacityProgressionRule(teId, isPrimaryCompound ? 2.5 : 1.25));
       }
     });
 

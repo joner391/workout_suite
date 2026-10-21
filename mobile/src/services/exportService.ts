@@ -230,7 +230,7 @@ export class ExportService {
       `SELECT id, name, muscle_group, category, is_compound, is_bodyweight,
               is_unilateral, load_mode, default_cable_ratio, default_bar_weight_kg,
               is_custom, parent_exercise_id, standard_lift_type, default_rest_seconds,
-              axial_loading, rom_tier, muscle_biases, primary_joints, secondary_joints,
+              secondary_muscles, axial_loading, rom_tier, muscle_biases, primary_joints, secondary_joints,
               baseline_sfr, required_gear, exercise_tier
        FROM exercises
        ORDER BY name ASC;`
@@ -258,6 +258,7 @@ export class ExportService {
       parent_exercise_id: r.parent_exercise_id != null ? String(r.parent_exercise_id) : null,
       standard_lift_type: r.standard_lift_type != null ? r.standard_lift_type : null,
       default_rest_seconds: Number(r.default_rest_seconds ?? 120),
+      secondary_muscles: parseArray(r.secondary_muscles),
       axial_loading: r.axial_loading ?? 'none',
       rom_tier: r.rom_tier ?? 'standard_full',
       muscle_biases: parseArray(r.muscle_biases),

@@ -2,7 +2,7 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { DEFAULT_EXERCISES, DEFAULT_GEAR } from './seeds/defaultExercises';
 
 export const DATABASE_NAME = 'workout_suite.db';
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 /**
  * Minimal abstraction matching the modern expo-sqlite async interface.
@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS exercises (
     secondary_joints TEXT,
     baseline_sfr REAL DEFAULT 50.0,
     required_gear TEXT,
-    exercise_tier INTEGER DEFAULT 2
+    exercise_tier INTEGER DEFAULT 2,
+    secondary_muscles TEXT
 );
 
 -- Gear & Equipment Inventory
@@ -608,6 +609,38 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
           // Ignore if column already exists (idempotence)
         }
       }
+      await db.execAsync('PRAGMA user_version = 9;');
+      await db.execAsync('COMMIT;');
+      currentVersion = 9;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  if (currentVersion < 10) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      // Migration v9 -> v10: Add secondary_muscles to exercises table
+      try {
+        await db.execAsync(
+          'ALTER TABLE exercises ADD COLUMN secondary_muscles TEXT;'
+        );
+      } catch {
+        // Column may already exist
+      }
+
+      // Update existing exercises with secondary_muscles from seeds
+      for (const ex of DEFAULT_EXERCISES) {
+        if (ex.secondary_muscles && ex.secondary_muscles.length > 0) {
+          await db.runAsync(
+            'UPDATE exercises SET secondary_muscles = ? WHERE id = ?;',
+            JSON.stringify(ex.secondary_muscles),
+            ex.id
+          );
+        }
+      }
+
       await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
       await db.execAsync('COMMIT;');
       currentVersion = CURRENT_SCHEMA_VERSION;

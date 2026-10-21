@@ -67,11 +67,14 @@ export function applyMonotonicUpperEnvelope(
         rpe: runningMax.rpe,
         rir: runningMax.rir,
       });
-      const e1rmKg = calculateHeuristic1RM(runningMax.weightKg, current.reps, {
-        rpe: runningMax.rpe,
-        rir: runningMax.rir,
-        k,
-      });
+      const e1rmKg = Math.max(
+        runningMax.e1rmKg,
+        calculateHeuristic1RM(runningMax.weightKg, current.reps, {
+          rpe: runningMax.rpe,
+          rir: runningMax.rir,
+          k,
+        })
+      );
 
       result[i] = {
         ...current,

@@ -594,9 +594,9 @@ describe('MockWorkoutRepository', () => {
       const bestE1rms = await repo.getBestE1rmByExercise();
       expect(bestE1rms.has('bench_press')).toBe(true);
       expect(bestE1rms.has('overhead_press')).toBe(true);
-      // Bench press best set is 102.5kg x 8 reps -> 102.5 * (1 + 8/30) = 129.833... -> 129.83
+      // Bench press best set is 102.5kg x 8 reps @ 1.5 RIR -> Lombardi 102.5 * (8 + 1.5)^0.10 = 128.38 kg
       const benchE1rm = bestE1rms.get('bench_press');
-      expect(benchE1rm).toBeCloseTo(129.83, 1);
+      expect(benchE1rm).toBeCloseTo(128.38, 1);
     });
   });
 });

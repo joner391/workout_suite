@@ -19,6 +19,7 @@ import {
   createLinearProgressionRule,
   createDoubleProgressionRule,
   createDynamicDoubleProgressionRule,
+  createEstimatedCapacityProgressionRule,
   evaluateProgressionRules,
   parseRuleDefinition,
 } from '../../../core/rules/progressionRuleEngine';
@@ -55,6 +56,11 @@ describe('Progression Builder & Program Overview Management (Step 4.4)', () => {
   });
 
   describe('Progression Builder Presets & Custom Rules', () => {
+    test('shows effort-based progression ahead of the rep-based fallback', async () => {
+      const rules = [createEstimatedCapacityProgressionRule('tex-bench-1'), ...createDoubleProgressionRule('tex-bench-1')];
+      await programRepo.setProgressionRules('tex-bench-1', rules);
+      expect(detectProgressionBadge(await programRepo.findRulesByTemplateExerciseId('tex-bench-1'))).toBe('Effort');
+    });
     test('linear progression preset produces correct condition-action schema', () => {
       const lpRules = createLinearProgressionRule('tex-bench-1', {
         incrementKg: 2.5,

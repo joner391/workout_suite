@@ -30,6 +30,59 @@ import {
   SetType,
 } from '../types';
 import { roundToStep } from '../math/unitConversion';
+import { calculateHeuristic1RM, DEFAULT_LOMBARDI_K, isReliable1RMInput } from '../math/heuristic1rm';
+
+/**
+ * Project ordinary, effort-rated straight sets to the prescription's base reps
+ * and effort. AMRAP is simply a 0-RIR observation. Unrated sets are not failure
+ * observations. Require a complete session and use its median capacity so one
+ * exceptional set cannot determine the next working load.
+ * e10RM is the same capacity normalized to ten failure reps, not a second vote.
+ */
+export function estimateProgressionCapacity(sets: WorkoutSet[], prescription: TemplateExercise) {
+  const working = sets.filter(s => s.exercise_id === prescription.exercise_id && s.set_type !== 'warmup');
+  const targetReps = prescription.target_reps_min ?? prescription.target_reps_max;
+  const targetRir = prescription.target_rir ??
+    (prescription.target_rpe != null ? 10 - prescription.target_rpe : null);
+  if (!targetReps || !Number.isFinite(targetReps) || targetReps < 1 || targetRir == null || !Number.isFinite(targetRir) || targetRir < 0 || targetRir > 3 ||
+      working.length < (prescription.target_sets ?? 1) || working.length === 0) return null;
+  const estimates: number[] = [];
+  for (const set of working) {
+    // Fatigue techniques do not represent comparable straight-set capacity.
+    if (set.set_type !== 'working' && set.set_type !== 'amrap') return null;
+    const rir = set.set_type === 'amrap' ? 0 : set.rir ?? (set.rpe != null ? 10 - set.rpe : null);
+    if (rir == null || !Number.isFinite(rir) || rir < 0 || rir > 3 ||
+        !Number.isFinite(set.reps) || !Number.isFinite(set.weight) || set.weight <= 0 ||
+        set.reps < (prescription.target_reps_min ?? targetReps) ||
+        !isReliable1RMInput(set.reps, { rir })) return null;
+    // Honour the existing weight-mastery guard for submaximal work.
+    if (rir < 0.5 && targetRir > 0.5) return null;
+    estimates.push(calculateHeuristic1RM(set.weight, set.reps, { rir }));
+  }
+  estimates.sort((a, b) => a - b);
+  const middle = Math.floor(estimates.length / 2);
+  const e1rmKg = estimates.length % 2 ? estimates[middle] : (estimates[middle - 1] + estimates[middle]) / 2;
+  return {
+    e1rmKg,
+    e10rmKg: e1rmKg / Math.pow(10, DEFAULT_LOMBARDI_K),
+    projectedLoadKg: e1rmKg / Math.pow(targetReps + targetRir, DEFAULT_LOMBARDI_K),
+    currentWeightKg: Math.max(...working.map(s => s.weight)),
+  };
+}
+
+/** Capacity-based progression is available every session, without failure testing. */
+export function createEstimatedCapacityProgressionRule(templateExerciseId: string, incrementKg = 2.5): ProgressionRule {
+  return {
+    id: `rule-capacity-${templateExerciseId}`,
+    template_exercise_id: templateExerciseId,
+    priority: 0,
+    rule_json: {
+      conditions: [{ type: 'ESTIMATED_CAPACITY_SUPPORTS_INCREASE', threshold: incrementKg }],
+      actions: [{ type: 'INCREASE_LOAD_FROM_ESTIMATED_CAPACITY', value: incrementKg }],
+      notes: 'Effort-adjusted e1RM/e10RM progression from completed working sets',
+    },
+  };
+}
 
 // ============================================================================
 // Engine Configuration Options & Result Interfaces
@@ -374,6 +427,71 @@ export function isSessionSuccessful(
 }
 
 /**
+ * Evaluates whether a session represents a plateau or failed session.
+ * For rep brackets (e.g. 8-12 reps in double progression):
+ * - Fails if any working set falls below target_reps_min.
+ * - Fails if working sets count is less than target_sets.
+ * - Fails if total completed reps fail to exceed or match the previous session's total reps (decreased reps).
+ * - If total reps exceeded previous session, it represents forward progression (not stalled/failed).
+ * For single target reps (e.g. 5x5 linear progression):
+ * - Fails if any set fails to achieve the target reps (or total reps decrease).
+ */
+export function isSessionStalledOrFailed(
+  sessionIndex: number,
+  normalizedSessions: NormalizedExerciseSession[],
+  prescription: TemplateExercise
+): boolean {
+  const current = normalizedSessions[sessionIndex];
+  if (!current || !current.workingSets || current.workingSets.length === 0) {
+    return true;
+  }
+
+  const minReps = prescription.target_reps_min ?? prescription.target_reps_max ?? 0;
+  if (minReps > 0 && current.workingSets.some((s) => s.reps < minReps)) {
+    return true;
+  }
+
+  if (
+    prescription.target_sets != null &&
+    prescription.target_sets > 0 &&
+    current.workingSets.length < prescription.target_sets
+  ) {
+    return true;
+  }
+
+  // Compare with previous session if available
+  if (sessionIndex > 0) {
+    const prev = normalizedSessions[sessionIndex - 1];
+    const currentTotalReps = current.workingSets.reduce((sum, s) => sum + s.reps, 0);
+    const prevTotalReps = prev.workingSets.reduce((sum, s) => sum + s.reps, 0);
+
+    const currentMaxWeight = Math.max(...current.workingSets.map((s) => s.weight));
+    const prevMaxWeight = Math.max(...prev.workingSets.map((s) => s.weight));
+
+    // If load decreased, or load is equal and total reps failed to exceed or match previous session
+    if (currentMaxWeight < prevMaxWeight) {
+      return true;
+    }
+    if (currentMaxWeight === prevMaxWeight && currentTotalReps < prevTotalReps) {
+      return true;
+    }
+    // If total reps exceeded previous session, it's forward progression
+    if (currentTotalReps > prevTotalReps) {
+      return false;
+    }
+  }
+
+  // For single-rep targets (e.g. 5x5 LP), any session not hitting target reps is a failed session
+  const maxReps = prescription.target_reps_max;
+  const isRepBracket = maxReps != null && prescription.target_reps_min != null && maxReps > prescription.target_reps_min;
+  if (!isRepBracket) {
+    return !isSessionSuccessful(current.workingSets, prescription);
+  }
+
+  return !isSessionSuccessful(current.workingSets, prescription);
+}
+
+/**
  * Extracts working sets for the specified exercise and orders sessions chronologically.
  */
 function normalizeAndSortSessions(
@@ -431,6 +549,12 @@ function evaluateCondition(
   const latestWorkingSets = latestSession.workingSets;
 
   switch (condition.type) {
+    case 'ESTIMATED_CAPACITY_SUPPORTS_INCREASE': {
+      const capacity = estimateProgressionCapacity(latestWorkingSets, prescription);
+      const increment = options.gearIncrementKg ?? condition.threshold ?? 2.5;
+      return capacity != null && Number.isFinite(increment) && increment > 0 &&
+        floorToIncrement(capacity.projectedLoadKg, increment) > capacity.currentWeightKg;
+    }
     case 'ALL_SETS_HIT_TARGET_REPS': {
       return isSessionSuccessful(latestWorkingSets, prescription);
     }
@@ -496,10 +620,13 @@ function evaluateCondition(
         return false;
       }
 
-      const recentSlice = normalizedSessions.slice(-requiredCount);
-      return recentSlice.every(
-        (s) => !isSessionSuccessful(s.workingSets, prescription)
-      );
+      const startIndex = normalizedSessions.length - requiredCount;
+      for (let i = startIndex; i < normalizedSessions.length; i++) {
+        if (!isSessionStalledOrFailed(i, normalizedSessions, prescription)) {
+          return false;
+        }
+      }
+      return true;
     }
 
     case 'MISSED_REPS_COUNT': {
@@ -686,6 +813,19 @@ function synthesizeProposal(
 
   for (const action of definition.actions) {
     switch (action.type) {
+      case 'INCREASE_LOAD_FROM_ESTIMATED_CAPACITY': {
+        const capacity = estimateProgressionCapacity(latestWorkingSets, prescription);
+        const increment = options.gearIncrementKg ?? (action.value > 0 ? action.value : 2.5);
+        if (capacity) {
+          // Limit any single-session increase to one implement step.
+          suggestedWeightKg = Math.max(currentWeightKg, Math.min(
+            currentWeightKg + increment, floorToIncrement(capacity.projectedLoadKg, increment)
+          ));
+          if (suggestedWeightKg > currentWeightKg) suggestedTargetReps = prescription.target_reps_min ?? topRepTarget;
+          explanations.push(`Effort-adjusted capacity: e1RM ${capacity.e1rmKg.toFixed(1)} kg, e10RM ${capacity.e10rmKg.toFixed(1)} kg. At ${prescription.target_reps_min ?? topRepTarget} reps and ${prescription.target_rir ?? 10 - (prescription.target_rpe ?? 8)} RIR, ${suggestedWeightKg > currentWeightKg ? 'increase to' : 'maintain'} ${suggestedWeightKg} kg.`);
+        }
+        break;
+      }
       case 'INCREASE_LOAD_FIXED': {
         const delta = action.value > 0 ? action.value : 2.5;
         suggestedWeightKg = roundToStep(currentWeightKg + delta, roundingStepKg);
@@ -734,6 +874,7 @@ function synthesizeProposal(
       }
 
       case 'DECREASE_LOAD_FIXED': {
+        isDeload = true;
         const delta = action.value > 0 ? action.value : 2.5;
         suggestedWeightKg = Math.max(
           0,
@@ -746,6 +887,7 @@ function synthesizeProposal(
       }
 
       case 'RESET_WEIGHT_PERCENT': {
+        isDeload = true;
         const fraction = action.value > 1 ? action.value / 100 : action.value;
         const reduction = currentWeightKg * fraction;
         suggestedWeightKg = Math.max(
@@ -933,7 +1075,11 @@ function synthesizeProposal(
     suggestedWeightKg,
     suggestedTargetReps,
     suggestedTargetSets,
-    isDeload,
+    isDeload:
+      isDeload ||
+      primaryAction.type === 'TRIGGER_DELOAD' ||
+      primaryAction.type === 'RESET_WEIGHT_PERCENT' ||
+      primaryAction.type === 'DECREASE_LOAD_FIXED',
     setProposals,
     suggestedSetType,
     rirBias,
@@ -1020,6 +1166,8 @@ export function evaluateProgressionRules(
         currentPrescription,
         options
       );
+      if (definition.actions.some(a => a.type === 'INCREASE_LOAD_FROM_ESTIMATED_CAPACITY') &&
+          proposal.suggestedWeightKg === proposal.currentWeightKg) continue;
       matchedProposals.push(proposal);
     }
   }

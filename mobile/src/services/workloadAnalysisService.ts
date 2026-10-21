@@ -156,8 +156,10 @@ export const CANONICAL_ASSISTING_MUSCLES: Record<string, string[]> = {
   dumbbell_bench_press: ['Triceps', 'Shoulders'],
   dumbbell_incline_bench_press: ['Triceps', 'Shoulders'],
   push_up: ['Triceps', 'Shoulders'],
+  bodyweight_push_up: ['Triceps', 'Shoulders'],
   chest_dip: ['Triceps', 'Shoulders'],
   parallel_bar_dip: ['Triceps', 'Shoulders'],
+  bodyweight_dip: ['Triceps', 'Shoulders'],
   machine_chest_press: ['Triceps', 'Shoulders'],
 
   // Triceps compounds -> Chest, Shoulders
@@ -165,35 +167,52 @@ export const CANONICAL_ASSISTING_MUSCLES: Record<string, string[]> = {
 
   // Shoulders compounds -> Triceps, Traps
   barbell_ohp: ['Triceps', 'Traps'],
+  barbell_overhead_press: ['Triceps', 'Traps'],
+  barbell_push_press: ['Triceps', 'Traps', 'Quads'],
   dumbbell_shoulder_press: ['Triceps'],
   arnold_press: ['Triceps'],
   machine_shoulder_press: ['Triceps'],
 
   // Back compounds (horizontal/vertical pulls) -> Biceps, Forearms
   barbell_bent_over_row: ['Biceps', 'Forearms'],
+  barbell_pendlay_row: ['Biceps', 'Forearms'],
+  barbell_row: ['Biceps', 'Forearms'],
   dumbbell_single_arm_row: ['Biceps', 'Forearms'],
   cable_seated_row: ['Biceps', 'Forearms'],
   cable_lat_pulldown: ['Biceps', 'Forearms'],
   pull_up: ['Biceps', 'Forearms'],
+  bodyweight_pull_up: ['Biceps', 'Forearms'],
   chin_up: ['Biceps', 'Forearms'],
+  bodyweight_chin_up: ['Biceps', 'Forearms'],
   t_bar_row: ['Biceps', 'Forearms'],
 
   // Quads compounds -> Glutes
   barbell_squat: ['Glutes'],
+  barbell_back_squat: ['Glutes'],
   barbell_front_squat: ['Glutes'],
+  barbell_low_bar_squat: ['Glutes', 'Hamstrings'],
+  barbell_box_squat: ['Glutes'],
   leg_press: ['Glutes'],
+  machine_leg_press: ['Glutes'],
   hack_squat: ['Glutes'],
   bulgarian_split_squat: ['Glutes'],
+  dumbbell_bulgarian_split_squat: ['Glutes'],
   goblet_squat: ['Glutes'],
+  dumbbell_goblet_squat: ['Glutes'],
   walking_lunge: ['Glutes'],
+  dumbbell_walking_lunge: ['Glutes'],
 
   // Posterior chain & Deadlifts
   barbell_deadlift: ['Glutes', 'Hamstrings', 'Traps', 'Forearms'],
   barbell_sumo_deadlift: ['Quads', 'Glutes', 'Traps', 'Forearms'],
+  barbell_rdl: ['Glutes', 'Back'],
   barbell_romanian_deadlift: ['Glutes', 'Back'],
+  barbell_deficit_deadlift: ['Glutes', 'Hamstrings', 'Traps'],
   dumbbell_romanian_deadlift: ['Glutes', 'Back'],
   good_morning: ['Glutes', 'Back'],
+  barbell_good_morning: ['Glutes', 'Back'],
   hip_thrust: ['Hamstrings'],
+  barbell_hip_thrust: ['Hamstrings'],
   glute_bridge: ['Hamstrings'],
 };
 

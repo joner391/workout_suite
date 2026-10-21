@@ -29,6 +29,7 @@ import {
   createLinearProgressionRule,
   createDoubleProgressionRule,
   createDynamicDoubleProgressionRule,
+  createEstimatedCapacityProgressionRule,
 } from '../../core/rules/progressionRuleEngine';
 
 export function formatProgressionRuleSummary(rule: ProgressionRule): string {
@@ -38,6 +39,7 @@ export function formatProgressionRuleSummary(rule: ProgressionRule): string {
       : rule.rule_json;
 
   const conditionMap: Record<string, (threshold?: number) => string> = {
+    ESTIMATED_CAPACITY_SUPPORTS_INCREASE: () => 'effort-rated working sets support a load increase',
     ALL_SETS_HIT_TARGET_REPS: () => 'all sets hit target reps',
     ANY_SET_HIT_TOP_REP_RANGE: () => 'any set hits top of rep range',
     AVERAGE_RPE_LESS_THAN: (t) => `average RPE < ${t ?? 8}`,
@@ -53,6 +55,7 @@ export function formatProgressionRuleSummary(rule: ProgressionRule): string {
   };
 
   const actionMap: Record<string, (val: number) => string> = {
+    INCREASE_LOAD_FROM_ESTIMATED_CAPACITY: (v) => `use e1RM/e10RM to increase load by up to ${v} kg at prescribed effort`,
     INCREASE_LOAD_FIXED: (v) => `add +${v} kg`,
     INCREASE_LOAD_PERCENT: (v) => `increase load by ${v}%`,
     DECREASE_LOAD_FIXED: (v) => `decrease load by ${v} kg`,
@@ -100,7 +103,7 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [rules, setRules] = useState<ProgressionRule[]>([]);
-  const [selectedPreset, setSelectedPreset] = useState<'lp' | 'dp' | 'ddp' | 'custom'>('custom');
+  const [selectedPreset, setSelectedPreset] = useState<'capacity' | 'lp' | 'dp' | 'ddp' | 'custom'>('custom');
 
   // Custom Rule Form State
   const [conditionType, setConditionType] = useState<ProgressionConditionType>(
@@ -132,7 +135,7 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
   }, [visible, templateExercise, loadRules]);
 
   // Apply Quick Preset
-  const handleApplyPreset = async (type: 'lp' | 'dp' | 'ddp') => {
+  const handleApplyPreset = async (type: 'capacity' | 'lp' | 'dp' | 'ddp') => {
     if (!templateExercise) return;
     try {
       setLoading(true);
@@ -140,7 +143,12 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
       const minReps = templateExercise.target_reps_min ?? 8;
       const maxReps = templateExercise.target_reps_max ?? 12;
 
-      if (type === 'lp') {
+      if (type === 'capacity') {
+        presetRules = [
+          createEstimatedCapacityProgressionRule(templateExercise.id),
+          ...createDoubleProgressionRule(templateExercise.id),
+        ];
+      } else if (type === 'lp') {
         presetRules = createLinearProgressionRule(templateExercise.id, { incrementKg: 2.5 });
       } else if (type === 'dp') {
         presetRules = createDoubleProgressionRule(templateExercise.id, {
@@ -240,6 +248,16 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
             {/* Quick Presets */}
             <Text style={styles.sectionHeader}>QUICK PROGRESSION PRESETS</Text>
+            <View style={styles.presetRow}>
+              <TouchableOpacity
+                testID="preset-capacity-btn"
+                style={[styles.presetBtn, selectedPreset === 'capacity' && styles.presetBtnActive]}
+                onPress={() => handleApplyPreset('capacity')}
+              >
+                <Text style={styles.presetTitle}>Effort-based progression</Text>
+                <Text style={styles.presetDesc}>Use reps, load and RPE/RIR to guide your next increase</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.presetRow}>
               <TouchableOpacity
                 testID="preset-lp-btn"

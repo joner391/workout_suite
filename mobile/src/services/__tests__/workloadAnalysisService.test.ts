@@ -633,12 +633,12 @@ describe('Workload Analysis Service Suite', () => {
       expect(result.totalUnratedSets).toBe(1);
       // Coverage = 2/3 = 67%
       expect(result.ratingCoveragePercent).toBe(67);
-      // Total eReps = 3 (Set 1) + 0 (Set 2 unrated) + 5 (Set 3 AMRAP) = 8
-      expect(result.totalEffectiveReps).toBe(8);
+      // Total eReps = 3 (Set 1) + 3 (Set 2 unrated assuming 2 RIR) + 5 (Set 3 AMRAP) = 11
+      expect(result.totalEffectiveReps).toBe(11);
 
       const chest = result.muscleGroupVolumes.find((m) => m.muscleGroup === 'Chest');
       expect(chest).toBeDefined();
-      expect(chest!.effectiveReps).toBe(8);
+      expect(chest!.effectiveReps).toBe(11);
       expect(chest!.ratedSets).toBe(2);
       expect(chest!.totalSets).toBe(3);
     });

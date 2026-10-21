@@ -428,7 +428,7 @@ export class SQLiteWorkoutRepository implements IWorkoutRepository {
           s.rir AS rir,
           w.date AS workoutDate,
           ROW_NUMBER() OVER (
-            PARTITION BY s.reps 
+            PARTITION BY s.exercise_id, s.reps 
             ORDER BY s.weight DESC, 
                      COALESCE(s.rpe, 10.0 - COALESCE(s.rir, 0.0)) DESC, 
                      w.date DESC, 
@@ -446,7 +446,7 @@ export class SQLiteWorkoutRepository implements IWorkoutRepository {
         setId, workoutId, exerciseId, reps, weight, rawInputWeight, rpe, rir, workoutDate
       FROM RankedSets
       WHERE rn = 1
-      ORDER BY reps ASC;
+      ORDER BY reps ASC, exerciseId ASC;
     `;
 
     const rows = await this.db.getAllAsync<any>(sql, ...params);
@@ -469,10 +469,14 @@ export class SQLiteWorkoutRepository implements IWorkoutRepository {
       max_e1rm: number;
     }
     const rows = await this.db.getAllAsync<BestE1rmRow>(
-      `SELECT exercise_id, MAX(weight * (1.0 + reps / 30.0)) as max_e1rm
-       FROM workout_sets
-       WHERE reps > 0 AND weight > 0
-       GROUP BY exercise_id;`
+      `SELECT s.exercise_id, MAX(s.weight * POWER(s.reps + COALESCE(s.rir, 10.0 - s.rpe, 2.0), 0.10)) as max_e1rm
+       FROM workout_sets s
+       INNER JOIN workouts w ON s.workout_id = w.id
+       WHERE w.status = 'completed'
+         AND s.set_type != 'warmup'
+         AND s.reps > 0
+         AND s.weight > 0
+       GROUP BY s.exercise_id;`
     );
     const result = new Map<string, number>();
     for (const r of rows) {

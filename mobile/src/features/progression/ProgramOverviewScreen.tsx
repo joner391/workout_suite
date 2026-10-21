@@ -51,13 +51,17 @@ import { PrescriptionEditorModal } from './PrescriptionEditorModal';
 import { EditTemplateModal } from './EditTemplateModal';
 import { GearInventory } from '../../core/types';
 
-export type ProgressionBadge = 'LP' | 'DP' | 'DDP' | 'Custom';
+export type ProgressionBadge = 'Effort' | 'LP' | 'DP' | 'DDP' | 'Custom';
 
 /**
- * Detects whether an exercise slot has LP, DP, DDP, or Custom progression rule configured.
+ * Detects effort-based, LP, DP, DDP, or custom progression rules.
  */
 export function detectProgressionBadge(rules?: ProgressionRule[]): ProgressionBadge | null {
   if (!rules || rules.length === 0) return null;
+
+  if (rules.some(r => JSON.stringify(r.rule_json).includes('INCREASE_LOAD_FROM_ESTIMATED_CAPACITY'))) {
+    return 'Effort';
+  }
 
   // Check for DDP priority first
   for (const r of rules) {
@@ -937,7 +941,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                                       progBadge === 'LP' && styles.progBadgeLP,
                                       progBadge === 'DP' && styles.progBadgeDP,
                                       progBadge === 'DDP' && styles.progBadgeDDP,
-                                      progBadge === 'Custom' && styles.progBadgeCustom,
+                                      (progBadge === 'Custom' || progBadge === 'Effort') && styles.progBadgeCustom,
                                     ]}
                                   >
                                     <Text
@@ -946,7 +950,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                                         progBadge === 'LP' && styles.progBadgeTextLP,
                                         progBadge === 'DP' && styles.progBadgeTextDP,
                                         progBadge === 'DDP' && styles.progBadgeTextDDP,
-                                        progBadge === 'Custom' && styles.progBadgeTextCustom,
+                                        (progBadge === 'Custom' || progBadge === 'Effort') && styles.progBadgeTextCustom,
                                       ]}
                                     >
                                       {progBadge}

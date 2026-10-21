@@ -1,5 +1,6 @@
 import { CrashRecoveryService } from '../crashRecoveryService';
 import { MockWorkoutRepository } from '../../database/mocks/MockWorkoutRepository';
+import { MockUserSettingsRepository } from '../../database/mocks/MockUserSettingsRepository';
 import { Workout, WorkoutSet } from '../../core/types';
 
 describe('CrashRecoveryService', () => {
@@ -121,6 +122,71 @@ describe('CrashRecoveryService', () => {
       expect(promptData?.summary.elapsedSeconds).toBeGreaterThanOrEqual(44 * 60);
       expect(promptData?.summary.formattedElapsedTime).toBe('45m');
       expect(promptData?.summary.lastActiveTimestamp).toBe(thirtyMinsAgo);
+    });
+
+    it('uses active_completed_set_ids from userSettingsRepo when available', async () => {
+      const settingsRepo = new MockUserSettingsRepository();
+      const serviceWithSettings = new CrashRecoveryService(workoutRepo, settingsRepo);
+
+      const inProgressWorkout: Workout = {
+        id: 'w_active_tracked',
+        template_id: 'tmpl_1',
+        date: '2026-10-14',
+        name: 'Template Workout',
+        notes: null,
+        started_at: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+        duration_seconds: null,
+        status: 'in_progress',
+        completed_at: null,
+        imported_from: null,
+      };
+
+      // Even if all sets have reps > 0 (prescribed template reps), only 1 is checked off
+      const sets: WorkoutSet[] = [
+        {
+          id: 'set_1',
+          workout_id: 'w_active_tracked',
+          exercise_id: 'bench_press',
+          gear_id: null,
+          set_number: 1,
+          weight: 100,
+          raw_input_weight: 100,
+          added_weight: null,
+          reps: 10,
+          reps_right: null,
+          rpe: 8,
+          rir: 2,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: 'set_2',
+          workout_id: 'w_active_tracked',
+          exercise_id: 'bench_press',
+          gear_id: null,
+          set_number: 2,
+          weight: 100,
+          raw_input_weight: 100,
+          added_weight: null,
+          reps: 10,
+          reps_right: null,
+          rpe: null,
+          rir: null,
+          set_type: 'working',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: new Date().toISOString(),
+        },
+      ];
+
+      workoutRepo.seed([inProgressWorkout], sets);
+      await settingsRepo.set('active_completed_set_ids_w_active_tracked', JSON.stringify(['set_1']));
+
+      const promptData = await serviceWithSettings.checkForInterruptedWorkout();
+      expect(promptData?.summary.totalSets).toBe(2);
+      expect(promptData?.summary.completedSets).toBe(1);
     });
 
     it('formats duration with hours when elapsed time exceeds 60 minutes', async () => {

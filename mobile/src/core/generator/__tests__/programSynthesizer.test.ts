@@ -775,35 +775,22 @@ describe('Profile-Driven Program Synthesizer', () => {
   // Step 1: Compound Preservation & AMRAP Rule Scheduling (Pillar 8)
   // ==========================================================================
 
-  describe('Compound Accumulation RPE Preservation & AMRAP Scheduling', () => {
-    it('schedules AMRAP progression rules on primary compounds for non-beginners', () => {
-      const intermediateProfile: UserProfile = {
-        ...baseProfile,
-        experience_level: 'intermediate',
-        training_mentality: 'fury',
-      };
-
-      const result = synthesizeProgram(intermediateProfile);
-
-      // Verify that primary compounds received the SCHEDULE_AMRAP_FINAL_WEEK rule
-      const amrapRules = result.progressionRules.filter((r) => {
-        const j = typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json;
-        return j.actions.some((a: any) => a.type === 'SCHEDULE_AMRAP_FINAL_WEEK');
-      });
-
-      expect(amrapRules.length).toBeGreaterThan(0);
-
-      // Check rule definition
-      const sampleRule = amrapRules[0];
-      expect(sampleRule.priority).toBe(3);
-      const ruleJson = typeof sampleRule.rule_json === 'string'
-        ? JSON.parse(sampleRule.rule_json)
-        : sampleRule.rule_json;
-      expect(ruleJson.conditions[0].type).toBe('MESOCYCLE_FINAL_WEEK');
-      expect(ruleJson.actions[0].type).toBe('SCHEDULE_AMRAP_FINAL_WEEK');
-    });
+  describe('Effort-rated progression defaults', () => {
+    it.each(['fury', 'precision', 'get_out'] as const)(
+      'uses capacity evidence without scheduling AMRAPs for %s', mentality => {
+        const result = synthesizeProgram({
+          ...baseProfile, experience_level: 'intermediate', training_mentality: mentality,
+        });
+        const rules = result.progressionRules.map(r =>
+          typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json);
+        expect(rules.some(r => r.actions.some((a: any) => a.type.includes('AMRAP')))).toBe(false);
+        for (const te of result.templateExercises) {
+          expect(result.progressionRules.some(r => r.template_exercise_id === te.id &&
+            JSON.stringify(r.rule_json).includes('INCREASE_LOAD_FROM_ESTIMATED_CAPACITY'))).toBe(true);
+        }
+      }
+    );
   });
-
   // ==========================================================================
   // Step 8.1: Blueprint Quality & Seed ID Synchronization
   // ==========================================================================

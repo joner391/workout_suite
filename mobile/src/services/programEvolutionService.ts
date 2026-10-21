@@ -9,7 +9,7 @@
  * 2. Multi-Vector Program Evolution:
  *    - Vector 1: Tier & Axial Rebalance (SFR/axial shifts, e.g. Hack Squat <-> Barbell Squat)
  *    - Vector 2: Rep Brackets & Rest Timers (3-6 vs 8-15 reps, 3-5m vs 60-90s rest)
- *    - Vector 3: Progression Engine Migration (Bromley 3-week AMRAP wave on Tier 1; DDP on Tier 2/3)
+ *    - Vector 3: Progression Engine Migration (Effort-adjusted capacity on all tiers; DP/DDP fallback)
  *    - Vector 4: Isometric eRep Invariance (preserving ~32 stimulating eReps/muscle/week)
  * 3. Faz Lifts' "Weight Mastery" Gating (holding load progression on RPE overshoots >= 9.5 or joint pain >= 3/5)
  * 4. Deterministic Offline "What Changed & Why" Staging Banner via mesocycleDiffFormatter.ts
@@ -42,9 +42,7 @@ import {
   createLinearProgressionRule,
   createDoubleProgressionRule,
   createDynamicDoubleProgressionRule,
-  createAmrapProgressionRule,
-  createAmrapMidwayRule,
-  createAmrapFinalWeekRule,
+  createEstimatedCapacityProgressionRule,
 } from '../core/rules/progressionRuleEngine';
 import {
   diffProgramSnapshots,
@@ -387,7 +385,7 @@ export class ProgramEvolutionService {
    * Applies the 4 evolution vectors:
    * - Vector 1: Tier & Axial Rebalance
    * - Vector 2: Rep Brackets & Rest Timers
-   * - Vector 3: Progression Engine Migration (Bromley AMRAP wave on Tier 1; DDP on Tier 2/3)
+   * - Vector 3: Progression Engine Migration (Effort-adjusted capacity with DP/DDP fallback)
    * - Vector 4: Isometric eRep Invariance (~32 eReps/muscle/week)
    *
    * Formats offline diff banner via `mesocycleDiffFormatter.ts`.
@@ -761,37 +759,6 @@ export class ProgramEvolutionService {
           );
         }
 
-        // AMRAP Load Escalation Check
-        if (this.workoutRepo && !mastery.holdLoad) {
-          try {
-            const recent =
-              await this.workoutRepo.getMostRecentCompletedSetsForExercise(te.exercise_id);
-            if (recent && recent.length > 0) {
-              const amrapSet = recent.find((s) => s.reps > oldRepsMax || s.set_type === 'amrap');
-              if (amrapSet && amrapSet.reps > oldRepsMax) {
-                const repsOver = amrapSet.reps - oldRepsMax;
-                const pctGain = Math.round((repsOver * 0.01 + 0.02) * 1000) / 10;
-                const oldWeight = amrapSet.weight || 100;
-                const newWeight = Math.round((oldWeight * (1 + pctGain / 100)) / 2.5) * 2.5;
-                diffItems.push(
-                  MESOCYCLE_DIFF_TEMPLATES.LOAD_INCREASE_AMRAP({
-                    exerciseName: newExerciseName,
-                    actualReps: amrapSet.reps,
-                    targetMax: oldRepsMax,
-                    repsOver,
-                    pctGain,
-                    oldWeightKg: oldWeight,
-                    newWeightKg: newWeight,
-                    weekNum: 4,
-                  })
-                );
-              }
-            }
-          } catch {
-            // Ignore
-          }
-        }
-
         // Evolve TemplateExercise preserving exact ID and order
         const evolvedTe: TemplateExercise = {
           ...te,
@@ -825,28 +792,20 @@ export class ProgramEvolutionService {
             });
           }
         } else if (isPrimaryCompound) {
-          // Tier 1: Bromley 3-Week AMRAP Wave with 1%-over-cap floor rounding
           rulesForExercise = [
-            createAmrapProgressionRule(te.id, { incrementKg: 2.5 }),
-            createAmrapMidwayRule(te.id),
-            createAmrapFinalWeekRule(te.id),
+            createEstimatedCapacityProgressionRule(te.id),
+            ...createDoubleProgressionRule(te.id),
           ];
-
-          // Check if newly migrated
-          const hadBromley = flatOldRules.some((r) => {
-            if (r.template_exercise_id !== te.id) return false;
-            const str = typeof r.rule_json === 'string' ? r.rule_json : JSON.stringify(r.rule_json);
-            return str.includes('amrap');
-          });
-          if (!hadBromley) {
-            diffItems.push(
-              MESOCYCLE_DIFF_TEMPLATES.PROGRESSION_MIGRATION({
-                exerciseName: newExerciseName,
-                newProgressionType: 'Bromley 3-Week AMRAP Wave',
-                reason:
-                  'Activated Bromley wave periodization with +1%-over-cap floor-rounded load escalation on primary compound.',
-              })
-            );
+          const hadCapacity = flatOldRules.some(r =>
+            r.template_exercise_id === te.id &&
+            JSON.stringify(r.rule_json).includes('INCREASE_LOAD_FROM_ESTIMATED_CAPACITY')
+          );
+          if (!hadCapacity) {
+            diffItems.push(MESOCYCLE_DIFF_TEMPLATES.PROGRESSION_MIGRATION({
+              exerciseName: newExerciseName,
+              newProgressionType: 'Effort-adjusted estimated capacity',
+              reason: 'Use working-set e1RM/e10RM at the prescribed effort to guide compound progression throughout the cycle.',
+            }));
           }
         } else {
           // Tier 2 & Tier 3: Dynamic Double Progression (DDP per-set advancement)
@@ -871,6 +830,9 @@ export class ProgramEvolutionService {
           }
         }
 
+        if (!isBeginner && !isPrimaryCompound) {
+          rulesForExercise.unshift(createEstimatedCapacityProgressionRule(te.id, 1.25));
+        }
         evolvedProgressionRules.push(...rulesForExercise);
         await this.programRepo.setProgressionRules(te.id, rulesForExercise);
       }

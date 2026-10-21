@@ -715,7 +715,7 @@ export class ImportService {
               gear_id: null,
               set_number: s.setNumber,
               weight: s.weightKg,
-              raw_input_weight: s.rawInputWeightKg,
+              raw_input_weight: s.weight,
               added_weight: null,
               reps: s.reps,
               reps_right: s.repsRight ?? null,

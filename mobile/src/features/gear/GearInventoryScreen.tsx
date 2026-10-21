@@ -45,6 +45,7 @@ export interface GearInventoryScreenProps {
   userSettingsRepo?: IUserSettingsRepository;
   onSelectGear?: (gear: GearInventory) => void;
   onClose?: () => void;
+  onEditAccess?: () => void;
 }
 
 const GEAR_TYPES: { type: GearType; label: string }[] = [
@@ -69,6 +70,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
   userSettingsRepo,
   onSelectGear,
   onClose,
+  onEditAccess,
 }) => {
   const service = useMemo(() => new GearInventoryService(gearRepo), [gearRepo]);
 
@@ -265,6 +267,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
         </View>
       </View>
 
+      {onEditAccess && <TouchableOpacity testID="gear-edit-access-btn" accessibilityRole="button" onPress={onEditAccess} style={{ padding: 16 }}><Text style={{ color: '#86EFAC', fontWeight: '600' }}>Edit equipment access →</Text></TouchableOpacity>}
       {/* Search Input */}
       <View style={styles.searchSection}>
         <TextInput

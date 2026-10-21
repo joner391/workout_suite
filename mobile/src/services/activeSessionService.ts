@@ -18,8 +18,10 @@ import {
   SetType,
   Exercise,
   GearInventory,
+  WeightUnit,
 } from '../core/types';
 import { normalizeExerciseLoad } from '../core/math/loadNormalizer';
+import { lbsToKg } from '../core/math/unitConversion';
 import {
   generateWarmupSets,
   calculateWarmupAutoregulation,
@@ -56,6 +58,7 @@ export interface AddSetInput {
   bodyweightKg?: number | null; // Athlete's active bodyweight for bodyweight movements
   addedWeight?: number | null; // Explicit added/assisted delta (+10, -15)
   setNumber?: number; // Optional; calculated contiguously if omitted
+  unitSystem?: WeightUnit;
 }
 
 export interface UpdateSetInput {
@@ -71,6 +74,7 @@ export interface UpdateSetInput {
   bodyweightKg?: number | null;
   addedWeight?: number | null;
   setNumber?: number;
+  unitSystem?: WeightUnit;
 }
 
 export interface FinishWorkoutInput {
@@ -95,8 +99,11 @@ function generateUuid(): string {
 /**
  * Returns today's ISO date in YYYY-MM-DD format.
  */
-function getTodayIsoDate(): string {
-  return new Date().toISOString().split('T')[0];
+function getTodayIsoDate(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export class ActiveSessionService {
@@ -267,13 +274,22 @@ export class ActiveSessionService {
     // Resolve gear if specified
     const gear = input.gearId ? await this.resolveGear(input.gearId) : null;
 
+    // Convert input weight to canonical kilograms if entered in lbs
+    const inputWeightKg = input.unitSystem === 'lbs'
+      ? lbsToKg(input.rawInputWeight)
+      : input.rawInputWeight;
+
+    const addedWeightKg = input.addedWeight != null
+      ? (input.unitSystem === 'lbs' ? lbsToKg(input.addedWeight) : input.addedWeight)
+      : (exercise.is_bodyweight ? inputWeightKg : null);
+
     // Normalize mechanical load per ADR-026
     const normalized = normalizeExerciseLoad(
-      input.rawInputWeight,
+      inputWeightKg,
       exercise,
       gear,
       input.bodyweightKg,
-      input.addedWeight ?? (exercise.is_bodyweight ? input.rawInputWeight : null)
+      addedWeightKg
     );
 
     // Determine contiguous set number and auto-inherit group id if not explicitly provided
@@ -300,8 +316,8 @@ export class ActiveSessionService {
       gear_id: input.gearId ?? null,
       set_number: setNumber,
       weight: normalized.effectiveWeightKg,
-      raw_input_weight: normalized.rawInputWeightKg,
-      added_weight: normalized.addedWeightKg,
+      raw_input_weight: input.rawInputWeight,
+      added_weight: input.addedWeight ?? (exercise.is_bodyweight ? input.rawInputWeight : null),
       reps: Math.max(0, input.reps),
       reps_right: input.repsRight ?? null,
       rpe: input.rpe ?? null,
@@ -345,12 +361,20 @@ export class ActiveSessionService {
       ? input.addedWeight
       : existingSet.added_weight;
 
+    const inputWeightKg = input.unitSystem === 'lbs'
+      ? lbsToKg(rawInputWeight)
+      : rawInputWeight;
+
+    const addedWeightKg = addedWeight != null
+      ? (input.unitSystem === 'lbs' ? lbsToKg(addedWeight) : addedWeight)
+      : (exercise.is_bodyweight ? inputWeightKg : null);
+
     const normalized = normalizeExerciseLoad(
-      rawInputWeight,
+      inputWeightKg,
       exercise,
       gear,
       input.bodyweightKg,
-      addedWeight ?? (exercise.is_bodyweight ? rawInputWeight : null)
+      addedWeightKg
     );
 
     const updatedSet: WorkoutSet = {
@@ -358,8 +382,8 @@ export class ActiveSessionService {
       gear_id: gearId,
       set_number: input.setNumber !== undefined ? input.setNumber : existingSet.set_number,
       weight: normalized.effectiveWeightKg,
-      raw_input_weight: normalized.rawInputWeightKg,
-      added_weight: normalized.addedWeightKg,
+      raw_input_weight: rawInputWeight,
+      added_weight: addedWeight ?? (exercise.is_bodyweight ? rawInputWeight : null),
       reps: input.reps !== undefined ? Math.max(0, input.reps) : existingSet.reps,
       reps_right: input.repsRight !== undefined ? input.repsRight : existingSet.reps_right,
       rpe: input.rpe !== undefined ? input.rpe : existingSet.rpe,

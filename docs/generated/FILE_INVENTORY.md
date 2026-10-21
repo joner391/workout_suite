@@ -199,6 +199,7 @@ Excludes Git metadata, dependencies, virtual environments, caches, build outputs
 - `mobile/src/features/gear/index.ts`
 - `mobile/src/features/home/HomeScreen.tsx`
 - `mobile/src/features/home/index.ts`
+- `mobile/src/features/home/WorkoutPrescription.tsx`
 - `mobile/src/features/import/__tests__/importComponents.test.ts`
 - `mobile/src/features/import/dummyDataPresets.ts`
 - `mobile/src/features/import/ImportScreen.tsx`
@@ -245,6 +246,8 @@ Excludes Git metadata, dependencies, virtual environments, caches, build outputs
 - `mobile/src/features/plots/WorkloadDeepDiveModal.tsx`
 - `mobile/src/features/profile/__tests__/userProfileComponents.test.ts`
 - `mobile/src/features/profile/index.ts`
+- `mobile/src/features/profile/PersonalRecordsScreen.tsx`
+- `mobile/src/features/profile/StrengthOverviewScreen.tsx`
 - `mobile/src/features/profile/UserProfileScreen.tsx`
 - `mobile/src/features/progression/__tests__/progressionComponents.test.ts`
 - `mobile/src/features/progression/CatalogPickerModal.tsx`
@@ -267,10 +270,12 @@ Excludes Git metadata, dependencies, virtual environments, caches, build outputs
 - `mobile/src/services/__tests__/importService.test.ts`
 - `mobile/src/services/__tests__/mesocycleDiffFormatter.test.ts`
 - `mobile/src/services/__tests__/mesocycleSimulation.test.ts`
+- `mobile/src/services/__tests__/profilePreferencesService.test.ts`
 - `mobile/src/services/__tests__/programBlockService.test.ts`
 - `mobile/src/services/__tests__/programCloneService.test.ts`
 - `mobile/src/services/__tests__/programEvolutionService.test.ts`
 - `mobile/src/services/__tests__/restTimerService.test.ts`
+- `mobile/src/services/__tests__/trainingOverviewService.test.ts`
 - `mobile/src/services/__tests__/workloadAnalysisService.test.ts`
 - `mobile/src/services/activeSessionService.ts`
 - `mobile/src/services/calibratedParamService.ts`
@@ -285,11 +290,15 @@ Excludes Git metadata, dependencies, virtual environments, caches, build outputs
 - `mobile/src/services/index.ts`
 - `mobile/src/services/mesocycleDiffFormatter.ts`
 - `mobile/src/services/mesocycleSimulation.ts`
+- `mobile/src/services/profilePreferencesService.ts`
 - `mobile/src/services/programBlockService.ts`
 - `mobile/src/services/programCloneService.ts`
 - `mobile/src/services/programEvolutionService.ts`
 - `mobile/src/services/restTimerService.ts`
+- `mobile/src/services/strengthOverviewService.ts`
+- `mobile/src/services/trainingOverviewService.ts`
 - `mobile/src/services/workloadAnalysisService.ts`
+- `mobile/src/services/workoutPreviewService.ts`
 - `mobile/tsconfig.json`
 - `schemas/calibrated_parameters.schema.json`
 - `schemas/fixtures/sample_workout_export.json`

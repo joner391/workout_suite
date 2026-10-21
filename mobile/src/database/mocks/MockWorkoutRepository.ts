@@ -7,6 +7,7 @@ import {
   RepMaxQueryOptions,
   RawRepMaxRow,
 } from '../../core/types';
+import { calculateHeuristic1RM } from '../../core/math/heuristic1rm';
 
 /**
  * In-memory mock implementation of IWorkoutRepository for headless unit tests.
@@ -272,17 +273,17 @@ export class MockWorkoutRepository implements IWorkoutRepository {
       matchingSets.push({ set: s, workoutDate: workout.date });
     }
 
-    const bestByRep = new Map<number, { set: WorkoutSet; workoutDate: string }>();
+    const bestByKey = new Map<string, { set: WorkoutSet; workoutDate: string }>();
 
     for (const item of matchingSets) {
-      const reps = item.set.reps;
-      const currentBest = bestByRep.get(reps);
+      const key = `${item.set.exercise_id}_${item.set.reps}`;
+      const currentBest = bestByKey.get(key);
 
       if (!currentBest) {
-        bestByRep.set(reps, item);
+        bestByKey.set(key, item);
       } else {
         if (item.set.weight > currentBest.set.weight) {
-          bestByRep.set(reps, item);
+          bestByKey.set(key, item);
         } else if (item.set.weight === currentBest.set.weight) {
           const getIntensity = (set: WorkoutSet) => {
             if (set.rpe != null) return set.rpe;
@@ -293,24 +294,28 @@ export class MockWorkoutRepository implements IWorkoutRepository {
           const currentScore = getIntensity(currentBest.set);
 
           if (itemScore > currentScore) {
-            bestByRep.set(reps, item);
+            bestByKey.set(key, item);
           } else if (itemScore === currentScore) {
             if (
               item.workoutDate > currentBest.workoutDate ||
               (item.workoutDate === currentBest.workoutDate &&
                 item.set.created_at > currentBest.set.created_at)
             ) {
-              bestByRep.set(reps, item);
+              bestByKey.set(key, item);
             }
           }
         }
       }
     }
 
-    const sortedReps = Array.from(bestByRep.keys()).sort((a, b) => a - b);
+    const sortedItems = Array.from(bestByKey.values()).sort((a, b) => {
+      if (a.set.reps !== b.set.reps) {
+        return a.set.reps - b.set.reps;
+      }
+      return a.set.exercise_id.localeCompare(b.set.exercise_id);
+    });
 
-    return sortedReps.map((r) => {
-      const item = bestByRep.get(r)!;
+    return sortedItems.map((item) => {
       return {
         setId: item.set.id,
         workoutId: item.set.workout_id,
@@ -328,11 +333,17 @@ export class MockWorkoutRepository implements IWorkoutRepository {
   async getBestE1rmByExercise(): Promise<Map<string, number>> {
     const result = new Map<string, number>();
     for (const s of this.sets.values()) {
-      if (s.reps > 0 && s.weight > 0) {
-        const e1rm = s.weight * (1.0 + s.reps / 30.0);
-        const currentBest = result.get(s.exercise_id) ?? 0;
-        if (e1rm > currentBest) {
-          result.set(s.exercise_id, Math.round(e1rm * 100) / 100);
+      if (s.reps > 0 && s.weight > 0 && s.set_type !== 'warmup') {
+        const workout = this.workouts.get(s.workout_id);
+        if (workout && workout.status === 'completed') {
+          const e1rm = calculateHeuristic1RM(s.weight, s.reps, {
+            rir: s.rir,
+            rpe: s.rpe,
+          });
+          const currentBest = result.get(s.exercise_id) ?? 0;
+          if (e1rm > currentBest) {
+            result.set(s.exercise_id, Math.round(e1rm * 100) / 100);
+          }
         }
       }
     }

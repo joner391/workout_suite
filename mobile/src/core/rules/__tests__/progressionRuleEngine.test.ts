@@ -6,6 +6,8 @@ import {
   createAmrapFinalWeekRule,
   createAmrapMidwayRule,
   createAmrapProgressionRule,
+  createEstimatedCapacityProgressionRule,
+  estimateProgressionCapacity,
   floorToIncrement,
   calculateAmrapProgression,
   calculateRirBias,
@@ -77,6 +79,64 @@ describe('Progression Rule Engine', () => {
   // ==========================================================================
   // Edge Cases & Robustness
   // ==========================================================================
+
+  describe('Effort-adjusted capacity progression', () => {
+    const prescription = { ...defaultPrescription, target_rpe: 8, target_rir: 2 };
+    const sets = (options: Partial<WorkoutSet> = {}) => [1, 2, 3].map(n =>
+      createSet(n, 100, 12, options));
+    const evaluate = (working: WorkoutSet[], p = prescription) => evaluateProgressionRules(
+      [createEstimatedCapacityProgressionRule(p.id)],
+      [createSession('2026-10-20', working)], p
+    );
+
+    it('uses RPE 8 working sets to increase load without an AMRAP', () => {
+      const result = evaluate(sets({ rir: null, rpe: 8 }));
+      expect(result.primaryProposal?.suggestedWeightKg).toBe(102.5);
+      expect(result.primaryProposal?.suggestedTargetReps).toBe(8);
+      expect(result.primaryProposal?.explanation).toContain('e1RM');
+      expect(result.primaryProposal?.explanation).toContain('e10RM');
+      expect(result.primaryProposal?.suggestedSetType).toBeUndefined();
+    });
+
+    it('treats RIR 2 and RPE 8 as the same capacity', () => {
+      expect(estimateProgressionCapacity(sets({ rir: 2, rpe: null }), prescription))
+        .toEqual(estimateProgressionCapacity(sets({ rir: null, rpe: 8 }), prescription));
+    });
+
+    it('treats AMRAP as an ordinary 0-RIR capacity observation', () => {
+      const p = { ...prescription, target_rir: 0, target_rpe: 10 };
+      expect(estimateProgressionCapacity(sets({ set_type: 'amrap', rir: null, rpe: null }), p))
+        .toEqual(estimateProgressionCapacity(sets({ rir: 0, rpe: 10 }), p));
+    });
+
+    it('recognizes easier effort at unchanged load and reps', () => {
+      const p = { ...prescription, target_reps_min: 8, target_reps_max: 8, target_rir: 0, target_rpe: 10 };
+      expect(evaluate(sets({ reps: 8, rir: 0, rpe: 10 }), p).hasMatches).toBe(false);
+      expect(evaluate(sets({ reps: 8, rir: 3, rpe: 7 }), p).primaryProposal?.suggestedWeightKg).toBe(102.5);
+    });
+
+    it.each([
+      { rir: null, rpe: null }, { rir: 4, rpe: 6 }, { rir: Infinity },
+      { rir: -1 }, { weight: NaN }, { reps: 0 }, { reps: 13 },
+      { set_type: 'drop' as const }, { rir: 0, rpe: 10 },
+    ])('does not progress from unreliable or unsuitable evidence: %j', options => {
+      expect(evaluate(sets(options)).hasMatches).toBe(false);
+    });
+
+    it('does not progress from incomplete work or a single exceptional set', () => {
+      expect(evaluate(sets().slice(0, 1)).hasMatches).toBe(false);
+      expect(evaluate([createSet(1, 100, 12), createSet(2, 100, 8), createSet(3, 100, 8)]).hasMatches).toBe(false);
+    });
+
+    it('does not borrow ratings or estimates from older sessions', () => {
+      const result = evaluateProgressionRules([createEstimatedCapacityProgressionRule(prescription.id)], [
+        createSession('2026-10-19', sets()),
+        createSession('2026-10-20', sets({ rir: null, rpe: null })),
+      ], prescription);
+      expect(result.hasMatches).toBe(false);
+    });
+  });
+
 
   describe('Edge Cases & Defensive Handling', () => {
     it('returns empty result when rules array is empty', () => {

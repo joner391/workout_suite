@@ -34,6 +34,8 @@ import {
 import { ExercisePreferenceService } from '../../services/exercisePreferenceService';
 import { ActiveSessionService } from '../../services/activeSessionService';
 import { ActiveLoggerScreen } from './ActiveLoggerScreen';
+import { WorkoutPrescription } from '../home/WorkoutPrescription';
+import { buildWorkoutPreview, selectNextTemplate, ExercisePrescription } from '../../services/workoutPreviewService';
 import {
   Workout,
   WorkoutTemplate,
@@ -56,6 +58,7 @@ export interface WorkoutTabRouterProps {
   hasActiveWorkout: boolean;
   currentWorkoutId?: string;
   isActiveTab?: boolean;
+  programRevision?: number;
   onStartSession: (workoutId: string) => void;
   onFinishSession: (completedWorkout: Workout) => void;
   onDiscardSession: () => void;
@@ -75,6 +78,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
   hasActiveWorkout,
   currentWorkoutId,
   isActiveTab,
+  programRevision,
   onStartSession,
   onFinishSession,
   onDiscardSession,
@@ -87,6 +91,22 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
   const [selectedTemplate, setSelectedTemplate] = useState<WorkoutTemplateDetail | null>(null);
   const [exerciseCatalog, setExerciseCatalog] = useState<Map<string, Exercise>>(new Map());
   const [showDayPickerModal, setShowDayPickerModal] = useState<boolean>(false);
+  const [previewRows, setPreviewRows] = useState<ExercisePrescription[]>([]);
+  const [previewError, setPreviewError] = useState(false);
+
+  useEffect(() => {
+    if (!selectedTemplate || !(isActiveTab ?? true) || hasActiveWorkout) return;
+    let alive = true;
+    setPreviewRows([]); setPreviewError(false);
+    (async () => {
+      try {
+        const unit = await userSettingsRepo?.getUnitSystem() ?? 'kg';
+        const rows = await buildWorkoutPreview(selectedTemplate, workoutRepo, exerciseCatalog, unit);
+        if (alive) setPreviewRows(rows);
+      } catch { if (alive) setPreviewError(true); }
+    })();
+    return () => { alive = false; };
+  }, [selectedTemplate, workoutRepo, exerciseCatalog, userSettingsRepo, isActiveTab, hasActiveWorkout]);
 
   // Load active program, template sequence, and exercises
   const loadRouterState = useCallback(async () => {
@@ -99,27 +119,16 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
       if (programBlockService && programRepo) {
         const active = await programBlockService.getActiveProgram();
         setActiveInfo(active);
+        setSelectedTemplate(null);
+        setProgramDetails(null);
 
         if (active) {
           const details = await programRepo.getProgramWithDetails(active.program.id);
           setProgramDetails(details);
 
           if (details && details.templates.length > 0) {
-            const tmpls = details.templates;
-            const recent = await workoutRepo.findAll({ limit: 20 });
-            const tmplIds = tmpls.map((t) => t.id);
-            const lastCompleted = recent.find(
-              (w) => w.status === 'completed' && w.template_id && tmplIds.includes(w.template_id)
-            );
-
-            let nextIdx = 0;
-            if (lastCompleted && lastCompleted.template_id) {
-              const lastIdx = tmpls.findIndex((t) => t.id === lastCompleted.template_id);
-              if (lastIdx !== -1) {
-                nextIdx = (lastIdx + 1) % tmpls.length;
-              }
-            }
-            setSelectedTemplate(tmpls[nextIdx]);
+            const completed = await workoutRepo.findAll({ status: 'completed' });
+            setSelectedTemplate(selectNextTemplate(details.templates, completed));
           }
         }
       }
@@ -134,7 +143,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
     if ((isActiveTab ?? true) && !hasActiveWorkout) {
       loadRouterState();
     }
-  }, [isActiveTab, hasActiveWorkout, loadRouterState]);
+  }, [isActiveTab, hasActiveWorkout, loadRouterState, programRevision]);
 
   // Start workout from a specific template
   const handleStartTemplateWorkout = async (template: WorkoutTemplateDetail) => {
@@ -271,6 +280,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
     return (
       <View testID="workout-state-b-preflight" style={styles.container}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <TouchableOpacity testID="workout-manage-programs-btn" accessibilityRole="button" style={styles.secondaryBtn} onPress={onOpenProgramPlanner}><Text style={styles.secondaryBtnText}>Manage programs →</Text></TouchableOpacity>
           {/* Header Banner */}
           <View style={styles.preflightHeader}>
             <View style={styles.programPill}>
@@ -303,46 +313,9 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
 
           {/* Planned Exercise List Preview */}
           <Text style={styles.sectionTitle}>PLANNED EXERCISES & TARGETS</Text>
-          <View style={styles.exerciseListContainer}>
-            {selectedTemplate.exercises.map((te, idx) => {
-              const ex = exerciseCatalog.get(te.exercise_id);
-              const exName = ex?.name ?? te.exercise_id;
-
-              return (
-                <View
-                  key={te.id}
-                  testID={`preflight-exercise-${te.id}`}
-                  style={styles.exerciseRow}
-                >
-                  <View style={styles.exerciseRowLeft}>
-                    <View style={styles.exerciseIndexPill}>
-                      <Text style={styles.exerciseIndexText}>{idx + 1}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={styles.exerciseTitleRow}>
-                        <Text style={styles.exerciseNameText}>{exName}</Text>
-                        {te.exercise_group_id && (
-                          <View style={styles.supersetPill}>
-                            <Text style={styles.supersetPillText}>SUPERSET</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.exerciseTargetText}>
-                        {te.target_sets ?? 3} sets × {te.target_reps_min ?? 8}–
-                        {te.target_reps_max ?? 12} reps
-                        {te.target_rpe != null
-                          ? ` @ RPE ${te.target_rpe}`
-                          : te.target_rir != null
-                          ? ` @ ${te.target_rir} RIR`
-                          : ''}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-
+          <WorkoutPrescription rows={previewRows} />
+          {previewError && <Text style={styles.exerciseTargetText}>Load preview unavailable. Your template is still available in the logger.</Text>}
+          <Text style={styles.exerciseTargetText}>Suggested changes require confirmation in the logger. Last loads are references from matching equipment.</Text>
           {/* Primary CTA: START WORKOUT */}
           <TouchableOpacity
             testID="start-workout-cta"
@@ -560,59 +533,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1,
     marginBottom: 10,
-  },
-  exerciseListContainer: {
-    backgroundColor: '#121214',
-    borderWidth: 1,
-    borderColor: '#1E1E22',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    marginBottom: 20,
-  },
-  exerciseRow: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-  },
-  exerciseRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  exerciseIndexPill: {
-    backgroundColor: '#18181B',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  exerciseIndexText: {
-    color: '#71717A',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  exerciseTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  exerciseNameText: {
-    color: '#FAFAFA',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  supersetPill: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 3,
-  },
-  supersetPillText: {
-    color: '#FFFFFF',
-    fontSize: 8,
-    fontWeight: '800',
   },
   exerciseTargetText: {
     color: '#A1A1AA',

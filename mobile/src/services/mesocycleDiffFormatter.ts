@@ -303,7 +303,9 @@ export function summarizeMesocycleChanges(items: MesocycleDiffItem[]): string[] 
       titleLower.includes('progression') ||
       titleLower.includes('reps & rest')
     ) {
-      if (
+      if (expLower.includes('e1rm/e10rm')) {
+        summaries.push('Use effort-adjusted e1RM/e10RM for progression');
+      } else if (
         titleLower.includes('dynamic double') ||
         titleLower.includes('ddp') ||
         expLower.includes('accessory') ||

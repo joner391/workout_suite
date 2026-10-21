@@ -101,29 +101,17 @@ export function normalizeLoad(input: LoadNormalizerInput): NormalizedLoadResult 
     };
   }
 
-  // Case 2: Dumbbell Exercises with Per-Hand Input (ADR-021)
+  // Case 2: Free weights and Cable machines (with composable per-hand & pulley ratio support)
+  let multiplier = 1.0;
   if (loadMode === 'per_hand') {
-    const perHandEffective = Math.max(0, rawInput * 2.0);
-    return {
-      effectiveWeightKg: perHandEffective,
-      rawInputWeightKg: rawInput,
-      addedWeightKg: null,
-    };
+    multiplier *= 2.0;
   }
-
-  // Case 3: Cable Machines with Pulley Mechanical Advantage (ADR-025)
   if (cableRatio !== 1.0) {
-    const cableEffective = Math.max(0, rawInput * cableRatio);
-    return {
-      effectiveWeightKg: cableEffective,
-      rawInputWeightKg: rawInput,
-      addedWeightKg: null,
-    };
+    multiplier *= cableRatio;
   }
 
-  // Case 4: Standard Barbell / Plate-Loaded / Selectorized Total Load
   return {
-    effectiveWeightKg: Math.max(0, rawInput),
+    effectiveWeightKg: Math.max(0, rawInput * multiplier),
     rawInputWeightKg: rawInput,
     addedWeightKg: null,
   };

@@ -958,6 +958,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       rir: defaultRir,
       gearId: lastSet?.gear_id ?? null,
       exerciseGroupId: lastSet?.exercise_group_id ?? null,
+      unitSystem,
     });
 
     setSets((prev) => [...prev, newSet]);
@@ -998,6 +999,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           setType: updatedFields.set_type,
           setNotes: updatedFields.set_notes,
           gearId: updatedFields.gear_id,
+          unitSystem,
         });
 
         setSets((prev) => prev.map((s) => (s.id === setId ? persisted : s)));
@@ -1516,6 +1518,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       rawInputWeight: initialWeight,
       reps: initialReps,
       rpe: 8.0,
+      unitSystem,
     });
 
     // Automated Warm-Up Synthesis (Phase 3)
@@ -2312,6 +2315,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         initialBarTareKg={plateModalTarget.barTareKg}
         exerciseName={plateModalTarget.exerciseName}
         gearName={plateModalTarget.gearName}
+        unitSystem={unitSystem}
         onApplyWeight={handleApplyPlateWeight}
         onClose={() => setPlateModalTarget((p) => ({ ...p, visible: false }))}
       />
