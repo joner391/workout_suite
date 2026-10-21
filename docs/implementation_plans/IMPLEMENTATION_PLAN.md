@@ -1,3 +1,5 @@
+> **Historical reference:** This document contains past plans, audits, or proposals with mixed completion status. Its agent instructions, verification gates, and unchecked items do not assign current work. Follow the latest user request, root `AGENTS.md`, and [current documentation guidance](../README.md). Verify implementation claims against source.
+
 
 ### How This Plan Is Optimized for Gemini Flash 3.8
 
@@ -292,8 +294,17 @@ CREATE TABLE strength_standards (
 | | **5.2** | **Body Metrics Screen & Longitudinal Plots with Program Era Shading** | **`[x] COMPLETED`** | Anthropometry, Navy body fat, 5-tab longitudinal charts, 644/644 mobile tests verified |
 | | 5.3 | Psychological Matrix Calibration & Volume Prescriptions | `[ ] PENDING` | Mental fatigue modulation, recovery scores |
 | **Phase 6** | **6.1** | **Tier 2 Adaptive Linear Kalman Filter Engine** | **`[x] COMPLETED`** | `kalman_1rm.py`, intra-session filtering, true 1RM bypass, quadratic noise scaling, 13/13 pytest, strict mypy verified |
+| | **6.2** | **Dynamic Recoverability & Banister Impulse-Response Engine** | **`[x] COMPLETED`** | `recovery_modifier.py`, `fatigue_banister.py`, `recommendations.py`, 13/13 pytest, strict mypy verified |
 | | **6.3** | **Calibrated Parameter Exporter & Mobile Ingestion Round-Trip** | **`[x] COMPLETED`** | `param_exporter.py`, `calibratedParamService.ts`, `SettingsScreen.tsx` JSON import, 40/40 companion & 12/12 Jest tests verified |
 | | **6.4** | **Interactive Streamlit & Plotly Scientific Dashboard** | **`[x] COMPLETED`** | `app.py`, `charts.py`, 4 Plotly visualizers, 1-click calibration download, 46/46 pytest & strict mypy verified |
+| **Phase 8** | **8.1** | **Blueprint Quality & Seed ID Synchronization** | **`[x] COMPLETED`** | Canonical seed IDs in 15m express (`cable_tricep_pushdown`, `bodyweight_dip`, `barbell_skull_crusher`), Full Body Day 1 axial lumbar rebalance (`machine_leg_curl`), Upper density streamlined (5 primary + 2 arm superset accessories, 16–20 working sets), 36/36 tests verified |
+| | **8.2** | **Pure Dynamic Set Synthesis, Load-Gated eReps & Archetype Models** | **`[x] COMPLETED`** | Load-Gated eReps (≥85%), Goal-Derived Archetypes (I–IV), eRep quotient, zero submax junk generation |
+| | **8.3** | **Deferred End-of-Meso Evolution & "Current Mood" Staging** | **`[x] COMPLETED`** | Queue mood edits for Meso N+1, multi-vector Tier/rep/rest evolution, Faz Lifts Weight Mastery, Meso N+1 diff |
+| | **8.4** | **Isometric eRep Cross-Fade Mentality Transition Wave** | **`[x] COMPLETED`** | 2–3 week RPE/set cross-fade wave, eRep invariance, logger transition cues, 12/12 transitionWave, 4/4 banner, 28/28 activeLoggerRail tests verified |
+| **Phase 9** | **9.1** | **Biomechanical Exercise Taxonomy & Schema v8 Migration** | `[ ] PENDING` | Axial loading, 3-tier ROM, regional biases, joint mapping, baseline SFR, cross-stack sync |
+| | **9.2** | **Exercise Sentiment, Pain Correlation & Soft Affinity Engine** | `[ ] PENDING` | `exercise_preferences` table, implicit swap tracking (+5/swap), liked/disliked/blacklist flags |
+| | **9.3** | **Adaptive Planner Selection & Joint-ROM Protection Router** | `[ ] PENDING` | ROM-restricted swaps on joint pain, regional bias balance, affinity scoring in synthesizer |
+| | **9.4** | **Exercise Preference UI & Logger Swap Tracking Hooks** | `[ ] PENDING` | Sentiment toggles in ExerciseDetail, swap tracking hooks in ActiveLogger |
 | **Phase 7** | 7.1–7.2 | Cloud Synchronization & Social Leaderboards | `[ ] PENDING` | Supabase RLS migrations, offline-first sync queue |
 
 ---
@@ -666,6 +677,221 @@ Each phase is divided into small, self-contained **Steps**. Every step specifies
 3. 1-click download button for `calibrated_parameters.json`. *(Done)*
 
 * **Verification Gate**: Run `mypy companion/src/ui/` and run a smoke test importing `app.py` via `pytest`. *(Verified: strict mypy clean, 46/46 pytest tests passing in 2.85s)*
+
+---
+
+### Phase 8: Dynamic Mesocycle Evolution, eRep-First Mentality & In-Flight Transition Architecture
+
+*Goal: Transform Workout Suite from static program generation to an adaptive, eRep-first mesocycle evolution engine integrating Resistance Training Archetypes across the strength-hypertrophy continuum. Correct seed blueprint typos and fatigue overlaps, integrate Load-Gated eReps (≥85% 1RM) and Goal-Derived Archetype routing (Archetypes I–IV), reframe mentality profiles around stimulating effective-rep density, enable deferred end-of-mesocycle program evolution based on user mood with Faz Lifts Weight Mastery gating, and implement isometric eRep cross-fade transition waves.*
+
+#### Step 8.1: Blueprint Quality & Seed ID Synchronization (Bugfixes & Biomechanical Balancing) [COMPLETED ✅]
+
+* **Status**: **Completed**. Verified with `cd mobile && npx tsc --noEmit && npx jest src/core/generator/__tests__/programSynthesizer.test.ts` (36/36 tests passing) and full mobile suite `npm test` (912/912 tests passing).
+* **Scope**: `mobile/src/core/generator/programSynthesizer.ts`, `mobile/src/core/generator/__tests__/programSynthesizer.test.ts`.
+* **Deliverables**:
+1. Correct mismatched seed exercise IDs in 15-Minute Express blueprints:
+   - Replace `tricep_cable_pushdown` with canonical `cable_tricep_pushdown`.
+   - Replace `bodyweight_dips` with canonical `bodyweight_dip`.
+   - Replace `dumbbell_overhead_tricep_extension` fallback with `cable_tricep_pushdown` and `barbell_skull_crusher`.
+2. Rebalance axial fatigue interference in Full Body split (`getFullBodyBlueprints`):
+   - In Day 1 (Full Body A), swap `barbell_rdl` for `machine_leg_curl` to prevent consecutive-day spinal/lumbar fatigue collisions when Day 2 features heavy `barbell_deadlift`.
+3. Streamline Upper/Lower Upper session density (`getUpperLowerBlueprints`):
+   - Restructure Upper A and Upper B from 7 straight-set exercises down to 5 primary movements + 2 optional antagonist superset accessories, capping total working sets between 16–20 sets to fit standard 60-minute session budgets.
+
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest src/core/generator/__tests__/programSynthesizer.test.ts`.
+
+#### Step 8.2: Pure Dynamic Set Synthesis, Load-Gated eReps & Archetype Models [COMPLETED ✅]
+
+* **Status**: **Completed**. Verified with `cd mobile && npx tsc --noEmit && npx jest src/core/generator/__tests__/programSynthesizer.test.ts src/features/profile/__tests__/userProfileComponents.test.ts src/core/math/__tests__/effectiveReps.test.ts` (61/61 mobile tests passing) and companion pytest `companion\.venv\Scripts\pytest companion/tests/test_hypertrophy_signals.py` (14/14 tests passing).
+* **Scope**: `mobile/src/core/generator/programSynthesizer.ts`, `mobile/src/core/math/effectiveReps.ts`, `companion/src/analysis/hypertrophy_signals.py`, `mobile/src/features/profile/UserProfileScreen.tsx`, `mobile/src/features/profile/__tests__/userProfileComponents.test.ts`, `docs/training_philosophies/THEORY_VOLUME_VS_EREPS.md`, `docs/training_philosophies/THEORY_INTEGRATION_AND_MESOCYCLE_ARCHITECTURE.md`.
+* **Deliverables**:
+1. **Load-Gated eReps Mathematical Formulation**:
+   - Synchronize across both `mobile/src/core/math/effectiveReps.ts` and `companion/src/analysis/hypertrophy_signals.py`:
+     Under Henneman's Size Principle, sets with heavy loads ($\ge 85\%$ 1RM) or $(\le 5\text{ reps} \land \text{RPE} \ge 8.0)$ recruit all motor units immediately from rep 1; all completed reps count as effective reps (up to 5 per set):
+     $$\text{eReps}_{\text{set}} = \begin{cases} 
+     \min(\text{reps}, 5) & \text{if } \frac{w}{\text{e1RM}} \ge 0.85 \lor (\text{reps} \le 5 \land \text{RPE} \ge 8.0) \\
+     \max\big(0, \min(\text{reps}, \text{round}(5 - \text{RIR}))\big) & \text{otherwise}
+     \end{cases}$$
+2. **Submaximal Workload Policy**:
+   - In [`ActiveLoggerScreen.tsx`](../../mobile/src/features/logger/ActiveLoggerScreen.tsx), trainees are permitted to log submaximal sets ($>4\text{ RIR}$, e.g. Josef Eriksson 10x10 @ 50% or Bromley 65% base sets) for tonnage/workload tracking, but they earn 0 eReps.
+   - **Generator Invariant**: The program synthesizer and mesocycle engine *never* generate or recommend submaximal non-eRep sets. All synthesized sets reside strictly in the stimulating zone ($0–3\text{ RIR}$ or $\ge 85\%\text{ 1RM}$).
+3. **Goal-Derived Archetype Synthesis (Archetypes I–IV)**:
+   - Map user's primary/secondary goals and SBD preference ($\alpha_{\text{SBD}}$) into the 4 continuous Archetypes:
+     - **Archetype I (Pure Strength)**: $70\text{–}85\%$ Tier 1 SBD anchors, top set @ RPE 8 + back-off percentage drops, linear / emerging strategies.
+     - **Archetype II (Powerbuilding / Strength + Minor Hyp)**: $35\text{–}40\%$ Tier 1 + $35\text{–}40\%$ Tier 2 variants + $20\text{–}25\%$ Tier 3 accessories, Bromley 3-week AMRAP waves on primary, DDP on accessories.
+     - **Archetype III (Hypertrophy + Minor Strength / Paris Butler)**: $20\text{–}25\%$ Tier 1 + $40\text{–}45\%$ Tier 2 variants + $30\text{–}35\%$ Tier 3 isolations, linear/wave on anchors, DDP on accessories.
+     - **Archetype IV (Pure Hypertrophy / Helms & GVS)**: $50\text{–}60\%$ Tier 3 high-SFR machines/cables + $40\%$ Tier 2 variants, zero compulsory SBD ($0\text{–}10\%$), DDP & Myo-reps.
+   - Enforce **Novice Two-Tier Bifurcation** (Tier 1 practice LP + Tier 2 driver DP) vs **Intermediate/Advanced** program profiles.
+   - Enforce **Dynamic Double Progression (DDP)** over Static Double Progression (SDP) across all Tier 2 and Tier 3 exercises to prevent intra-session fatigue stalling.
+4. **Reframe Mentality Profiles**:
+   - Reframe `Fury`, `Precision`, and `Get Out` across domain models, UI copy, and theory documentation away from dogmatic "low volume vs high volume" set labels:
+     - **Fury ⚡ (High Effort Density / Maximum Efficiency)**: Pushes close to failure ($\text{RPE } 9.5\text{–}10$ / $0\text{–}0.5\text{ RIR}$), eliminating wasted "entry reps" so each set carries $\approx 5\text{ eReps}$, requiring fewer total sets to achieve target weekly stimulus.
+     - **Precision 🎯 (Technical Mastery / Controlled Proximity)**: Stays $1.5\text{–}2.5\text{ RIR}$ from failure ($\text{RPE } 7.5\text{–}8.5$) to safeguard bar velocity and technical execution, yielding $2.5\text{–}3\text{ eReps/set}$ and mathematically requiring more sets to hit the target stimulus.
+     - **Get Out ⏱️ (Temporal Density / Antagonist Supersets)**: Compresses session duration through antagonist supersets and strict rest discipline.
+5. **Dynamic Set Allocation**:
+   - Eliminate hardcoded set counts (`compoundSetCount = 2`, `accessorySetCount = 1`, etc.).
+   - Dynamically solve all working set counts via `computeTargetSetsFromExertion(targetRir, weeklyFrequency, isSkillPractice, targetWeeklyEReps)` to achieve invariant $\approx 32\text{ eReps/muscle/week}$.
+6. Update `UserProfileScreen.tsx` mentality selection cards to render the new eRep-first descriptions and eliminate references to rigid set caps.
+
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest src/core/generator/__tests__/programSynthesizer.test.ts src/features/profile/__tests__/userProfileComponents.test.ts` and companion pytest `pytest src/tests/test_hypertrophy_signals.py`.
+
+#### Step 8.3: Deferred End-of-Meso Evolution & "Current Mood" Staging Service [COMPLETED ✅]
+
+* **Status**: **Completed**. Verified with `cd mobile && npx tsc --noEmit && npx jest src/services/__tests__/programEvolutionService.test.ts src/services/__tests__/mesocycleDiffFormatter.test.ts src/features/profile/__tests__/userProfileComponents.test.ts` (all 29 tests passing; full mobile suite 65/65 passing; full companion suite 118/118 passing).
+* **Scope**: `mobile/src/services/programEvolutionService.ts`, `mobile/src/services/__tests__/programEvolutionService.test.ts`, `mobile/src/features/profile/UserProfileScreen.tsx`, `mobile/src/features/profile/__tests__/userProfileComponents.test.ts`, `mobile/src/services/mesocycleDiffFormatter.ts`.
+* **Deliverables**:
+1. Partition `UserProfileScreen.tsx` into **Athlete Demographics** (Gender, Height, Birthdate, Experience) and **Dynamic Training Mood** (Mentality, Target Session Duration, Weekly Frequency, Primary/Secondary Goals).
+2. Implement **Deferred End-of-Mesocycle Program Evolution**:
+   - Mid-flight mood changes do **not** alter the active, in-flight mesocycle. They are persisted to SQLite `user_profiles` with `pending_meso_mood = true`.
+   - When the active mesocycle completes accumulation week $L$ (or during deload/graduation), `ProgramEvolutionService.ts` executes `evolveActiveProgramForNextMeso()` to stage Meso $N+1$.
+   - Preserves `program.id`, `workout_templates.id`, `template_exercises.id`, user custom exercise substitutions, and Rep-Max PR history.
+   - Closes active `program_blocks` entry and opens new meso block (`Meso N+1`).
+3. **Multi-Vector Program Evolution**:
+   - **Vector 1 (Tier & Axial Rebalance)**: Shift exercise allocation along the SFR/axial spectrum (e.g., Hack Squat $\leftrightarrow$ Barbell Squat).
+   - **Vector 2 (Rep Brackets & Rest Timers)**: Adjust rep brackets ($3\text{–}6$ vs $8\text{–}15$) and rest intervals ($3\text{–}5\text{m}$ vs $60\text{–}90\text{s}$) to match target archetype.
+   - **Vector 3 (Progression Engine Migration)**: Bromley 3-week AMRAP wave with 1%-over-cap floor rounding on Tier 1; DDP on Tier 2/3.
+   - **Vector 4 (Isometric eRep Invariance)**: Adjust set counts inversely with RIR to preserve $\approx 32\text{ eReps/muscle/week}$.
+4. **Faz Lifts' "Weight Mastery" Gating**:
+   - Incorporate technical execution criteria: hold load progression if RPE overshoots ($\ge 9.5$) or if joint discomfort is logged ($\ge 3/5$ on joint check) to guarantee mastery before advancing weight.
+5. **Deterministic Offline "What Changed & Why" Staging Banner**:
+   - Wire `mesocycleDiffFormatter.ts` to render clear parameterized templates explaining Tier changes, Bromley wave activation, set adjustments, and rest period updates.
+6. Update `UserProfileScreen.tsx` with 3 distinct action paths:
+   - `Save Preferences Only`: Persists to `user_profiles` without altering active program.
+   - `⚡ Evolve Ongoing Program for Next Meso`: Queues mood mutation via `ProgramEvolutionService` staging Meso $N+1$ upon block completion.
+   - `Create Brand New Program`: Spawns a completely new multi-day split from scratch.
+
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest src/services/__tests__/programEvolutionService.test.ts src/services/__tests__/mesocycleDiffFormatter.test.ts`.
+
+#### Step 8.4: Isometric eRep Cross-Fade Mentality Transition Wave [COMPLETED ✅]
+
+* **Status**: **Completed**. Verified with `cd mobile && npx tsc --noEmit && npx jest src/core/generator/__tests__/transitionWave.test.ts src/features/logger/__tests__/mentalityTransitionBanner.test.ts src/features/logger/__tests__/activeLoggerRail.test.ts` (all 44 tests passing; full mobile suite 67/67 suites, 951/951 tests passing; full companion suite 118/118 passing).
+* **Scope**: `mobile/src/core/generator/transitionWave.ts`, `mobile/src/core/generator/__tests__/transitionWave.test.ts`, `mobile/src/features/logger/MentalityTransitionBanner.tsx`, `mobile/src/features/logger/__tests__/mentalityTransitionBanner.test.ts`, `mobile/src/features/logger/ActiveLoggerScreen.tsx`, `mobile/src/features/logger/__tests__/activeLoggerRail.test.ts`.
+* **Deliverables**:
+1. Implement pure transition solver `calculateTransitionWave(fromMentality, toMentality, currentWeek, totalWeeks = 3, targetWeeklyEReps = 32)`:
+   - Ramps proximity to failure linearly over 2–3 weeks:
+     $$\text{RIR}(t) = \text{RIR}_{\text{from}} + \frac{t}{T} (\text{RIR}_{\text{to}} - \text{RIR}_{\text{from}})$$
+   - Dynamically recomputes working sets so weekly stimulating reps remain invariant ($E_{\text{weekly}} \approx 30\text{–}32\text{ eReps}$):
+     $$\text{Sets}(t) = \text{round}\left( \frac{E_{\text{target}}}{(5 - \text{RIR}(t)) \cdot f_{\text{week}}} \right)$$
+   - Protects athletes shifting to `Fury` from a 65% stimulus crash, and protects athletes shifting to `Precision` from acute workload spikes ($\text{ACWR} > 1.5$) and extreme DOMS.
+2. Active Logger Transition Banner:
+   - Renders a motivational and diagnostic banner in `ActiveLoggerScreen.tsx` during transition weeks (e.g., *"Mentality Transition: Week 1 of 3 (Precision $\to$ Fury) — RPE ramping (+0.5) while 1 set is trimmed to maintain 32 weekly eReps"*).
+
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest src/core/generator/__tests__/transitionWave.test.ts`.
+
+---
+
+### Phase 9: Biomechanical Exercise Taxonomy, Joint ROM Protection & Adaptive Preference Engine
+
+*Goal: Elevate the exercise catalog from simple muscle/equipment tags to a comprehensive biomechanical database with 3-tier ROM classifications, axial loading ratings, regional bodybuilding sub-target biases, joint loading maps, and baseline SFR scores. Create a dedicated exercise preference and sentiment learning engine that tracks liked/disliked movements, joint pain correlations, and soft affinity from manual in-logger swaps to automatically refine future mesocycle program synthesis.*
+
+#### Step 9.1: Biomechanical Exercise Taxonomy & SQLite Schema v8 Migration
+
+* **Status**: `[x] COMPLETED`
+* **Scope**: `mobile/src/database/schema.ts`, `mobile/src/core/types/index.ts`, `mobile/src/database/seeds/defaultExercises.ts`, `schemas/workout_export.schema.json`, `companion/src/ingestion/schemas.py`.
+* **Deliverables**:
+1. Enrich `Exercise` entity with biomechanical descriptors:
+   - `axial_loading`: `'none' | 'low' | 'moderate' | 'high'` (quantifies spinal compressive loading; e.g. Back Squat = `high`, Incline DB Press = `low`, Chest-Supported Row = `none`).
+   - `rom_tier`: `'deep_stretch' | 'standard_full' | 'shortened_restricted'`
+     - `deep_stretch`: Lengthened-biased, deep joint excursion under load (e.g., Deficit Squats, RDLs, Incline DB Curls, DB Flyes, Overhead Cable Extensions, Deep Dips).
+     - `standard_full`: Standard active range of motion without extreme terminal stretch (e.g., Flat Barbell/DB Bench, Leg Press, Pull-Up, Standing Barbell Curl).
+     - `shortened_restricted`: Restricted range of motion, partial excursion, or peak contraction/lockout focus (e.g., Pin Squats, Box Squats, Board/Floor Press, Rack Pulls, Cable Pressdowns, Leg Extension lockout).
+   - `muscle_biases`: Array of regional bodybuilding sub-targets:
+     - Chest: `['upper_clavicular', 'mid_sternal', 'lower_costal']`
+     - Triceps: `['long_head', 'lateral_head', 'medial_head']`
+     - Shoulders: `['anterior_delt', 'lateral_delt', 'posterior_delt']`
+     - Back: `['iliac_lower_lats', 'thoracic_upper_lats', 'rhomboids_mid_traps', 'upper_traps', 'erectors']`
+     - Quads: `['rectus_femoris', 'vastii_bulk']`
+     - Hamstrings: `['lengthened_hip_hinge', 'shortened_knee_flexion']`
+     - Glutes: `['upper_glute_shelf', 'glute_max_thrust']`
+   - `primary_joints` & `secondary_joints`: Mechanically loaded joints (`shoulder`, `elbow`, `wrist`, `knee`, `hip`, `ankle`, `lower_back`, `neck`).
+   - `baseline_sfr`: Baseline Stimulus-to-Fatigue score ($0\text{–}100$).
+   - `required_gear`: Equipment tags (`['barbell', 'dumbbell', 'cable', 'machine', 'smith_machine', 'bodyweight', 'pull_up_bar', 'dip_station']`).
+   - `exercise_tier`: Differentiated progression tier ($1 = \text{Neurological Anchor}$, $2 = \text{Developmental Variant}$, $3 = \text{High-SFR Isolation}$).
+2. SQLite Schema v8 Migration (`mobile/src/database/schema.ts`):
+   - Add columns to `exercises` table: `axial_loading`, `rom_tier`, `muscle_biases`, `secondary_joints`, `baseline_sfr`, `required_gear`, `exercise_tier`.
+   - Update `PRAGMA user_version = 8`.
+3. Contract Synchronization:
+   - Update `schemas/workout_export.schema.json` with the new `Exercise` properties.
+   - Update `companion/src/ingestion/schemas.py` Pydantic `Exercise` model with corresponding fields.
+4. Update Seeds:
+   - Populate all 46+ foundational exercises in `defaultExercises.ts` with explicit ROM tiers, axial ratings, regional biases, joint arrays, and baseline SFR scores.
+
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest src/core/generator/__tests__/programSynthesizer.test.ts` AND `pytest companion/tests/test_schemas.py`.
+
+#### Step 9.2: Exercise Sentiment, Pain Correlation & Soft Affinity Engine
+
+* **Status**: `[x] COMPLETED`
+* **Scope**: `mobile/src/database/schema.ts`, `mobile/src/domain/repositories/IExercisePreferenceRepository.ts`, `mobile/src/database/repositories/SQLiteExercisePreferenceRepository.ts`, `mobile/src/services/exercisePreferenceService.ts`, `mobile/src/services/__tests__/exercisePreferenceService.test.ts`, `schemas/workout_export.schema.json`, `companion/src/ingestion/schemas.py`.
+* **Deliverables**:
+1. Create `exercise_preferences` table in SQLite Schema v8:
+   ```sql
+   CREATE TABLE IF NOT EXISTS exercise_preferences (
+       exercise_id TEXT PRIMARY KEY REFERENCES exercises(id) ON DELETE CASCADE,
+       sentiment TEXT NOT NULL DEFAULT 'neutral', -- 'liked' | 'neutral' | 'disliked' | 'blacklisted'
+       swap_in_count INTEGER NOT NULL DEFAULT 0,
+       swap_out_count INTEGER NOT NULL DEFAULT 0,
+       affinity_score REAL NOT NULL DEFAULT 0.0,
+       last_pain_reported_at TEXT,
+       max_pain_severity INTEGER,
+       pain_joint TEXT,
+       updated_at TEXT NOT NULL
+   );
+   ```
+2. Implement `ExercisePreferenceService.ts`:
+   - `setSentiment(exerciseId, sentiment)`: Updates explicit sentiment (`liked` = $+25$ affinity, `disliked` = $-60$ affinity, `blacklisted` = $-999$ affinity / hard exclusion).
+   - `recordManualSwap(swappedOutExerciseId, swappedInExerciseId)`: Increments `swap_out_count` for the discarded exercise and `swap_in_count` for the chosen substitute.
+   - `calculateAffinityScore(preference)`: Computes soft affinity score:
+     $$\text{affinity\_score} = \begin{cases}
+     +25.0 & \text{if sentiment == 'liked'} \\
+     -60.0 & \text{if sentiment == 'disliked'} \\
+     -999.0 & \text{if sentiment == 'blacklisted'} \\
+     \text{clamp}\big((\text{swap\_in\_count} - \text{swap\_out\_count}) \times 5.0, -20.0, 20.0\big) & \text{if sentiment == 'neutral'}
+     \end{cases}$$
+   - `correlatePainReport(workoutId, exerciseId, joint, severity)`: Automatically updates `last_pain_reported_at`, `max_pain_severity`, and `pain_joint` when pain is logged in `PainReportModal.tsx`.
+3. Contract Synchronization:
+   - Add `exercise_preferences` array to `schemas/workout_export.schema.json` and `ExportService.ts`.
+   - Add `ExercisePreference` Pydantic model to `companion/src/ingestion/schemas.py`.
+
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest src/services/__tests__/exercisePreferenceService.test.ts`.
+
+#### Step 9.3: Adaptive Planner Selection & Joint-ROM Protection Router
+
+* **Status**: `[x] COMPLETED`
+* **Scope**: `mobile/src/core/generator/programSynthesizer.ts`, `mobile/src/core/generator/candidateScorer.ts`, `mobile/src/services/exerciseSubstitutionService.ts`, `mobile/src/services/programEvolutionService.ts`, `mobile/src/core/generator/__tests__/programSynthesizer.test.ts`, `mobile/src/core/generator/__tests__/candidateScorer.test.ts`, `mobile/src/services/__tests__/exerciseSubstitutionService.test.ts`.
+* **Deliverables**:
+1. Implement Candidate Exercise Scoring Function in `programSynthesizer.ts` & `exerciseSubstitutionService.ts`:
+   $$\text{CandidateScore} = \text{BaselineSFR} + \text{AffinityBonus} - \text{AxialPenalty} - \text{PainPenalty} - \text{ROMMismatchPenalty}$$
+   - $\text{BaselineSFR} \in [0, 100]$.
+   - $\text{AffinityBonus} = \text{affinity\_score} \in [-60, +25]$. If $\text{affinity\_score} \le -900$ (`blacklisted`), candidate is completely excluded.
+   - $\text{AxialPenalty} = 30$ if `axial_loading == 'high'` and user profile has axial fatigue sensitivity or caloric deficit.
+   - $\text{PainPenalty} = 60$ if exercise loads a joint that had pain reported ($\text{severity} \ge 3$) within the last 28 days.
+2. **Joint-ROM Protection Router**:
+   - If a lifter reports joint discomfort ($\text{severity} \ge 3$) on joint $J$:
+     - Immediately penalize all exercises loading joint $J$ with $\text{rom\_tier} == \text{'deep\_stretch'}$ by $-80$ points.
+     - Elevate exercises with $\text{rom\_tier} == \text{'shortened\_restricted'}$ or $\text{'standard\_full'}$ that spare terminal joint excursion (e.g. Barbell Bench Press $\to$ Floor Press or Pin Press; Squat $\to$ Box Squat; DB Flye $\to$ Cable Pressdown/Partial).
+3. **Regional Muscle Bias Balancer**:
+   - In Push/Pull/Legs and Upper/Lower blueprints, ensure complementary sub-targets are covered across the weekly split (e.g., Push A targets `upper_clavicular` chest + `long_head` triceps; Push B targets `mid_sternal` chest + `lateral_head` triceps).
+
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest src/core/generator/__tests__/programSynthesizer.test.ts src/services/__tests__/exerciseSubstitutionService.test.ts`.
+
+#### Step 9.4: Exercise Preference UI & Logger Swap Tracking Hooks
+
+* **Status**: `[x] COMPLETED`
+* **Scope**: `mobile/src/features/inspection/ExerciseDetailScreen.tsx`, `mobile/src/features/inspection/ExerciseLibraryScreen.tsx`, `mobile/src/features/inspection/biomechanicalFormatters.ts`, `mobile/src/features/logger/ActiveLoggerScreen.tsx`, `mobile/src/features/logger/WorkoutTabRouter.tsx`, `mobile/src/context/RepositoryContext.tsx`, `mobile/App.tsx`, `mobile/src/features/inspection/__tests__/exerciseDetailScreen.test.ts`.
+* **Deliverables**:
+1. Exercise Detail & Library Preference Controls:
+   - Render sentiment action pill row on `ExerciseDetailScreen.tsx` and in `ExerciseLibraryScreen.tsx`:
+     - Heart (Liked, +25) / Neutral (0 clamped) / Dislike (-60) / Blacklist (-999 Exclude from Planner).
+   - Display Biomechanical Badges: ROM Tier badge (`Deep Stretch`, `Full ROM`, `Restricted`), Axial Load badge (`High`, `Mod`, `Low`, `None`), Regional Bias chips (e.g. `Upper Chest`, `Long Head`), and Baseline SFR badge (`SFR XX/100`).
+2. Logger Swap Tracking Hook:
+   - In-session substitutions via `ExerciseSubstitutionModal.tsx` in `ActiveLoggerScreen.tsx` call `exercisePreferenceService.recordManualSwap(oldExerciseId, newExerciseId)` via `ExerciseSubstitutionService.applySubstitution`.
+   - Discarded exercise increments `swap_out_count` and is penalized (-5.0, clamped [-20, 20]); chosen substitute increments `swap_in_count` and is boosted (+5.0, clamped [-20, 20]).
+3. Backwards-compatible repository & service injection:
+   - `RepositoryContext`, `App.tsx`, and `WorkoutTabRouter.tsx` unified to expose optional `exercisePreferenceRepo` and `exercisePreferenceService`.
+
+* **Verification Gate**: Run `cd mobile && npx tsc --noEmit && npx jest src/features/inspection/__tests__/exerciseDetailScreen.test.ts`. *(Verified: 15/15 unit tests passed, 42/42 inspection tests passed, tsc exited 0)*
+
+---
 
 ---
 

@@ -1,4 +1,8 @@
-import { synthesizeProgram } from '../programSynthesizer';
+import {
+  synthesizeProgram,
+  computeTargetSetsFromExertion,
+  resolveArchetype,
+} from '../programSynthesizer';
 import { UserProfile, Exercise } from '../../types';
 import { DEFAULT_EXERCISES } from '../../../database/seeds/defaultExercises';
 
@@ -87,7 +91,7 @@ describe('Profile-Driven Program Synthesizer', () => {
   // ==========================================================================
 
   describe('Volume & Exertion by Intensity Style', () => {
-    it('configures high intensity / low volume with 1-2 sets @ RPE 9.5 and DDP rules', () => {
+    it('configures high intensity / low volume with compounds @ RPE 8.0 and accessories @ RPE 9.5 with DDP rules', () => {
       const profile: UserProfile = {
         ...baseProfile,
         intensity_style: 'high_intensity_low_volume',
@@ -95,12 +99,25 @@ describe('Profile-Driven Program Synthesizer', () => {
 
       const result = synthesizeProgram(profile);
 
-      // Verify set counts
+      // Verify set counts and RPE split (Pillar 8: compound preservation @ 8.0, accessories @ 9.5)
       for (const te of result.templateExercises) {
         expect(te.target_sets).toBeLessThanOrEqual(2);
         expect(te.target_sets).toBeGreaterThanOrEqual(1);
-        expect(te.target_rpe).toBe(9.5);
-        expect(te.target_rir).toBe(0.5);
+      }
+
+      const compounds = result.templateExercises.filter((te) => te.target_sets === 2);
+      const accessories = result.templateExercises.filter((te) => te.target_sets === 1);
+
+      expect(compounds.length).toBeGreaterThan(0);
+      expect(accessories.length).toBeGreaterThan(0);
+
+      for (const comp of compounds) {
+        expect(comp.target_rpe).toBe(8.0);
+        expect(comp.target_rir).toBe(2.0);
+      }
+      for (const acc of accessories) {
+        expect(acc.target_rpe).toBe(9.5);
+        expect(acc.target_rir).toBe(0.5);
       }
 
       // Verify DDP progression rule was attached
@@ -435,7 +452,7 @@ describe('Profile-Driven Program Synthesizer', () => {
   // ==========================================================================
 
   describe('Training Mentality Matrix', () => {
-    it('synthesizes Fury mentality with 1-2 sets @ RPE 9.5 and DDP rules', () => {
+    it('synthesizes Fury mentality with compounds @ RPE 8.0 and accessories @ RPE 9.5 with DDP rules', () => {
       const profile: UserProfile = {
         ...baseProfile,
         training_mentality: 'fury',
@@ -446,8 +463,21 @@ describe('Profile-Driven Program Synthesizer', () => {
       for (const te of result.templateExercises) {
         expect(te.target_sets).toBeLessThanOrEqual(2);
         expect(te.target_sets).toBeGreaterThanOrEqual(1);
-        expect(te.target_rpe).toBe(9.5);
-        expect(te.target_rir).toBe(0.5);
+      }
+
+      const compounds = result.templateExercises.filter((te) => te.target_sets === 2);
+      const accessories = result.templateExercises.filter((te) => te.target_sets === 1);
+
+      expect(compounds.length).toBeGreaterThan(0);
+      expect(accessories.length).toBeGreaterThan(0);
+
+      for (const comp of compounds) {
+        expect(comp.target_rpe).toBe(8.0);
+        expect(comp.target_rir).toBe(2.0);
+      }
+      for (const acc of accessories) {
+        expect(acc.target_rpe).toBe(9.5);
+        expect(acc.target_rir).toBe(0.5);
       }
 
       expect(result.summary.progressionSchemeSummary).toContain('Dynamic Double Progression');
@@ -533,6 +563,627 @@ describe('Profile-Driven Program Synthesizer', () => {
 
       // Total weekly sets: 4 days * 8 sets = 32 sets
       expect(result.summary.totalWeeklySets).toBe(32);
+    });
+  });
+
+  // ==========================================================================
+  // Step 1: Effective Rep Exertion Modeling (Pillar 1)
+  // ==========================================================================
+
+  describe('computeTargetSetsFromExertion', () => {
+    it('always assigns 4 sets for skill practice compounds', () => {
+      expect(computeTargetSetsFromExertion(3.0, 2, true)).toBe(4);
+      expect(computeTargetSetsFromExertion(0.0, 4, true)).toBe(4);
+    });
+
+    it('calculates set counts from weekly eRep targets and exertion/frequency', () => {
+      // At RIR 1.0 (4 eReps/set), freq 2, target 32 eReps:
+      // (32 / 2) / 4 = 16 / 4 = 4 sets
+      expect(computeTargetSetsFromExertion(1.0, 2, false, 32)).toBe(4);
+
+      // At RIR 0.0 (5 eReps/set), freq 2, target 32 eReps:
+      // (32 / 2) / 5 = 16 / 5 = 3.2 -> 3 sets
+      expect(computeTargetSetsFromExertion(0.0, 2, false, 32)).toBe(3);
+
+      // At RIR 2.0 (3 eReps/set), freq 2, target 32 eReps:
+      // (32 / 2) / 3 = 16 / 3 = 5.33 -> 5 sets
+      expect(computeTargetSetsFromExertion(2.0, 2, false, 32)).toBe(5);
+    });
+
+    it('clamps sets between 1 and 5 sets per exercise', () => {
+      // Extremely high frequency results in min clamp of 1
+      expect(computeTargetSetsFromExertion(0.0, 10, false, 10)).toBe(1);
+
+      // Low frequency with low eReps/set results in max clamp of 5
+      expect(computeTargetSetsFromExertion(4.0, 1, false, 40)).toBe(5);
+    });
+  });
+
+  // ==========================================================================
+  // Step 1: Novice Bifurcated Architecture (Pillar 2)
+  // ==========================================================================
+
+  describe('Novice Two-Tier Bifurcated Architecture', () => {
+    it('structures beginner programs into Tier 1 practice and Tier 2 drivers', () => {
+      const beginnerProfile: UserProfile = {
+        ...baseProfile,
+        experience_level: 'beginner',
+        preferred_days_per_week: 4,
+      };
+
+      const result = synthesizeProgram(beginnerProfile);
+
+      expect(result.program.notes).toContain('Two-Tier Novice Bifurcated Program');
+
+      // In Upper A: Bench Press & Bent-Over Row are primary compounds (Tier 1)
+      const upperAExercises = result.templateExercises.filter(
+        (te) => te.template_id === result.templates[0].id
+      );
+      const tier1Exercises = upperAExercises.slice(0, 2);
+      const tier2Exercises = upperAExercises.slice(2);
+
+      // Tier 1 Practice: 4 sets x 3-5 reps @ RPE 7.0 (3.0 RIR) with LP
+      for (const t1 of tier1Exercises) {
+        expect(t1.target_sets).toBe(4);
+        expect(t1.target_reps_min).toBe(3);
+        expect(t1.target_reps_max).toBe(5);
+        expect(t1.target_rpe).toBe(7.0);
+        expect(t1.target_rir).toBe(3.0);
+
+        const rules = result.progressionRules.filter((r) => r.template_exercise_id === t1.id);
+        const lpRule = rules.find((r) => {
+          const j = typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json;
+          return j.actions.some((a: any) => a.type === 'INCREASE_LOAD_FIXED');
+        });
+        expect(lpRule).toBeDefined();
+      }
+
+      // Tier 2 Drivers: 3 sets x 10-15 reps @ RPE 9.0 (1.0 RIR) with DP
+      for (const t2 of tier2Exercises) {
+        expect(t2.target_sets).toBe(3);
+        expect(t2.target_reps_min).toBe(10);
+        expect(t2.target_reps_max).toBe(15);
+        expect(t2.target_rpe).toBe(9.0);
+        expect(t2.target_rir).toBe(1.0);
+
+        const rules = result.progressionRules.filter((r) => r.template_exercise_id === t2.id);
+        const dpRule = rules.find((r) => {
+          const j = typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json;
+          return j.conditions.some((c: any) => c.type === 'ALL_SETS_HIT_TARGET_REPS');
+        });
+        expect(dpRule).toBeDefined();
+      }
+
+      // Beginners should NOT have AMRAP final week rules scheduled
+      const amrapRules = result.progressionRules.filter((r) => {
+        const j = typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json;
+        return j.actions.some((a: any) => a.type === 'SCHEDULE_AMRAP_FINAL_WEEK');
+      });
+      expect(amrapRules).toHaveLength(0);
+    });
+
+    it('respects options.experienceLevel override over profile', () => {
+      const intermediateProfile: UserProfile = {
+        ...baseProfile,
+        experience_level: 'intermediate',
+      };
+
+      const result = synthesizeProgram(intermediateProfile, {
+        experienceLevel: 'beginner',
+      });
+
+      expect(result.program.notes).toContain('Two-Tier Novice Bifurcated Program');
+      const firstExercise = result.templateExercises[0];
+      expect(firstExercise.target_rpe).toBe(7.0);
+      expect(firstExercise.target_sets).toBe(4);
+    });
+  });
+
+  // ==========================================================================
+  // Step 1: Time-Budget Evaluation & Dynamic Myo-Rep Conversion (Pillar 6)
+  // ==========================================================================
+
+  describe('Time-Budget Dynamic Myo-Rep Conversion', () => {
+    it('converts accessory straight sets to myo-rep clusters when duration exceeds budget', () => {
+      const shortProfile: UserProfile = {
+        ...baseProfile,
+        preferred_session_duration_mins: 20,
+        training_mentality: 'precision',
+        preferred_days_per_week: 4,
+      };
+
+      const result = synthesizeProgram(shortProfile);
+
+      // Verify that accessory exercises were converted to myo-reps
+      const myoRepExercises = result.templateExercises.filter(
+        (te) => te.set_type === 'myorep'
+      );
+      expect(myoRepExercises.length).toBeGreaterThan(0);
+
+      for (const myo of myoRepExercises) {
+        expect(myo.target_sets).toBe(1);
+        expect(myo.target_reps_min).toBe(10);
+        expect(myo.target_reps_max).toBe(15);
+        expect(myo.target_rpe).toBe(10.0);
+        expect(myo.target_rir).toBe(0.0);
+
+        // Verify Dynamic Double Progression rule was attached to the myo-rep cluster
+        const rules = result.progressionRules.filter(
+          (r) => r.template_exercise_id === myo.id
+        );
+        const ddpRule = rules.find((r) => {
+          const j = typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json;
+          return j.conditions.some((c: any) => c.type === 'ANY_SET_HIT_TOP_REP_RANGE');
+        });
+        expect(ddpRule).toBeDefined();
+      }
+
+      // Primary compounds remain straight sets
+      const workingExercises = result.templateExercises.filter(
+        (te) => te.set_type === 'working'
+      );
+      expect(workingExercises.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ==========================================================================
+  // Step 1: SBD vs Variety Sliding Scale (Pillar 7)
+  // ==========================================================================
+
+  describe('SBD vs Variety Sliding Scale', () => {
+    it('swaps SBD compounds to high-SFR machine/cable alternatives in Pure Hypertrophy', () => {
+      const pureHypertrophyProfile: UserProfile = {
+        ...baseProfile,
+        primary_goal: 'hypertrophy',
+        secondary_goals: [], // No strength secondary
+        equipment_access: 'commercial_gym',
+      };
+
+      const result = synthesizeProgram(pureHypertrophyProfile);
+      const allExerciseIds = result.templateExercises.map((te) => te.exercise_id);
+
+      // Barbell bench press replaced with machine chest press
+      expect(allExerciseIds).toContain('machine_chest_press');
+      expect(allExerciseIds).not.toContain('barbell_bench_press');
+
+      // Barbell back squat replaced with machine leg press
+      expect(allExerciseIds).toContain('machine_leg_press');
+      expect(allExerciseIds).not.toContain('barbell_back_squat');
+
+      // Barbell deadlift replaced with barbell RDL
+      expect(allExerciseIds).not.toContain('barbell_deadlift');
+    });
+
+    it('preserves SBD compounds when strength is a secondary goal (Powerbuilding)', () => {
+      const powerbuildingProfile: UserProfile = {
+        ...baseProfile,
+        primary_goal: 'hypertrophy',
+        secondary_goals: ['strength'], // Strength secondary keeps SBD anchors
+        equipment_access: 'commercial_gym',
+      };
+
+      const result = synthesizeProgram(powerbuildingProfile);
+      const allExerciseIds = result.templateExercises.map((te) => te.exercise_id);
+
+      expect(allExerciseIds).toContain('barbell_bench_press');
+      expect(allExerciseIds).toContain('barbell_back_squat');
+      expect(allExerciseIds).toContain('barbell_deadlift');
+    });
+  });
+
+  // ==========================================================================
+  // Step 1: Compound Preservation & AMRAP Rule Scheduling (Pillar 8)
+  // ==========================================================================
+
+  describe('Compound Accumulation RPE Preservation & AMRAP Scheduling', () => {
+    it('schedules AMRAP progression rules on primary compounds for non-beginners', () => {
+      const intermediateProfile: UserProfile = {
+        ...baseProfile,
+        experience_level: 'intermediate',
+        training_mentality: 'fury',
+      };
+
+      const result = synthesizeProgram(intermediateProfile);
+
+      // Verify that primary compounds received the SCHEDULE_AMRAP_FINAL_WEEK rule
+      const amrapRules = result.progressionRules.filter((r) => {
+        const j = typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json;
+        return j.actions.some((a: any) => a.type === 'SCHEDULE_AMRAP_FINAL_WEEK');
+      });
+
+      expect(amrapRules.length).toBeGreaterThan(0);
+
+      // Check rule definition
+      const sampleRule = amrapRules[0];
+      expect(sampleRule.priority).toBe(3);
+      const ruleJson = typeof sampleRule.rule_json === 'string'
+        ? JSON.parse(sampleRule.rule_json)
+        : sampleRule.rule_json;
+      expect(ruleJson.conditions[0].type).toBe('MESOCYCLE_FINAL_WEEK');
+      expect(ruleJson.actions[0].type).toBe('SCHEDULE_AMRAP_FINAL_WEEK');
+    });
+  });
+
+  // ==========================================================================
+  // Step 8.1: Blueprint Quality & Seed ID Synchronization
+  // ==========================================================================
+
+  describe('Step 8.1: Blueprint Quality & Seed ID Synchronization', () => {
+    it('synchronizes canonical seed exercise IDs in 15-Minute Express blueprints', () => {
+      const expressProfile: UserProfile = {
+        ...baseProfile,
+        preferred_session_duration_mins: 15,
+        preferred_days_per_week: 4,
+        equipment_access: 'commercial_gym',
+      };
+
+      const result = synthesizeProgram(expressProfile);
+      const day2Exercises = result.templateExercises.filter(
+        (te) => te.template_id === result.templates[1].id
+      );
+      const day3Exercises = result.templateExercises.filter(
+        (te) => te.template_id === result.templates[2].id
+      );
+
+      // Day 2 tricep slot should use canonical cable_tricep_pushdown (not tricep_cable_pushdown)
+      const pushdown = day2Exercises.find((te) => te.exercise_id === 'cable_tricep_pushdown');
+      expect(pushdown).toBeDefined();
+
+      // Day 3 should use canonical bodyweight_dip (not bodyweight_dips)
+      const dip = day3Exercises.find((te) => te.exercise_id === 'bodyweight_dip');
+      expect(dip).toBeDefined();
+
+      // Day 3 arm slot should use canonical barbell_skull_crusher (not unseeded dumbbell_overhead_tricep_extension)
+      const skullCrusher = day3Exercises.find((te) => te.exercise_id === 'barbell_skull_crusher');
+      expect(skullCrusher).toBeDefined();
+    });
+
+    it('rebalances Full Body Day 1 hamstrings to machine leg curl to eliminate spinal fatigue collision with Day 2 deadlift', () => {
+      const fullBodyProfile: UserProfile = {
+        ...baseProfile,
+        preferred_days_per_week: 3,
+        equipment_access: 'commercial_gym',
+      };
+
+      const result = synthesizeProgram(fullBodyProfile);
+      const day1Exercises = result.templateExercises.filter(
+        (te) => te.template_id === result.templates[0].id
+      );
+      const day2Exercises = result.templateExercises.filter(
+        (te) => te.template_id === result.templates[1].id
+      );
+
+      // Day 1 has machine_leg_curl for zero spinal compressive loading
+      const day1Hams = day1Exercises.find((te) => te.exercise_id === 'machine_leg_curl');
+      expect(day1Hams).toBeDefined();
+
+      // Day 2 has heavy barbell_deadlift
+      const day2Deadlift = day2Exercises.find((te) => te.exercise_id === 'barbell_deadlift');
+      expect(day2Deadlift).toBeDefined();
+    });
+
+    it('streamlines Upper session density and caps total working sets between 16-20 sets for 60-min budgets', () => {
+      // Balanced style with 60-minute budget
+      const balancedProfile: UserProfile = {
+        ...baseProfile,
+        preferred_days_per_week: 4,
+        preferred_session_duration_mins: 60,
+        intensity_style: 'balanced',
+      };
+      delete (balancedProfile as any).training_mentality;
+
+      const balancedResult = synthesizeProgram(balancedProfile);
+      const balancedUpperA = balancedResult.templateExercises.filter(
+        (te) => te.template_id === balancedResult.templates[0].id
+      );
+      const balancedUpperB = balancedResult.templateExercises.filter(
+        (te) => te.template_id === balancedResult.templates[2].id
+      );
+
+      const balancedUpperASets = balancedUpperA.reduce((sum, te) => sum + (te.target_sets ?? 0), 0);
+      const balancedUpperBSets = balancedUpperB.reduce((sum, te) => sum + (te.target_sets ?? 0), 0);
+
+      // Balanced Upper sessions have 7 exercises with arm superset -> 16 working sets (fits 16-20 cap)
+      expect(balancedUpperASets).toBeGreaterThanOrEqual(16);
+      expect(balancedUpperASets).toBeLessThanOrEqual(20);
+      expect(balancedUpperBSets).toBeGreaterThanOrEqual(16);
+      expect(balancedUpperBSets).toBeLessThanOrEqual(20);
+
+      // Verify arm accessories are paired as an antagonist superset in Upper A
+      const bicepCurl = balancedUpperA.find((te) => te.exercise_id === 'dumbbell_bicep_curl');
+      const tricepPushdown = balancedUpperA.find((te) => te.exercise_id === 'cable_tricep_pushdown');
+      expect(bicepCurl?.exercise_group_id).toBeTruthy();
+      expect(tricepPushdown?.exercise_group_id).toBeTruthy();
+      expect(bicepCurl?.exercise_group_id).toBe(tricepPushdown?.exercise_group_id);
+
+      // Primary movements (Bench & Row) remain straight sets because training_enjoyment is not minimalist
+      const bench = balancedUpperA.find((te) => te.exercise_id === 'barbell_bench_press');
+      expect(bench?.exercise_group_id).toBeNull();
+
+      // Precision style with 60-minute budget (high volume per exercise)
+      const precisionProfile: UserProfile = {
+        ...baseProfile,
+        preferred_days_per_week: 4,
+        preferred_session_duration_mins: 60,
+        training_mentality: 'precision',
+      };
+
+      const precisionResult = synthesizeProgram(precisionProfile);
+      const precisionUpperA = precisionResult.templateExercises.filter(
+        (te) => te.template_id === precisionResult.templates[0].id
+      );
+      const precisionUpperASets = precisionUpperA.reduce((sum, te) => sum + (te.target_sets ?? 0), 0);
+
+      // Precision Upper session is streamlined to 5 primary movements -> 17 working sets (fits 16-20 cap)
+      expect(precisionUpperA).toHaveLength(5);
+      expect(precisionUpperASets).toBeGreaterThanOrEqual(16);
+      expect(precisionUpperASets).toBeLessThanOrEqual(20);
+    });
+  });
+
+  // ==========================================================================
+  // Step 8.2: Pure Dynamic Set Synthesis, Load-Gated eReps & Archetype Models
+  // ==========================================================================
+
+  describe('Step 8.2: Pure Dynamic Set Synthesis, Load-Gated eReps & Archetype Models', () => {
+    describe('resolveArchetype mapping', () => {
+      it('resolves Archetype I (Pure Strength) when primary goal is strength and no hypertrophy secondary', () => {
+        expect(resolveArchetype('strength', [])).toBe('archetype_i_pure_strength');
+        expect(resolveArchetype('strength', ['endurance'])).toBe('archetype_i_pure_strength');
+      });
+
+      it('resolves Archetype II (Powerbuilding) for powerbuilding goal or strength with hypertrophy secondary', () => {
+        expect(resolveArchetype('powerbuilding', [])).toBe('archetype_ii_powerbuilding');
+        expect(resolveArchetype('strength', ['hypertrophy'])).toBe('archetype_ii_powerbuilding');
+      });
+
+      it('resolves Archetype III (Hypertrophy + Minor Strength) for hypertrophy goal with strength secondary', () => {
+        expect(resolveArchetype('hypertrophy', ['strength'])).toBe('archetype_iii_hypertrophy_strength');
+        expect(resolveArchetype('endurance', ['strength'])).toBe('archetype_iii_hypertrophy_strength');
+      });
+
+      it('resolves Archetype IV (Pure Hypertrophy) for hypertrophy goal without strength secondary', () => {
+        expect(resolveArchetype('hypertrophy', [])).toBe('archetype_iv_pure_hypertrophy');
+        expect(resolveArchetype('hypertrophy', ['endurance'])).toBe('archetype_iv_pure_hypertrophy');
+        expect(resolveArchetype('endurance', [])).toBe('archetype_iv_pure_hypertrophy');
+      });
+
+      it('respects continuous alphaSbd preference parameter overrides', () => {
+        expect(resolveArchetype('hypertrophy', [], 0.85)).toBe('archetype_i_pure_strength');
+        expect(resolveArchetype('hypertrophy', [], 0.55)).toBe('archetype_ii_powerbuilding');
+        expect(resolveArchetype('strength', [], 0.30)).toBe('archetype_iii_hypertrophy_strength');
+        expect(resolveArchetype('strength', [], 0.10)).toBe('archetype_iv_pure_hypertrophy');
+      });
+    });
+
+    describe('SynthesizedProgramSummary archetype integration', () => {
+      it('populates summary.archetype matching user profile configuration', () => {
+        // Pure strength profile
+        const strengthResult = synthesizeProgram({
+          ...baseProfile,
+          primary_goal: 'strength',
+          secondary_goals: [],
+        });
+        expect(strengthResult.summary.archetype).toBe('archetype_i_pure_strength');
+
+        // Powerbuilding profile
+        const powerResult = synthesizeProgram({
+          ...baseProfile,
+          primary_goal: 'powerbuilding',
+          secondary_goals: [],
+        });
+        expect(powerResult.summary.archetype).toBe('archetype_ii_powerbuilding');
+
+        // Hypertrophy + Minor strength profile
+        const hypStrengthResult = synthesizeProgram({
+          ...baseProfile,
+          primary_goal: 'hypertrophy',
+          secondary_goals: ['strength'],
+        });
+        expect(hypStrengthResult.summary.archetype).toBe('archetype_iii_hypertrophy_strength');
+
+        // Pure hypertrophy profile
+        const pureHypResult = synthesizeProgram({
+          ...baseProfile,
+          primary_goal: 'hypertrophy',
+          secondary_goals: [],
+        });
+        expect(pureHypResult.summary.archetype).toBe('archetype_iv_pure_hypertrophy');
+      });
+    });
+
+    describe('Dynamic Double Progression (DDP) on Tier 2 & Tier 3 exercises', () => {
+      it('assigns DDP to all Tier 2 and Tier 3 exercises for non-beginners across Archetypes II, III, and IV', () => {
+        const intermediateProfile: UserProfile = {
+          ...baseProfile,
+          primary_goal: 'hypertrophy',
+          secondary_goals: ['strength'],
+          training_mentality: 'precision',
+        };
+
+        const result = synthesizeProgram(intermediateProfile);
+        const templateExercises = result.templateExercises;
+
+        // Group by exercise slot
+        for (const te of templateExercises) {
+          const rules = result.progressionRules.filter(
+            (r) => r.template_exercise_id === te.id && r.priority !== 3 // exclude AMRAP rules
+          );
+
+          // In Precision, primary compounds have 4 sets (LP), accessories / Tier 2 & 3 have 3 sets (DDP)
+          if (te.target_sets === 3) {
+            const hasDdp = rules.some((r) => {
+              const j = typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json;
+              return j.conditions.some((c: any) => c.type === 'ANY_SET_HIT_TOP_REP_RANGE');
+            });
+            expect(hasDdp).toBe(true);
+          }
+        }
+      });
+    });
+
+    describe('Dynamic set allocation via computeTargetSetsFromExertion', () => {
+      it('synthesizes exact set counts matching exertion-derived eRep budgets', () => {
+        // Fury: 2 sets compound (@ RPE 8.0, 2.0 RIR), 1 set accessory (@ RPE 9.5, 0.5 RIR)
+        const furyResult = synthesizeProgram({
+          ...baseProfile,
+          training_mentality: 'fury',
+        });
+        const furyCompounds = furyResult.templateExercises.filter((te) => te.target_rir === 2.0);
+        const furyAccessories = furyResult.templateExercises.filter((te) => te.target_rir === 0.5);
+        expect(furyCompounds[0].target_sets).toBe(2);
+        expect(furyAccessories[0].target_sets).toBe(1);
+
+        // Precision: 4 sets compound (@ RPE 8.0, 2.0 RIR), 3 sets accessory (@ RPE 8.0, 2.0 RIR)
+        const precisionResult = synthesizeProgram({
+          ...baseProfile,
+          training_mentality: 'precision',
+        });
+        for (const te of precisionResult.templateExercises) {
+          expect(te.target_sets).toBeGreaterThanOrEqual(3);
+          expect(te.target_rir).toBe(2.0);
+        }
+
+        // Get Out: 2 sets compound (@ RPE 8.5, 1.5 RIR), 2 sets accessory (@ RPE 8.5, 1.5 RIR)
+        const getOutResult = synthesizeProgram({
+          ...baseProfile,
+          training_mentality: 'get_out',
+          preferred_session_duration_mins: 60,
+        });
+        for (const te of getOutResult.templateExercises) {
+          expect(te.target_sets).toBe(2);
+          expect(te.target_rir).toBe(1.5);
+        }
+      });
+    });
+  });
+
+  // ==========================================================================
+  // Step 9.3: Adaptive Planner Selection & Joint-ROM Protection Router
+  // ==========================================================================
+
+  describe('Step 9.3: Adaptive Planner Selection & Joint-ROM Protection Router', () => {
+    it('completely excludes blacklisted exercises and routes to highest-scoring eligible fallback', () => {
+      // Blacklist barbell_bench_press
+      const preferences = [
+        {
+          exercise_id: 'barbell_bench_press',
+          sentiment: 'blacklisted' as const,
+          swap_in_count: 0,
+          swap_out_count: 0,
+          affinity_score: -999,
+          updated_at: new Date().toISOString(),
+        },
+      ];
+
+      const result = synthesizeProgram(baseProfile, { preferences });
+      const allIds = result.templateExercises.map((te) => te.exercise_id);
+
+      // barbell_bench_press must NOT appear
+      expect(allIds).not.toContain('barbell_bench_press');
+
+      // Upper A should have picked machine_chest_press as the highest-scoring eligible fallback (SFR 90 vs DB bench 85)
+      const upperA = result.templates.find((t) => t.name.includes('Upper A'));
+      const upperAExercises = result.templateExercises.filter((te) => te.template_id === upperA?.id);
+      expect(upperAExercises[0].exercise_id).toBe('machine_chest_press');
+    });
+
+    it('prioritizes liked exercises over default fallbacks', () => {
+      // User likes machine_chest_press (+25 affinity bonus)
+      const preferences = [
+        {
+          exercise_id: 'machine_chest_press',
+          sentiment: 'liked' as const,
+          swap_in_count: 3,
+          swap_out_count: 0,
+          affinity_score: 25,
+          updated_at: new Date().toISOString(),
+        },
+      ];
+
+      const result = synthesizeProgram(baseProfile, { preferences });
+      const allIds = result.templateExercises.map((te) => te.exercise_id);
+
+      // machine_chest_press (SFR 90 + 25 = 115) should beat barbell_bench_press (SFR 75 + 35 = 110)
+      expect(allIds).toContain('machine_chest_press');
+    });
+
+    it('penalizes high axial loading by -30 points in caloric deficit or axial fatigue sensitivity', () => {
+      const deficitProfile: UserProfile = {
+        ...baseProfile,
+        preferred_days_per_week: 3, // Full Body split
+        secondary_goals: ['cutting', 'caloric_deficit'],
+      };
+
+      const result = synthesizeProgram(deficitProfile);
+      const day2 = result.templates[1];
+      const day2Exercises = result.templateExercises.filter((te) => te.template_id === day2.id);
+
+      // In Full Body Day 2, deadlift slot has preferredId 'barbell_deadlift' (high axial, SFR 55)
+      // With -30 axial penalty (55 + 35 - 30 = 60), high-SFR machine_leg_press (axial: none, SFR 85) wins!
+      const deadliftSlot = day2Exercises[0];
+      expect(deadliftSlot.exercise_id).not.toBe('barbell_deadlift');
+      expect(deadliftSlot.exercise_id).toBe('machine_leg_press');
+    });
+
+    it('protects injured joints by routing away from deep_stretch and elevating terminal-sparing exercises', () => {
+      // Athlete reports shoulder pain (severity 4)
+      const result = synthesizeProgram(baseProfile, {
+        painfulJoint: 'shoulder',
+        painSeverity: 4,
+      });
+
+      const allIds = result.templateExercises.map((te) => te.exercise_id);
+      // Ensure deep stretch chest movements are avoided
+      expect(allIds).not.toContain('dumbbell_chest_fly');
+      expect(allIds).not.toContain('cable_chest_fly');
+    });
+
+    it('covers complementary regional sub-targets across PPL weekly split (Push A vs Push B)', () => {
+      const pplProfile: UserProfile = {
+        ...baseProfile,
+        preferred_days_per_week: 6,
+      };
+
+      const result = synthesizeProgram(pplProfile);
+      const pushA = result.templates.find((t) => t.name.includes('Push A'));
+      const pushB = result.templates.find((t) => t.name.includes('Push B'));
+
+      const pushAExercises = result.templateExercises.filter((te) => te.template_id === pushA?.id);
+      const pushBExercises = result.templateExercises.filter((te) => te.template_id === pushB?.id);
+
+      // Push A targets upper_clavicular chest (incline) + long_head triceps (skull crusher)
+      expect(pushAExercises[0].exercise_id).toBe('barbell_incline_bench_press');
+      expect(pushAExercises[4].exercise_id).toBe('barbell_skull_crusher');
+
+      // Push B targets mid_sternal chest (flat bench) + lateral_head triceps (pushdown)
+      expect(pushBExercises[0].exercise_id).toBe('barbell_bench_press');
+      expect(pushBExercises[4].exercise_id).toBe('cable_tricep_pushdown');
+    });
+
+    it('covers complementary regional sub-targets across Upper/Lower split (Upper A vs Upper B)', () => {
+      const ulProfile: UserProfile = {
+        ...baseProfile,
+        preferred_days_per_week: 4,
+        preferred_session_duration_mins: 75, // Include arm accessories
+      };
+
+      const result = synthesizeProgram(ulProfile);
+      const upperA = result.templates.find((t) => t.name.includes('Upper A'));
+      const upperB = result.templates.find((t) => t.name.includes('Upper B'));
+
+      const upperAExercises = result.templateExercises.filter((te) => te.template_id === upperA?.id);
+      const upperBExercises = result.templateExercises.filter((te) => te.template_id === upperB?.id);
+
+      // Upper A: mid_sternal chest (barbell_bench_press) + lateral/medial triceps (cable_tricep_pushdown)
+      expect(upperAExercises[0].exercise_id).toBe('barbell_bench_press');
+      const upperATricep = upperAExercises.find((te) => te.exercise_id === 'cable_tricep_pushdown');
+      expect(upperATricep).toBeDefined();
+
+      // Upper B: upper_clavicular chest (barbell_incline_bench_press) + long_head triceps (barbell_skull_crusher)
+      expect(upperBExercises[0].exercise_id).toBe('barbell_incline_bench_press');
+      const upperBTricep = upperBExercises.find((te) => te.exercise_id === 'barbell_skull_crusher');
+      expect(upperBTricep).toBeDefined();
     });
   });
 });

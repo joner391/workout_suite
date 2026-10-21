@@ -3,6 +3,13 @@ import {
   createLinearProgressionRule,
   createDoubleProgressionRule,
   createDynamicDoubleProgressionRule,
+  createAmrapFinalWeekRule,
+  createAmrapMidwayRule,
+  createAmrapProgressionRule,
+  floorToIncrement,
+  calculateAmrapProgression,
+  calculateRirBias,
+  extractPredictedRepsFromSet,
   parseRuleDefinition,
   isSessionSuccessful,
 } from '../progressionRuleEngine';
@@ -882,6 +889,310 @@ describe('Progression Rule Engine', () => {
         createSet(2, 100, 12),
       ];
       expect(isSessionSuccessful(setsTooFew, defaultPrescription)).toBe(false);
+    });
+  });
+
+  // ==========================================================================
+  // Step 2: AMRAP Diagnostic Checkpoints, 1%-Over-Cap Progression & RIR Bias
+  // ==========================================================================
+
+  describe('Step 2: AMRAP Diagnostic Checkpoints & 1%-Over-Cap Progression', () => {
+    describe('floorToIncrement Math Helper (Pillar 4)', () => {
+      it('strictly rounds loads DOWN to nearest implement increment step', () => {
+        // Standard barbell 2.5 kg steps
+        expect(floorToIncrement(83.2, 2.5)).toBe(82.5);
+        expect(floorToIncrement(84.9, 2.5)).toBe(82.5);
+        expect(floorToIncrement(85.0, 2.5)).toBe(85.0);
+        expect(floorToIncrement(80.0, 2.5)).toBe(80.0);
+
+        // Dumbbell / microplate 1.25 kg steps
+        expect(floorToIncrement(21.2, 1.25)).toBe(20.0);
+        expect(floorToIncrement(21.25, 1.25)).toBe(21.25);
+        expect(floorToIncrement(22.4, 1.25)).toBe(21.25);
+
+        // Cable machine 5.0 kg steps
+        expect(floorToIncrement(48.5, 5.0)).toBe(45.0);
+        expect(floorToIncrement(50.0, 5.0)).toBe(50.0);
+
+        // Defensive checks
+        expect(floorToIncrement(83.2, 0)).toBe(83.2);
+        expect(floorToIncrement(83.2, -1)).toBe(83.2);
+      });
+    });
+
+    describe('calculateAmrapProgression Helper (Pillar 4)', () => {
+      it('escalates load by +1% per rep over target ceiling and floor rounds', () => {
+        // 14 reps on 80 kg with ceiling 10 reps (4 reps over -> +4% -> 83.2 kg -> 82.5 kg)
+        const result = calculateAmrapProgression({
+          currentLoadKg: 80,
+          actualReps: 14,
+          targetRepsMax: 10,
+          incrementKg: 2.5,
+        });
+
+        expect(result.repsOver).toBe(4);
+        expect(result.pctGain).toBe(4.0);
+        expect(result.rawTargetLoadKg).toBe(83.2);
+        expect(result.nextPrescribedLoadKg).toBe(82.5);
+      });
+
+      it('preserves current load when actual reps do not exceed rep ceiling', () => {
+        // 10 reps on 80 kg with ceiling 10 reps (0 reps over -> 0% -> 80 kg)
+        const result = calculateAmrapProgression({
+          currentLoadKg: 80,
+          actualReps: 10,
+          targetRepsMax: 10,
+          incrementKg: 2.5,
+        });
+
+        expect(result.repsOver).toBe(0);
+        expect(result.pctGain).toBe(0);
+        expect(result.nextPrescribedLoadKg).toBe(80);
+      });
+
+      it('handles sub-bracket performance without reducing load prematurely', () => {
+        const result = calculateAmrapProgression({
+          currentLoadKg: 80,
+          actualReps: 8,
+          targetRepsMax: 10,
+          incrementKg: 2.5,
+        });
+
+        expect(result.repsOver).toBe(0);
+        expect(result.pctGain).toBe(0);
+        expect(result.nextPrescribedLoadKg).toBe(80);
+      });
+    });
+
+    describe('calculateRirBias & extractPredictedRepsFromSet (Pillar 5)', () => {
+      it('extracts predicted reps from set notes correctly (JSON and plaintext formats)', () => {
+        const setJson = createSet(1, 80, 14, { set_notes: '{"predicted_reps": 10}' });
+        expect(extractPredictedRepsFromSet(setJson)).toBe(10);
+
+        const setShortJson = createSet(1, 80, 14, { set_notes: '{"pred_reps": 12}' });
+        expect(extractPredictedRepsFromSet(setShortJson)).toBe(12);
+
+        const setTextTag = createSet(1, 80, 14, { set_notes: 'pred_reps: 11' });
+        expect(extractPredictedRepsFromSet(setTextTag)).toBe(11);
+
+        const setPlain = createSet(1, 80, 14, { set_notes: 'Felt strong today' });
+        expect(extractPredictedRepsFromSet(setPlain)).toBeNull();
+
+        const setEmpty = createSet(1, 80, 14);
+        expect(extractPredictedRepsFromSet(setEmpty)).toBeNull();
+      });
+
+      it('identifies accurate RIR perception when bias is <= 1', () => {
+        const result = calculateRirBias({
+          actualReps: 10,
+          predictedReps: 10,
+          currentTargetReps: 10,
+        });
+
+        expect(result.rirBias).toBe(0);
+        expect(result.hasSandbaggingBias).toBe(false);
+        expect(result.repAdjustment).toBe(0);
+        expect(result.adjustedTargetReps).toBe(10);
+      });
+
+      it('triggers greedy rep correction and display calibration when bias >= 2', () => {
+        const result = calculateRirBias({
+          actualReps: 14,
+          predictedReps: 10,
+          currentTargetReps: 10,
+          currentTargetRpe: 8.0,
+        });
+
+        expect(result.rirBias).toBe(4);
+        expect(result.hasSandbaggingBias).toBe(true);
+        expect(result.repAdjustment).toBe(2); // floor(4 / 2) = +2 reps
+        expect(result.adjustedTargetReps).toBe(12);
+        expect(result.calibratedRpeNote).toContain('push 4 reps past');
+        expect(result.calibratedRpeNote).toContain('Target: 12 reps @ RPE 8.0');
+      });
+    });
+
+    describe('Mesocycle Checkpoint Conditions (Pillar 3)', () => {
+      it('evaluates MESOCYCLE_FINAL_WEEK condition based on week indices and flags', () => {
+        const rule: ProgressionRule = {
+          id: 'rule-final-week',
+          template_exercise_id: mockTemplateExerciseId,
+          priority: 3,
+          rule_json: {
+            conditions: [{ type: 'MESOCYCLE_FINAL_WEEK' }],
+            actions: [{ type: 'SCHEDULE_AMRAP_FINAL_WEEK', value: 0 }],
+          },
+        };
+
+        const session = createSession('2026-10-19', [createSet(1, 100, 10)]);
+
+        // 1. Explicit flag
+        const resFlag = evaluateProgressionRules([rule], [session], defaultPrescription, {
+          isFinalAccumulationWeek: true,
+        });
+        expect(resFlag.hasMatches).toBe(true);
+        expect(resFlag.primaryProposal?.actionType).toBe('SCHEDULE_AMRAP_FINAL_WEEK');
+        expect(resFlag.primaryProposal?.suggestedSetType).toBe('amrap');
+
+        // 2. Week index match (Week 4 of 4)
+        const resWeek4 = evaluateProgressionRules([rule], [session], defaultPrescription, {
+          currentMesocycleWeek: 4,
+          totalMesocycleWeeks: 4,
+        });
+        expect(resWeek4.hasMatches).toBe(true);
+
+        // 3. Early week (Week 2 of 4) -> should NOT match
+        const resWeek2 = evaluateProgressionRules([rule], [session], defaultPrescription, {
+          currentMesocycleWeek: 2,
+          totalMesocycleWeeks: 4,
+        });
+        expect(resWeek2.hasMatches).toBe(false);
+      });
+
+      it('evaluates MESOCYCLE_MIDWAY_WEEK condition based on floor(L / 2)', () => {
+        const rule: ProgressionRule = {
+          id: 'rule-midway-week',
+          template_exercise_id: mockTemplateExerciseId,
+          priority: 3,
+          rule_json: {
+            conditions: [{ type: 'MESOCYCLE_MIDWAY_WEEK' }],
+            actions: [{ type: 'SCHEDULE_AMRAP_MIDWAY', value: 0 }],
+          },
+        };
+
+        const session = createSession('2026-10-19', [createSet(1, 100, 10)]);
+
+        // 1. 4-week meso: Midway is Week 2
+        const resMeso4Wk2 = evaluateProgressionRules([rule], [session], defaultPrescription, {
+          currentMesocycleWeek: 2,
+          totalMesocycleWeeks: 4,
+        });
+        expect(resMeso4Wk2.hasMatches).toBe(true);
+        expect(resMeso4Wk2.primaryProposal?.actionType).toBe('SCHEDULE_AMRAP_MIDWAY');
+        expect(resMeso4Wk2.primaryProposal?.suggestedSetType).toBe('amrap');
+        expect(resMeso4Wk2.primaryProposal?.explanation).toContain('Week 2 of 4');
+
+        // 2. 4-week meso on Week 1 -> should NOT match
+        const resMeso4Wk1 = evaluateProgressionRules([rule], [session], defaultPrescription, {
+          currentMesocycleWeek: 1,
+          totalMesocycleWeeks: 4,
+        });
+        expect(resMeso4Wk1.hasMatches).toBe(false);
+
+        // 3. 7-week meso: floor(7 / 2) = Week 3
+        const resMeso7Wk3 = evaluateProgressionRules([rule], [session], defaultPrescription, {
+          currentMesocycleWeek: 3,
+          totalMesocycleWeeks: 7,
+        });
+        expect(resMeso7Wk3.hasMatches).toBe(true);
+      });
+    });
+
+    describe('AMRAP Progression Rule Execution & Proposals (Pillar 4 & 5)', () => {
+      it('evaluates completed AMRAP sets, applies floor rounding, and incorporates RIR bias', () => {
+        const amrapRule = createAmrapProgressionRule(mockTemplateExerciseId, {
+          incrementKg: 2.5,
+        });
+
+        // Athlete completed an AMRAP set of 14 reps @ 80 kg against a 10-rep ceiling
+        // User previously predicted 10 reps (bias = +4 -> +2 target reps)
+        const amrapSet: WorkoutSet = {
+          id: 'set-amrap-1',
+          workout_id: 'w-1',
+          exercise_id: mockExerciseId,
+          gear_id: null,
+          set_number: 1,
+          weight: 80,
+          raw_input_weight: 80,
+          added_weight: null,
+          reps: 14,
+          reps_right: null,
+          rpe: 10,
+          rir: 0,
+          set_type: 'amrap',
+          set_notes: '{"predicted_reps": 10}',
+          exercise_group_id: null,
+          created_at: '2026-10-19T10:00:00Z',
+        };
+
+        const session = createSession('2026-10-19', [amrapSet]);
+
+        const result = evaluateProgressionRules([amrapRule], [session], {
+          ...defaultPrescription,
+          target_reps_min: 8,
+          target_reps_max: 10,
+        });
+
+        expect(result.hasMatches).toBe(true);
+        const proposal = result.primaryProposal!;
+        expect(proposal.actionType).toBe('INCREASE_LOAD_AMRAP_OVER_CAP');
+        // 80 kg * (1 + (14 - 10) * 0.01) = 83.2 kg -> floor to 2.5 kg = 82.5 kg
+        expect(proposal.suggestedWeightKg).toBe(82.5);
+        expect(proposal.suggestedTargetReps).toBe(10); // 8 base min + 2 repAdjustment = 10
+        expect(proposal.rirBias).toBe(4);
+        expect(proposal.calibratedRpeNote).toContain('push 4 reps past');
+        expect(proposal.explanation).toContain('Completed 14 reps vs 10 rep target ceiling');
+        expect(proposal.explanation).toContain('floor-rounded to 2.5 kg increment');
+      });
+
+      it('maintains load when AMRAP set does not exceed rep ceiling', () => {
+        const amrapRule = createAmrapProgressionRule(mockTemplateExerciseId, {
+          incrementKg: 2.5,
+        });
+
+        const amrapSet: WorkoutSet = {
+          id: 'set-amrap-2',
+          workout_id: 'w-1',
+          exercise_id: mockExerciseId,
+          gear_id: null,
+          set_number: 1,
+          weight: 80,
+          raw_input_weight: 80,
+          added_weight: null,
+          reps: 10,
+          reps_right: null,
+          rpe: 10,
+          rir: 0,
+          set_type: 'amrap',
+          set_notes: null,
+          exercise_group_id: null,
+          created_at: '2026-10-19T10:00:00Z',
+        };
+
+        const session = createSession('2026-10-19', [amrapSet]);
+
+        const result = evaluateProgressionRules([amrapRule], [session], {
+          ...defaultPrescription,
+          target_reps_min: 8,
+          target_reps_max: 10,
+        });
+
+        expect(result.hasMatches).toBe(true);
+        expect(result.primaryProposal?.suggestedWeightKg).toBe(80);
+        expect(result.primaryProposal?.explanation).toContain('Maintain 80 kg');
+      });
+    });
+
+    describe('Preset Constructors', () => {
+      it('creates valid rule entities for createAmrapMidwayRule and createAmrapProgressionRule', () => {
+        const midwayRule = createAmrapMidwayRule('te-lat-raise-01', { midwayWeek: 2 });
+        expect(midwayRule.priority).toBe(3);
+        const midJson = typeof midwayRule.rule_json === 'string'
+          ? JSON.parse(midwayRule.rule_json)
+          : midwayRule.rule_json;
+        expect(midJson.conditions[0].type).toBe('MESOCYCLE_MIDWAY_WEEK');
+        expect(midJson.conditions[0].threshold).toBe(2);
+        expect(midJson.actions[0].type).toBe('SCHEDULE_AMRAP_MIDWAY');
+
+        const progRule = createAmrapProgressionRule('te-lat-raise-01', { incrementKg: 1.25 });
+        expect(progRule.priority).toBe(1);
+        const progJson = typeof progRule.rule_json === 'string'
+          ? JSON.parse(progRule.rule_json)
+          : progRule.rule_json;
+        expect(progJson.conditions[0].type).toBe('AMRAP_COMPLETED');
+        expect(progJson.actions[0].type).toBe('INCREASE_LOAD_AMRAP_OVER_CAP');
+        expect(progJson.actions[0].value).toBe(1.25);
+      });
     });
   });
 });

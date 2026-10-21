@@ -137,8 +137,12 @@ describe('SQLiteProgramRepository', () => {
       ]);
     });
 
-    it('deletes a program by id', async () => {
+    it('deletes a program by id and cleans up child entities and decouples historical workouts', async () => {
       await repo.delete('prog_1');
+      const nullifyWorkoutsQuery = mockDb.executedQueries.find((q) =>
+        q.sql.includes('UPDATE workouts SET template_id = NULL')
+      );
+      expect(nullifyWorkoutsQuery).toBeDefined();
       const deleteQuery = mockDb.executedQueries.find((q) =>
         q.sql.includes('DELETE FROM programs WHERE id = ?;')
       );

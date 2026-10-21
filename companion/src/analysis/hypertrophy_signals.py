@@ -158,19 +158,24 @@ def compute_effective_reps(
     set_type: Optional[str] = None,
     rest_seconds: Optional[float] = None,
     *,
+    weight: Optional[float] = None,
+    e1rm: Optional[float] = None,
     default_working_rir: float = DEFAULT_UNRATED_WORKING_RIR,
     is_amrap: Optional[bool] = None,
 ) -> float:
     """Computes hypertrophic effective repetitions (eReps) for a single workout set.
 
-    Mathematical Specification:
+    Mathematical Specification (Load-Gated eReps under Henneman's Size Principle):
         1. Exclude sets where set_type == 'warmup' -> return 0.0 eReps.
         2. Resolve RIR = 10.0 - RPE (defaulting unrated working sets to RIR = 2.0,
            and AMRAP sets to RIR = 0.0).
-        3. For working sets:
+        3. Heavy Load Check: If weight / e1rm >= 0.85 or (reps <= 5 and RPE >= 8.0):
+           High-threshold motor units are recruited immediately from rep 1:
+           eReps_set = min(reps, 5.0)
+        4. General submaximal working sets:
            eReps_set = min(reps, max(0.0, 5.0 - RIR))
-        4. For myorep, drop, or dc sets where implicit rest Delta t_rest <= 45s:
-           eReps_set = min(reps, max(0.0, 5.0 - RIR) + 0.5 * max(0, reps - 5))
+        5. For myorep, drop, or dc sets where implicit rest Delta t_rest <= 45s:
+           eReps_set = min(reps, base_ereps + 0.5 * max(0, reps - 5))
 
     Args:
         set_or_reps: Either completed repetition count (int/float) or a set model / dictionary.
@@ -178,6 +183,8 @@ def compute_effective_reps(
         rir: Optional Reps in Reserve (0.0 to 10.0).
         set_type: Optional set classification tag ('working', 'warmup', 'drop', 'myorep', 'dc', 'amrap').
         rest_seconds: Implicit inter-set rest interval Delta t_rest in seconds.
+        weight: Effective mechanical load in kg.
+        e1rm: Estimated 1RM in kg.
         default_working_rir: Fallback RIR applied to unrated working sets (default 2.0).
         is_amrap: Explicit flag overriding AMRAP set detection.
 
@@ -191,6 +198,8 @@ def compute_effective_reps(
         rir_val = rir
         amrap_flag = bool(is_amrap) if is_amrap is not None else (st in ("amrap", "failure"))
         rest_sec = rest_seconds
+        weight_val = weight
+        e1rm_val = e1rm
     else:
         reps_raw = _get_field(set_or_reps, "reps", 0)
         try:
@@ -205,6 +214,8 @@ def compute_effective_reps(
         rest_sec = rest_seconds if rest_seconds is not None else _get_field(
             set_or_reps, "implicit_rest_seconds", _get_field(set_or_reps, "rest_seconds", None)
         )
+        weight_val = weight if weight is not None else _get_field(set_or_reps, "weight", None)
+        e1rm_val = e1rm if e1rm is not None else _get_field(set_or_reps, "e1rm", None)
 
     if reps <= 0 or st == "warmup":
         return 0.0
@@ -217,7 +228,23 @@ def compute_effective_reps(
         default_working_rir=default_working_rir,
     )
 
-    base_ereps = max(0.0, 5.0 - resolved_rir)
+    resolved_rpe = 10.0 - resolved_rir if resolved_rir is not None else (float(rpe_val) if rpe_val is not None else 8.0)
+
+    # Check heavy load threshold (>= 85% 1RM or (reps <= 5 and RPE >= 8.0) under Henneman's Size Principle)
+    is_heavy_ratio = (
+        weight_val is not None
+        and e1rm_val is not None
+        and float(e1rm_val) > 0.0
+        and float(weight_val) > 0.0
+        and (float(weight_val) / float(e1rm_val)) >= 0.85
+    )
+    is_heavy_rep_rpe = reps <= 5 and resolved_rpe >= 8.0
+    is_heavy_load = is_heavy_ratio or is_heavy_rep_rpe
+
+    if is_heavy_load:
+        base_ereps = float(min(reps, 5))
+    else:
+        base_ereps = max(0.0, 5.0 - resolved_rir)
 
     if st in REST_PAUSE_SET_TYPES:
         is_short_rest = rest_sec is None or float(rest_sec) <= DEFAULT_REST_PAUSE_MAX_REST_SECONDS
@@ -234,6 +261,8 @@ def compute_effective_reps_vectorized(
     rir: Optional[Union[pd.Series, npt.NDArray[np.float64], Sequence[Optional[float]]]] = None,
     set_type: Optional[Union[pd.Series, Sequence[str]]] = None,
     rest_seconds: Optional[Union[pd.Series, npt.NDArray[np.float64], Sequence[Optional[float]]]] = None,
+    weight: Optional[Union[pd.Series, npt.NDArray[np.float64], Sequence[Optional[float]]]] = None,
+    e1rm: Optional[Union[pd.Series, npt.NDArray[np.float64], Sequence[Optional[float]]]] = None,
     default_working_rir: float = DEFAULT_UNRATED_WORKING_RIR,
 ) -> pd.Series:
     """Vectorized calculation of effective reps across a series of workout sets."""
@@ -255,8 +284,19 @@ def compute_effective_reps_vectorized(
     eff_rir = eff_rir.mask(~rpe_s.isna(), (10.0 - rpe_s).clip(lower=0.0))
     eff_rir = eff_rir.mask(~rir_s.isna(), rir_s.clip(lower=0.0))
 
-    # 3. Base effective reps
+    # 3. Base effective reps (with Load-Gated eReps under Henneman's Size Principle)
+    is_heavy = pd.Series(False, index=reps_s.index)
+    resolved_rpe_s = 10.0 - eff_rir
+    is_heavy = is_heavy | ((reps_s <= 5) & (resolved_rpe_s >= 8.0))
+
+    if weight is not None and e1rm is not None:
+        weight_s = pd.Series(weight, dtype=float, index=reps_s.index)
+        e1rm_s = pd.Series(e1rm, dtype=float, index=reps_s.index)
+        ratio = weight_s / e1rm_s.replace(0, np.nan)
+        is_heavy = is_heavy | ((ratio >= 0.85) & (weight_s > 0))
+
     base_ereps = (5.0 - eff_rir).clip(lower=0.0)
+    base_ereps = base_ereps.mask(is_heavy, reps_s.clip(upper=5.0))
 
     # 4. Rest-pause boost for myorep, drop, dc when rest <= 45s or NaN
     is_rest_pause = st_s.isin(REST_PAUSE_SET_TYPES)

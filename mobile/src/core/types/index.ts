@@ -91,6 +91,12 @@ export type PrimaryGoal =
   | 'endurance'
   | 'longevity';
 
+export type TrainingArchetype =
+  | 'archetype_i_pure_strength'
+  | 'archetype_ii_powerbuilding'
+  | 'archetype_iii_hypertrophy_strength'
+  | 'archetype_iv_pure_hypertrophy';
+
 export type EquipmentAccess =
   | 'commercial_gym'
   | 'garage_gym'
@@ -104,7 +110,13 @@ export type StrengthStandardTier =
   | 'advanced'
   | 'elite';
 
+export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
+
 export type PainType = 'joint' | 'muscle';
+
+export type AxialLoading = 'none' | 'low' | 'moderate' | 'high';
+
+export type RomTier = 'deep_stretch' | 'standard_full' | 'shortened_restricted';
 
 // ============================================================================
 // Relational SQLite Domain Entities
@@ -130,6 +142,13 @@ export interface Exercise {
   default_rest_seconds: number;
   secondary_muscles?: (MuscleGroup | string)[];
   primary_joints?: JointLocation[];
+  axial_loading?: AxialLoading;
+  rom_tier?: RomTier;
+  muscle_biases?: string[];
+  secondary_joints?: JointLocation[];
+  baseline_sfr?: number;
+  required_gear?: string[];
+  exercise_tier?: number;
 }
 
 /**
@@ -193,6 +212,7 @@ export interface TemplateExercise {
   target_rir: number | null;
   order_index: number;
   exercise_group_id: string | null;
+  set_type?: SetType | null;
 }
 
 /**
@@ -357,6 +377,23 @@ export interface PainReport {
   created_at: string;
 }
 
+export type ExerciseSentiment = 'liked' | 'neutral' | 'disliked' | 'blacklisted';
+
+/**
+ * Exercise sentiment, soft affinity, and pain correlation record.
+ */
+export interface ExercisePreference {
+  exercise_id: string;
+  sentiment: ExerciseSentiment;
+  swap_in_count: number;
+  swap_out_count: number;
+  affinity_score: number;
+  last_pain_reported_at?: string | null;
+  max_pain_severity?: number | null;
+  pain_joint?: JointLocation | string | null;
+  updated_at: string;
+}
+
 /**
  * System and user settings key-value entries.
  */
@@ -380,6 +417,10 @@ export interface UserProfile {
   preferred_days_per_week: number;
   preferred_session_duration_mins: number;
   equipment_access: EquipmentAccess;
+  experience_level?: ExperienceLevel;
+  pending_meso_mood?: boolean | null;
+  has_axial_fatigue_sensitivity?: boolean | null;
+  is_caloric_deficit?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -410,7 +451,10 @@ export type ProgressionConditionType =
   | 'CONSECUTIVE_SUCCESSFUL_SESSIONS'
   | 'CONSECUTIVE_FAILED_SESSIONS'
   | 'MISSED_REPS_COUNT'
-  | 'TOP_SET_RIR_GREATER_THAN';
+  | 'TOP_SET_RIR_GREATER_THAN'
+  | 'MESOCYCLE_FINAL_WEEK'
+  | 'MESOCYCLE_MIDWAY_WEEK'
+  | 'AMRAP_COMPLETED';
 
 export type ProgressionActionType =
   | 'INCREASE_LOAD_FIXED'
@@ -420,7 +464,10 @@ export type ProgressionActionType =
   | 'ADD_WORKING_SET'
   | 'RESET_TO_BASELINE'
   | 'TRIGGER_DELOAD'
-  | 'RESET_WEIGHT_PERCENT';
+  | 'RESET_WEIGHT_PERCENT'
+  | 'SCHEDULE_AMRAP_FINAL_WEEK'
+  | 'SCHEDULE_AMRAP_MIDWAY'
+  | 'INCREASE_LOAD_AMRAP_OVER_CAP';
 
 export interface ProgressionCondition {
   type: ProgressionConditionType;
@@ -469,6 +516,9 @@ export interface ProgressionProposal {
   suggestedTargetSets?: number;
   isDeload?: boolean;
   setProposals?: SetProgressionProposal[];
+  suggestedSetType?: SetType;
+  rirBias?: number;
+  calibratedRpeNote?: string;
 }
 
 export interface ProgressionEvaluationResult {
@@ -486,6 +536,7 @@ export interface SynthesizedProgramSummary {
   totalWeeklySets: number;
   hasSupersets: boolean;
   progressionSchemeSummary: string;
+  archetype?: TrainingArchetype;
 }
 
 export interface SynthesizedProgram {
@@ -657,5 +708,6 @@ export interface WorkoutExportPayload {
   user_profiles: UserProfile[];
   calibrated_params: CalibratedParam[];
   pain_reports?: PainReport[];
+  exercise_preferences?: ExercisePreference[];
 }
 

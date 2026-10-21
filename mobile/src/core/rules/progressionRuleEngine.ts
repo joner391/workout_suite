@@ -27,11 +27,12 @@ import {
   ProgressionProposal,
   SetProgressionProposal,
   ProgressionEvaluationResult,
+  SetType,
 } from '../types';
 import { roundToStep } from '../math/unitConversion';
 
 // ============================================================================
-// Engine Configuration Options
+// Engine Configuration Options & Result Interfaces
 // ============================================================================
 
 export interface ProgressionEngineOptions {
@@ -40,6 +41,66 @@ export interface ProgressionEngineOptions {
    * In powerlifting or micro-loading, can be set to 0.25, 0.5, 1.25, or 2.5 kg.
    */
   roundingStepKg?: number;
+  /**
+   * Equipment implement increment step in kg for AMRAP floor rounding (defaults to 2.5 kg).
+   */
+  gearIncrementKg?: number;
+  /**
+   * Current 1-based week index within active mesocycle block (e.g. 1, 2, 3, 4).
+   */
+  currentMesocycleWeek?: number;
+  /**
+   * Total planned accumulation weeks in active mesocycle (e.g. 4 for Meso 0, 6-8 for longer mesocycles).
+   */
+  totalMesocycleWeeks?: number;
+  /**
+   * Explicit override indicating evaluation is occurring on the midway diagnostic week (floor(L / 2)).
+   */
+  isMidwayWeek?: boolean;
+  /**
+   * Explicit override indicating evaluation is occurring on the final accumulation week prior to deload.
+   */
+  isFinalAccumulationWeek?: boolean;
+  /**
+   * User-predicted repetitions prior to AMRAP set execution (R_pred) for RIR bias calibration.
+   */
+  predictedReps?: number;
+  /**
+   * Map of exercise_id -> predicted reps for multi-exercise sessions.
+   */
+  predictedRepsByExerciseId?: Record<string, number>;
+}
+
+export interface AmrapProgressionInput {
+  currentLoadKg: number;
+  actualReps: number;
+  targetRepsMax: number;
+  incrementKg?: number;
+  pctPerRep?: number;
+}
+
+export interface AmrapProgressionResult {
+  repsOver: number;
+  pctGain: number; // e.g. 4 for 4%
+  rawTargetLoadKg: number;
+  nextPrescribedLoadKg: number;
+  effectiveIncrementKg: number;
+}
+
+export interface RirBiasInput {
+  actualReps: number;
+  predictedReps: number;
+  currentTargetReps?: number;
+  currentTargetRpe?: number;
+}
+
+export interface RirBiasResult {
+  rirBias: number;
+  hasSandbaggingBias: boolean;
+  repAdjustment: number;
+  adjustedTargetReps?: number;
+  calibratedRpeNote?: string;
+  explanation: string;
 }
 
 export interface LinearProgressionOptions {
@@ -64,6 +125,160 @@ export interface DynamicDoubleProgressionOptions {
   plateauThresholdSessions?: number;
   deloadPercent?: number;
   notes?: string;
+}
+
+export interface AmrapProgressionOptions {
+  id?: string;
+  incrementKg?: number;
+  notes?: string;
+}
+
+export interface AmrapMidwayOptions {
+  id?: string;
+  midwayWeek?: number;
+  notes?: string;
+}
+
+export interface AmrapFinalWeekOptions {
+  id?: string;
+  notes?: string;
+}
+
+// ============================================================================
+// Pure Mathematical & AMRAP Helpers
+// ============================================================================
+
+/**
+ * Strictly rounds a weight DOWN to the closest available implement increment step.
+ * Formula: floor(W / Delta) * Delta.
+ *
+ * Implements Pillar 4 of THEORY_INTEGRATION_AND_MESOCYCLE_ARCHITECTURE.md.
+ * Prevents accidental failure spikes from rounding up load jumps after AMRAP sets.
+ *
+ * @param weightKg Raw target weight calculated before rounding.
+ * @param incrementKg Smallest available increment from gear or default (e.g. 2.5 kg, 1.25 kg).
+ */
+export function floorToIncrement(weightKg: number, incrementKg: number): number {
+  if (incrementKg <= 0) {
+    return Math.max(0, weightKg);
+  }
+  const stepped = Math.floor((weightKg + 1e-9) / incrementKg) * incrementKg;
+  return Math.max(0, Math.round(stepped * 10000) / 10000);
+}
+
+/**
+ * Calculates deterministic load escalation based on reps completed over target ceiling in an AMRAP set.
+ *
+ * Formula:
+ * Delta L% = max(0, R_actual - R_target_max) * 1%
+ * Raw Target Load = Current Load * (1 + Delta L%)
+ * Next Prescribed Load = floor_to_increment(Raw Target Load, Delta_gear)
+ *
+ * Implements Pillar 4 of THEORY_INTEGRATION_AND_MESOCYCLE_ARCHITECTURE.md.
+ */
+export function calculateAmrapProgression(
+  input: AmrapProgressionInput
+): AmrapProgressionResult {
+  const {
+    currentLoadKg,
+    actualReps,
+    targetRepsMax,
+    incrementKg = 2.5,
+    pctPerRep = 0.01,
+  } = input;
+
+  const repsOver = Math.max(0, actualReps - targetRepsMax);
+  const fractionalGain = repsOver * pctPerRep;
+  const pctGain = Number((fractionalGain * 100).toFixed(1));
+  const rawTargetLoadKg = currentLoadKg * (1 + fractionalGain);
+  const nextPrescribedLoadKg = floorToIncrement(rawTargetLoadKg, incrementKg);
+
+  return {
+    repsOver,
+    pctGain,
+    rawTargetLoadKg: Math.round(rawTargetLoadKg * 100) / 100,
+    nextPrescribedLoadKg,
+    effectiveIncrementKg: incrementKg,
+  };
+}
+
+/**
+ * Evaluates athlete RIR accuracy bias (beta_RIR = R_actual - R_pred) and computes
+ * greedy target rep adjustments and display calibration warnings.
+ *
+ * Implements Pillar 5 of THEORY_INTEGRATION_AND_MESOCYCLE_ARCHITECTURE.md:
+ * - If beta_RIR <= 1: Trainee has accurate self-perception.
+ * - If beta_RIR >= 2: Trainee has significant sandbagging bias.
+ *   1. Immediate target rep minimum increased by +floor(beta_RIR / 2).
+ *   2. Displays calibrated push cue in session notes.
+ */
+export function calculateRirBias(input: RirBiasInput): RirBiasResult {
+  const { actualReps, predictedReps, currentTargetReps, currentTargetRpe = 8.0 } = input;
+  const rirBias = actualReps - predictedReps;
+  const hasSandbaggingBias = rirBias >= 2;
+  const repAdjustment = hasSandbaggingBias ? Math.floor(rirBias / 2) : 0;
+
+  const adjustedTargetReps =
+    currentTargetReps != null ? currentTargetReps + repAdjustment : undefined;
+
+  let calibratedRpeNote: string | undefined;
+  let explanation: string;
+
+  if (hasSandbaggingBias) {
+    const targetDisplay = adjustedTargetReps ?? currentTargetReps ?? actualReps;
+    calibratedRpeNote = `Target: ${targetDisplay} reps @ RPE ${currentTargetRpe.toFixed(1)}. Note: Based on your recent AMRAP, push ${rirBias} reps past where you normally feel fatigue starting.`;
+    explanation = `RIR bias detected (predicted ${predictedReps} reps, completed ${actualReps} reps; bias = +${rirBias}). Increased target reps by +${repAdjustment} and calibrated RPE perception cue.`;
+  } else if (rirBias >= 0) {
+    explanation = `Accurate RIR perception (bias = +${rirBias}). Prescribed targets maintained.`;
+  } else {
+    explanation = `Slight overestimation of capacity (bias = ${rirBias}). Prescribed targets maintained.`;
+  }
+
+  return {
+    rirBias,
+    hasSandbaggingBias,
+    repAdjustment,
+    adjustedTargetReps,
+    calibratedRpeNote,
+    explanation,
+  };
+}
+
+/**
+ * Extracts predicted repetitions from a WorkoutSet's `set_notes` field if present.
+ * Looks for JSON payload (e.g. `{"predicted_reps": 10}`) or plain tag (e.g. `pred_reps: 10` or `predicted_reps: 10`).
+ */
+export function extractPredictedRepsFromSet(set: WorkoutSet): number | null {
+  if (!set.set_notes) {
+    return null;
+  }
+  const notes = set.set_notes.trim();
+
+  // Try JSON parsing
+  if (notes.startsWith('{') && notes.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(notes);
+      if (typeof parsed.predicted_reps === 'number') {
+        return parsed.predicted_reps;
+      }
+      if (typeof parsed.pred_reps === 'number') {
+        return parsed.pred_reps;
+      }
+    } catch {
+      // ignore JSON parse error
+    }
+  }
+
+  // Regex fallback: pred_reps: 10 or predicted_reps: 10
+  const match = notes.match(/(?:predicted_reps|pred_reps)\s*[:=]\s*(\d+)/i);
+  if (match && match[1]) {
+    const parsed = parseInt(match[1], 10);
+    if (!isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
 }
 
 // ============================================================================
@@ -205,7 +420,8 @@ function normalizeAndSortSessions(
 function evaluateCondition(
   condition: ProgressionCondition,
   normalizedSessions: NormalizedExerciseSession[],
-  prescription: TemplateExercise
+  prescription: TemplateExercise,
+  options: ProgressionEngineOptions = {}
 ): boolean {
   if (normalizedSessions.length === 0) {
     return false;
@@ -364,6 +580,66 @@ function evaluateCondition(
       break;
     }
 
+    case 'MESOCYCLE_FINAL_WEEK': {
+      if (options.isFinalAccumulationWeek === true) {
+        return true;
+      }
+      if (
+        options.currentMesocycleWeek != null &&
+        options.totalMesocycleWeeks != null &&
+        options.currentMesocycleWeek >= options.totalMesocycleWeeks
+      ) {
+        return true;
+      }
+      if (
+        condition.threshold != null &&
+        options.currentMesocycleWeek != null &&
+        options.currentMesocycleWeek >= condition.threshold
+      ) {
+        return true;
+      }
+      return false;
+    }
+
+    case 'MESOCYCLE_MIDWAY_WEEK': {
+      if (options.isMidwayWeek === true) {
+        return true;
+      }
+      const totalWeeks = options.totalMesocycleWeeks ?? 4;
+      const expectedMidwayWeek = condition.threshold ?? Math.floor(totalWeeks / 2);
+      if (
+        options.currentMesocycleWeek != null &&
+        options.currentMesocycleWeek === expectedMidwayWeek
+      ) {
+        return true;
+      }
+      return false;
+    }
+
+    case 'AMRAP_COMPLETED': {
+      const amrapSets = latestWorkingSets.filter((s) => s.set_type === 'amrap');
+      if (amrapSets.length === 0) {
+        return false;
+      }
+      if (condition.threshold != null) {
+        const comparison = condition.comparison ?? 'gte';
+        const maxReps = Math.max(...amrapSets.map((s) => s.reps));
+        switch (comparison) {
+          case 'gt':
+            return maxReps > condition.threshold;
+          case 'gte':
+            return maxReps >= condition.threshold;
+          case 'eq':
+            return maxReps === condition.threshold;
+          case 'lte':
+            return maxReps <= condition.threshold;
+          case 'lt':
+            return maxReps < condition.threshold;
+        }
+      }
+      return true;
+    }
+
     default:
       return false;
   }
@@ -378,8 +654,9 @@ function synthesizeProposal(
   definition: ProgressionRuleDefinition,
   latestSession: NormalizedExerciseSession,
   prescription: TemplateExercise,
-  roundingStepKg: number
+  options: ProgressionEngineOptions = {}
 ): ProgressionProposal {
+  const roundingStepKg = options.roundingStepKg ?? 0.5;
   const latestWorkingSets = latestSession.workingSets;
 
   // Base weight is the maximum weight achieved among working sets in the latest session
@@ -531,8 +808,119 @@ function synthesizeProposal(
         );
         break;
       }
+
+      case 'INCREASE_LOAD_AMRAP_OVER_CAP': {
+        const amrapSet =
+          latestWorkingSets.slice().reverse().find((s) => s.set_type === 'amrap') ||
+          latestWorkingSets[latestWorkingSets.length - 1];
+
+        const amrapLoad = amrapSet ? amrapSet.weight : currentWeightKg;
+        const actualReps = amrapSet ? amrapSet.reps : 0;
+        const targetMax =
+          prescription.target_reps_max ??
+          prescription.target_reps_min ??
+          8;
+        const increment =
+          action.value > 0
+            ? action.value
+            : options.gearIncrementKg ?? options.roundingStepKg ?? 2.5;
+
+        const prog = calculateAmrapProgression({
+          currentLoadKg: amrapLoad,
+          actualReps,
+          targetRepsMax: targetMax,
+          incrementKg: increment,
+          pctPerRep: 0.01,
+        });
+
+        suggestedWeightKg = prog.nextPrescribedLoadKg;
+
+        // Check for RIR bias if predicted reps provided in set notes, options, or dictionary
+        const predicted =
+          (amrapSet ? extractPredictedRepsFromSet(amrapSet) : null) ??
+          options.predictedReps ??
+          (options.predictedRepsByExerciseId
+            ? options.predictedRepsByExerciseId[prescription.exercise_id]
+            : null);
+
+        let biasResult: RirBiasResult | null = null;
+        if (predicted != null) {
+          biasResult = calculateRirBias({
+            actualReps,
+            predictedReps: predicted,
+            currentTargetReps: prescription.target_reps_min ?? 8,
+            currentTargetRpe: prescription.target_rpe ?? 8.0,
+          });
+          if (biasResult.hasSandbaggingBias && biasResult.adjustedTargetReps != null) {
+            suggestedTargetReps = biasResult.adjustedTargetReps;
+          }
+        }
+
+        if (prog.repsOver > 0) {
+          explanations.push(
+            `AMRAP diagnostic: Completed ${actualReps} reps vs ${targetMax} rep target ceiling (+${prog.repsOver} reps over). Applied +${prog.pctGain}% load escalation: working load adjusted from ${amrapLoad} kg to ${suggestedWeightKg} kg (floor-rounded to ${increment} kg increment).`
+          );
+        } else {
+          explanations.push(
+            `AMRAP diagnostic: Completed ${actualReps} reps (within or below ${targetMax} rep target bracket). Maintain ${amrapLoad} kg.`
+          );
+        }
+
+        if (biasResult && biasResult.hasSandbaggingBias) {
+          explanations.push(
+            `RIR bias (+${biasResult.rirBias}): Target reps adjusted to ${suggestedTargetReps} reps. ${biasResult.calibratedRpeNote}`
+          );
+        }
+        break;
+      }
+
+      case 'SCHEDULE_AMRAP_MIDWAY': {
+        const totalWeeks = options.totalMesocycleWeeks ?? 4;
+        const midwayWeek = options.currentMesocycleWeek ?? Math.floor(totalWeeks / 2);
+        explanations.push(
+          `Mid-mesocycle diagnostic checkpoint (Week ${midwayWeek} of ${totalWeeks}): Perform final set as AMRAP (0 RIR / max effort) to test load calibration and RIR accuracy.`
+        );
+        break;
+      }
+
+      case 'SCHEDULE_AMRAP_FINAL_WEEK': {
+        const totalWeeks = options.totalMesocycleWeeks ?? 4;
+        const finalWeek = options.currentMesocycleWeek ?? totalWeeks;
+        explanations.push(
+          `End-of-mesocycle graduation AMRAP (Week ${finalWeek} of ${totalWeeks}): Uncap final set to 0 RIR to benchmark true progress and establish baselines for next mesocycle.`
+        );
+        break;
+      }
     }
   }
+
+  // Check if any AMRAP set has RIR bias metadata for proposal fields
+  const amrapSet = latestWorkingSets.slice().reverse().find((s) => s.set_type === 'amrap');
+  const predicted =
+    (amrapSet ? extractPredictedRepsFromSet(amrapSet) : null) ??
+    options.predictedReps ??
+    (options.predictedRepsByExerciseId
+      ? options.predictedRepsByExerciseId[prescription.exercise_id]
+      : null);
+
+  let rirBias: number | undefined;
+  let calibratedRpeNote: string | undefined;
+  if (amrapSet && predicted != null) {
+    const biasResult = calculateRirBias({
+      actualReps: amrapSet.reps,
+      predictedReps: predicted,
+      currentTargetReps: prescription.target_reps_min ?? 8,
+      currentTargetRpe: prescription.target_rpe ?? 8.0,
+    });
+    rirBias = biasResult.rirBias;
+    calibratedRpeNote = biasResult.calibratedRpeNote;
+  }
+
+  const suggestedSetType: SetType | undefined =
+    primaryAction.type === 'SCHEDULE_AMRAP_FINAL_WEEK' ||
+    primaryAction.type === 'SCHEDULE_AMRAP_MIDWAY'
+      ? 'amrap'
+      : undefined;
 
   return {
     ruleId: rule.id,
@@ -547,6 +935,9 @@ function synthesizeProposal(
     suggestedTargetSets,
     isDeload,
     setProposals,
+    suggestedSetType,
+    rirBias,
+    calibratedRpeNote,
   };
 }
 
@@ -618,7 +1009,7 @@ export function evaluateProgressionRules(
 
     // All conditions in a rule must be satisfied (AND semantics)
     const allConditionsPassed = definition.conditions.every((cond) =>
-      evaluateCondition(cond, normalizedSessions, currentPrescription)
+      evaluateCondition(cond, normalizedSessions, currentPrescription, options)
     );
 
     if (allConditionsPassed) {
@@ -627,7 +1018,7 @@ export function evaluateProgressionRules(
         definition,
         latestSession,
         currentPrescription,
-        roundingStepKg
+        options
       );
       matchedProposals.push(proposal);
     }
@@ -794,4 +1185,86 @@ export function createDynamicDoubleProgressionRule(
       },
     },
   ];
+}
+
+/**
+ * Generates rule scheduling a 0 RIR AMRAP diagnostic set on the final accumulation week of a mesocycle.
+ * Implements Pillar 8 (Compounds stay submaximal during accumulation until end-of-meso diagnostic checkpoint).
+ */
+export function createAmrapFinalWeekRule(
+  templateExerciseId: string,
+  options: AmrapFinalWeekOptions = {}
+): ProgressionRule {
+  const {
+    id = `rule-amrap-final-${templateExerciseId}`,
+    notes = 'Schedule 0 RIR AMRAP on final accumulation week prior to deload',
+  } = options;
+
+  return {
+    id,
+    template_exercise_id: templateExerciseId,
+    priority: 3,
+    rule_json: {
+      conditions: [{ type: 'MESOCYCLE_FINAL_WEEK' }],
+      actions: [{ type: 'SCHEDULE_AMRAP_FINAL_WEEK', value: 0 }],
+      notes,
+    },
+  };
+}
+
+/**
+ * Generates rule scheduling a diagnostic AMRAP set on the midway checkpoint week of a mesocycle (floor(L / 2)).
+ * Implements Pillar 3 (Mid-Mesocycle Checkpoints).
+ */
+export function createAmrapMidwayRule(
+  templateExerciseId: string,
+  options: AmrapMidwayOptions = {}
+): ProgressionRule {
+  const {
+    id = `rule-amrap-midway-${templateExerciseId}`,
+    midwayWeek,
+    notes = 'Schedule midway diagnostic AMRAP to calibrate load and RIR accuracy',
+  } = options;
+
+  return {
+    id,
+    template_exercise_id: templateExerciseId,
+    priority: 3,
+    rule_json: {
+      conditions: [
+        {
+          type: 'MESOCYCLE_MIDWAY_WEEK',
+          threshold: midwayWeek,
+        },
+      ],
+      actions: [{ type: 'SCHEDULE_AMRAP_MIDWAY', value: 0 }],
+      notes,
+    },
+  };
+}
+
+/**
+ * Generates rule evaluating completed AMRAP diagnostic sets using the 1%-over-cap formula with floor rounding.
+ * Implements Pillar 4 (The 1%-Over-Cap Progression Formula with Floor Rounding).
+ */
+export function createAmrapProgressionRule(
+  templateExerciseId: string,
+  options: AmrapProgressionOptions = {}
+): ProgressionRule {
+  const {
+    id = `rule-amrap-prog-${templateExerciseId}`,
+    incrementKg = 2.5,
+    notes = 'AMRAP +1%-per-rep-over-cap progression with floor rounding',
+  } = options;
+
+  return {
+    id,
+    template_exercise_id: templateExerciseId,
+    priority: 1, // Higher priority than standard LP/DP so AMRAP performance takes precedence
+    rule_json: {
+      conditions: [{ type: 'AMRAP_COMPLETED' }],
+      actions: [{ type: 'INCREASE_LOAD_AMRAP_OVER_CAP', value: incrementKg }],
+      notes,
+    },
+  };
 }

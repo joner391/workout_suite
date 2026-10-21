@@ -28,6 +28,7 @@ import {
   EquipmentAccess,
   SynthesizedProgramSummary,
   Exercise,
+  ExperienceLevel,
 } from '../../core/types';
 import { IUserProfileRepository } from '../../domain/repositories/IUserProfileRepository';
 import { IProgramRepository } from '../../domain/repositories/IProgramRepository';
@@ -35,10 +36,16 @@ import { IExerciseRepository } from '../../domain/repositories/IExerciseReposito
 import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
 import { IBodyMetricsRepository } from '../../domain/repositories/IBodyMetricsRepository';
+import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
+import { IPainReportRepository } from '../../domain/repositories/IPainReportRepository';
 import {
   ProgramBlockService,
   ActiveProgramInfo,
 } from '../../services/programBlockService';
+import {
+  ProgramEvolutionService,
+  EvolutionResult,
+} from '../../services/programEvolutionService';
 import { synthesizeProgram } from '../../core/generator/programSynthesizer';
 import { ProgramOverviewScreen } from '../progression/ProgramOverviewScreen';
 import { GearInventoryScreen } from '../gear/GearInventoryScreen';
@@ -48,11 +55,15 @@ export interface UserProfileScreenProps {
   userProfileRepo: IUserProfileRepository;
   programRepo?: IProgramRepository;
   programBlockService?: ProgramBlockService;
+  programEvolutionService?: ProgramEvolutionService;
   exerciseRepo?: IExerciseRepository;
   gearRepo?: IGearRepository;
   userSettingsRepo?: IUserSettingsRepository;
   bodyMetricsRepo?: IBodyMetricsRepository;
+  workoutRepo?: IWorkoutRepository;
+  painReportRepo?: IPainReportRepository;
   initialQuestionnaireExpanded?: boolean;
+  isBetaPhase?: boolean;
   onClose?: () => void;
   onProgramGenerated?: (programId: string) => void;
   onOpenProgramOverview?: () => void;
@@ -62,11 +73,15 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   userProfileRepo,
   programRepo,
   programBlockService,
+  programEvolutionService,
   exerciseRepo,
   gearRepo,
   userSettingsRepo,
   bodyMetricsRepo,
+  workoutRepo,
+  painReportRepo,
   initialQuestionnaireExpanded = false,
+  isBetaPhase,
   onClose,
   onProgramGenerated,
   onOpenProgramOverview,
@@ -74,23 +89,30 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [generating, setGenerating] = useState<boolean>(false);
+  const [evolving, setEvolving] = useState<boolean>(false);
+  const [isBeta, setIsBeta] = useState<boolean>(isBetaPhase ?? false);
+  const [isCycleCompleted, setIsCycleCompleted] = useState<boolean>(false);
   const [profileId, setProfileId] = useState<string>('profile_default');
   const [activeInfo, setActiveInfo] = useState<ActiveProgramInfo | null>(null);
   const [showProgramOverview, setShowProgramOverview] = useState<boolean>(false);
   const [showGearInventory, setShowGearInventory] = useState<boolean>(false);
   const [showBodyMetrics, setShowBodyMetrics] = useState<boolean>(false);
+  const [showEvolutionModal, setShowEvolutionModal] = useState<boolean>(false);
+  const [evolutionResult, setEvolutionResult] = useState<EvolutionResult | null>(null);
   const [questionnaireExpanded, setQuestionnaireExpanded] = useState<boolean>(initialQuestionnaireExpanded);
 
   // Form State
   const [gender, setGender] = useState<Gender>('male');
   const [birthdate, setBirthdate] = useState<string>('1995-01-01');
   const [heightCm, setHeightCm] = useState<string>('180');
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>('intermediate');
   const [trainingMentality, setTrainingMentality] = useState<TrainingMentality>('precision');
   const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal>('hypertrophy');
   const [secondaryGoals, setSecondaryGoals] = useState<string[]>(['strength']);
   const [preferredDays, setPreferredDays] = useState<number>(4);
   const [preferredDurationMins, setPreferredDurationMins] = useState<number>(60);
   const [equipmentAccess, setEquipmentAccess] = useState<EquipmentAccess>('commercial_gym');
+  const [pendingMesoMood, setPendingMesoMood] = useState<boolean>(false);
 
   // Generation Feedback State
   const [generatedSummary, setGeneratedSummary] = useState<SynthesizedProgramSummary | null>(null);
@@ -101,13 +123,51 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const loadProfile = useCallback(async () => {
     try {
       setLoading(true);
+      let activeProg: ActiveProgramInfo | null = null;
       if (programBlockService) {
         try {
-          const active = await programBlockService.getActiveProgram();
-          setActiveInfo(active);
+          activeProg = await programBlockService.getActiveProgram();
+          setActiveInfo(activeProg);
         } catch {
           // Ignore
         }
+      }
+
+      // Check beta-phase status from settings or prop
+      let currentIsBeta = isBetaPhase ?? false;
+      if (userSettingsRepo) {
+        try {
+          const betaSetting = await userSettingsRepo.get('is_beta_phase');
+          const appPhaseSetting = await userSettingsRepo.get('app_phase');
+          if (betaSetting === 'true' || appPhaseSetting === 'beta') {
+            currentIsBeta = true;
+          }
+        } catch {
+          // Ignore
+        }
+      }
+      setIsBeta(currentIsBeta);
+
+      // Check if current cycle is completed
+      if (programRepo && activeProg) {
+        try {
+          const evoService =
+            programEvolutionService ??
+            new ProgramEvolutionService(
+              programRepo,
+              userProfileRepo,
+              workoutRepo,
+              painReportRepo,
+              exerciseRepo,
+              programBlockService
+            );
+          const readiness = await evoService.isReadyForEvolution(activeProg.program.id);
+          setIsCycleCompleted(readiness.ready);
+        } catch {
+          setIsCycleCompleted(false);
+        }
+      } else {
+        setIsCycleCompleted(false);
       }
 
       const existing = await userProfileRepo.getProfile();
@@ -116,6 +176,8 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         setGender(existing.gender);
         if (existing.birthdate) setBirthdate(existing.birthdate);
         if (existing.height_cm != null) setHeightCm(String(existing.height_cm));
+        if (existing.experience_level) setExperienceLevel(existing.experience_level);
+        if (existing.pending_meso_mood != null) setPendingMesoMood(Boolean(existing.pending_meso_mood));
         setTrainingMentality(
           existing.training_mentality ??
           (existing.intensity_style === 'high_intensity_low_volume'
@@ -149,6 +211,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       gender,
       birthdate: birthdate.trim() || null,
       height_cm: isNaN(parsedHeight) ? null : parsedHeight,
+      experience_level: experienceLevel,
       training_mentality: trainingMentality,
       training_enjoyment:
         trainingMentality === 'get_out'
@@ -167,6 +230,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       preferred_days_per_week: preferredDays,
       preferred_session_duration_mins: preferredDurationMins,
       equipment_access: equipmentAccess,
+      pending_meso_mood: pendingMesoMood,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -179,14 +243,14 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     );
   };
 
-  // Save profile to repository
+  // 1. Action: Save Preferences Only
   const handleSaveProfile = async () => {
     try {
       setSaving(true);
       setStatusMessage(null);
       const profile = buildCurrentProfile();
       await userProfileRepo.saveProfile(profile);
-      setStatusMessage('Psychological profile & preferences saved successfully.');
+      setStatusMessage('Athlete demographics & preferences saved successfully.');
     } catch (err: any) {
       setStatusMessage(`Failed to save: ${err?.message ?? 'Unknown error'}`);
     } finally {
@@ -194,7 +258,60 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
     }
   };
 
-  // 1-Tap Program Generation
+  // 2. Action: Deferred Mesocycle Evolution (Step 8.3)
+  const handleEvolveOngoingProgram = async () => {
+    if (!programRepo) {
+      setStatusMessage('Evolution requires active database repository connection.');
+      return;
+    }
+
+    try {
+      setEvolving(true);
+      setStatusMessage(null);
+      const profile = buildCurrentProfile();
+      await userProfileRepo.saveProfile(profile);
+
+      const evolutionSvc =
+        programEvolutionService ??
+        new ProgramEvolutionService(
+          programRepo,
+          userProfileRepo,
+          workoutRepo,
+          painReportRepo,
+          exerciseRepo,
+          programBlockService
+        );
+
+      let catalog: Exercise[] | undefined = undefined;
+      if (exerciseRepo) {
+        catalog = await exerciseRepo.findAll();
+      }
+
+      const activeProgramId = activeInfo?.program.id;
+      const result = await evolutionSvc.evolveActiveProgramForNextMeso({
+        programId: activeProgramId,
+        userProfile: profile,
+        exerciseCatalog: catalog,
+      });
+
+      setEvolutionResult(result);
+      setShowEvolutionModal(true);
+      setPendingMesoMood(false);
+      setLastGeneratedProgramId(result.programId);
+      setStatusMessage(`⚡ Mesocycle ${result.mesoNumber} staged successfully! (${result.summaryBadge})`);
+
+      if (programBlockService) {
+        const fresh = await programBlockService.getActiveProgram();
+        setActiveInfo(fresh);
+      }
+    } catch (err: any) {
+      setStatusMessage(`Evolution failed: ${err?.message ?? 'Unknown error'}`);
+    } finally {
+      setEvolving(false);
+    }
+  };
+
+  // 3. Action: Create Brand New Program
   const handleGenerateProgram = async () => {
     if (!programRepo || !programBlockService) {
       setStatusMessage('Program synthesis requires active database repository connection.');
@@ -206,6 +323,18 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       setStatusMessage(null);
       const profile = buildCurrentProfile();
       await userProfileRepo.saveProfile(profile);
+
+      // Discard any abandoned in-progress workout from superseded program
+      if (workoutRepo) {
+        try {
+          const oldInProgress = await workoutRepo.getInProgressWorkout();
+          if (oldInProgress) {
+            await workoutRepo.delete(oldInProgress.id);
+          }
+        } catch {
+          // Safe fallback
+        }
+      }
 
       // Load exercise catalog if available
       let catalog: Exercise[] | undefined = undefined;
@@ -227,6 +356,14 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       setGeneratedSummary(synthesized.summary);
       setLastGeneratedProgramId(synthesized.program.id);
       setStatusMessage(`Program "${synthesized.program.name}" generated & activated!`);
+
+      if (programBlockService) {
+        const fresh = await programBlockService.getActiveProgram();
+        setActiveInfo(fresh);
+      }
+
+      // Open Program Overview so athlete can inspect and make manual adjustments
+      setShowProgramOverview(true);
 
       if (onProgramGenerated) {
         onProgramGenerated(synthesized.program.id);
@@ -273,7 +410,14 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
         <View testID="active-program-banner-card" style={styles.activeProgramCard}>
           <View style={styles.activeProgramHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.activeProgramBadge}>ACTIVE PROGRAM</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.activeProgramBadge}>ACTIVE PROGRAM</Text>
+                {pendingMesoMood && (
+                  <View style={styles.pendingMoodBadge}>
+                    <Text style={styles.pendingMoodBadgeText}>⚡ Mood Staged for Meso N+1</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.activeProgramTitle} numberOfLines={1}>
                 {activeInfo ? activeInfo.program.name : 'No Program Active'}
               </Text>
@@ -377,314 +521,400 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             <View testID="questionnaire-body" style={styles.questionnaireBody}>
               {/* Section 1: Demographics */}
               <Text style={[styles.sectionTitle, { marginTop: 0 }]}>1. ATHLETE DEMOGRAPHICS</Text>
-        <View style={styles.card}>
-          <Text style={styles.inputLabel}>Biological Sex (for strength standards & Navy body fat)</Text>
-          <View style={styles.toggleRow}>
-            {(['male', 'female'] as Gender[]).map((g) => (
-              <TouchableOpacity
-                key={g}
-                testID={`gender-toggle-${g}`}
-                style={[styles.toggleBtn, gender === g && styles.toggleBtnActive]}
-                onPress={() => setGender(g)}
-              >
-                <Text style={[styles.toggleBtnText, gender === g && styles.toggleBtnTextActive]}>
-                  {g === 'male' ? 'Male ♂' : 'Female ♀'}
+              <View style={styles.card}>
+                <Text style={styles.inputLabel}>Biological Sex (for strength standards & Navy body fat)</Text>
+                <View style={styles.toggleRow}>
+                  {(['male', 'female'] as Gender[]).map((g) => (
+                    <TouchableOpacity
+                      key={g}
+                      testID={`gender-toggle-${g}`}
+                      style={[styles.toggleBtn, gender === g && styles.toggleBtnActive]}
+                      onPress={() => setGender(g)}
+                    >
+                      <Text style={[styles.toggleBtnText, gender === g && styles.toggleBtnTextActive]}>
+                        {g === 'male' ? 'Male ♂' : 'Female ♀'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View style={styles.fieldRow}>
+                  <View style={styles.fieldHalf}>
+                    <Text style={styles.inputLabel}>Height (cm)</Text>
+                    <TextInput
+                      testID="height-input"
+                      style={styles.textInput}
+                      keyboardType="numeric"
+                      value={heightCm}
+                      onChangeText={setHeightCm}
+                      placeholder="180"
+                      placeholderTextColor="#71717A"
+                    />
+                  </View>
+                  <View style={styles.fieldHalf}>
+                    <Text style={styles.inputLabel}>Birthdate (YYYY-MM-DD)</Text>
+                    <TextInput
+                      testID="birthdate-input"
+                      style={styles.textInput}
+                      value={birthdate}
+                      onChangeText={setBirthdate}
+                      placeholder="1995-01-01"
+                      placeholderTextColor="#71717A"
+                    />
+                  </View>
+                </View>
+
+                <Text style={[styles.inputLabel, { marginTop: 16 }]}>
+                  Experience Tier (Bifurcated Novice vs Standard Splits)
                 </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                <View style={styles.toggleRow}>
+                  {(['beginner', 'intermediate', 'advanced'] as ExperienceLevel[]).map((exp) => (
+                    <TouchableOpacity
+                      key={exp}
+                      testID={`experience-toggle-${exp}`}
+                      style={[styles.toggleBtn, experienceLevel === exp && styles.toggleBtnActive]}
+                      onPress={() => setExperienceLevel(exp)}
+                    >
+                      <Text style={[styles.toggleBtnText, experienceLevel === exp && styles.toggleBtnTextActive]}>
+                        {exp.charAt(0).toUpperCase() + exp.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-          <View style={styles.fieldRow}>
-            <View style={styles.fieldHalf}>
-              <Text style={styles.inputLabel}>Height (cm)</Text>
-              <TextInput
-                testID="height-input"
-                style={styles.textInput}
-                keyboardType="numeric"
-                value={heightCm}
-                onChangeText={setHeightCm}
-                placeholder="180"
-                placeholderTextColor="#71717A"
-              />
-            </View>
-            <View style={styles.fieldHalf}>
-              <Text style={styles.inputLabel}>Birthdate (YYYY-MM-DD)</Text>
-              <TextInput
-                testID="birthdate-input"
-                style={styles.textInput}
-                value={birthdate}
-                onChangeText={setBirthdate}
-                placeholder="1995-01-01"
-                placeholderTextColor="#71717A"
-              />
-            </View>
-          </View>
-
-          {bodyMetricsRepo && (
-            <TouchableOpacity
-              testID="profile-open-body-metrics-btn"
-              style={styles.openBodyMetricsBtn}
-              onPress={() => setShowBodyMetrics(true)}
-            >
-              <Text style={styles.openBodyMetricsBtnText}>
-                Anthropometry, Tape Measurements & Navy BF% ⚖️
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Section 2: Training Mentality Matrix */}
-        <Text style={styles.sectionTitle}>2. TRAINING MENTALITY</Text>
-        <View style={styles.card}>
-          <Text style={styles.cardDescription}>
-            Select your training philosophy. This drives exertion targets, volume accumulation, and progression schemes.
-          </Text>
-          {[
-            {
-              id: 'fury' as TrainingMentality,
-              title: 'Fury ⚡',
-              subtitle: 'Maximum Effort / Low Volume',
-              desc: 'Pushes with high intensity and aggression; leaves nothing in the tank. (1–2 working sets to RPE 9.5–10, Dynamic Double Progression)',
-            },
-            {
-              id: 'precision' as TrainingMentality,
-              title: 'Precision 🎯',
-              subtitle: 'Deliberate Mastery / High Volume',
-              desc: 'Hones craft with deliberate technical mastery. (3–4 working sets @ RPE 7.5–8.5, Linear & Double Progression)',
-            },
-            {
-              id: 'get_out' as TrainingMentality,
-              title: 'I Wanna Get Out of Here ⏱️',
-              subtitle: 'Minimalist Efficiency / Antagonist Supersets',
-              desc: 'Wants to get out of the gym, doing the least work possible for meaningful results. (2 sets, automatic antagonist supersets, tight rest)',
-            },
-          ].map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              testID={`mentality-option-${item.id}`}
-              style={[
-                styles.optionRow,
-                trainingMentality === item.id && styles.optionRowActive,
-              ]}
-              onPress={() => setTrainingMentality(item.id)}
-            >
-              <View style={styles.optionRadio}>
-                {trainingMentality === item.id && <View style={styles.optionRadioInner} />}
-              </View>
-              <View style={styles.optionTextContainer}>
-                <Text
-                  style={[
-                    styles.optionTitle,
-                    trainingMentality === item.id && styles.optionTitleActive,
-                  ]}
-                >
-                  {item.title}
-                </Text>
-                <Text style={styles.optionSubtitle}>{item.subtitle}</Text>
-                <Text style={styles.optionDesc}>{item.desc}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Section 3: Primary Goal */}
-        <Text style={styles.sectionTitle}>3. PRIMARY TRAINING GOAL</Text>
-        <View style={styles.card}>
-          <View style={styles.goalPillContainer}>
-            {(
-              [
-                'hypertrophy',
-                'strength',
-                'powerbuilding',
-                'endurance',
-                'longevity',
-              ] as PrimaryGoal[]
-            ).map((goal) => (
-              <TouchableOpacity
-                key={goal}
-                testID={`primary-goal-${goal}`}
-                style={[
-                  styles.goalPill,
-                  primaryGoal === goal && styles.goalPillActive,
-                ]}
-                onPress={() => setPrimaryGoal(goal)}
-              >
-                <Text
-                  style={[
-                    styles.goalPillText,
-                    primaryGoal === goal && styles.goalPillTextActive,
-                  ]}
-                >
-                  {goal.charAt(0).toUpperCase() + goal.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={[styles.inputLabel, { marginTop: 16 }]}>Secondary Goals (Multi-select)</Text>
-          <View style={styles.secondaryGoalRow}>
-            {['strength', 'hypertrophy', 'powerbuilding', 'endurance', 'longevity'].map((goal) => {
-              const selected = secondaryGoals.includes(goal);
-              return (
-                <TouchableOpacity
-                  key={goal}
-                  testID={`secondary-goal-${goal}`}
-                  style={[styles.secondaryPill, selected && styles.secondaryPillActive]}
-                  onPress={() => toggleSecondaryGoal(goal)}
-                >
-                  <Text
-                    style={[
-                      styles.secondaryPillText,
-                      selected && styles.secondaryPillTextActive,
-                    ]}
+                {bodyMetricsRepo && (
+                  <TouchableOpacity
+                    testID="profile-open-body-metrics-btn"
+                    style={styles.openBodyMetricsBtn}
+                    onPress={() => setShowBodyMetrics(true)}
                   >
-                    {selected ? '✓ ' : '+ '}
-                    {goal}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Section 4: Schedule & Logistics */}
-        <Text style={styles.sectionTitle}>4. SCHEDULE & EQUIPMENT CONSTRAINTS</Text>
-        <View style={styles.card}>
-          <Text style={styles.inputLabel}>Available Training Days Per Week</Text>
-          <View style={styles.daysSelectorRow}>
-            {[2, 3, 4, 5, 6].map((days) => (
-              <TouchableOpacity
-                key={days}
-                testID={`days-per-week-${days}`}
-                style={[
-                  styles.dayBtn,
-                  preferredDays === days && styles.dayBtnActive,
-                ]}
-                onPress={() => setPreferredDays(days)}
-              >
-                <Text
-                  style={[
-                    styles.dayBtnText,
-                    preferredDays === days && styles.dayBtnTextActive,
-                  ]}
-                >
-                  {days}d
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={[styles.inputLabel, { marginTop: 16 }]}>Target Workout Duration</Text>
-          <View style={styles.daysSelectorRow}>
-            {[15, 30, 45, 60, 75, 90].map((dur) => (
-              <TouchableOpacity
-                key={dur}
-                testID={`duration-${dur}`}
-                style={[
-                  styles.dayBtn,
-                  preferredDurationMins === dur && styles.dayBtnActive,
-                ]}
-                onPress={() => setPreferredDurationMins(dur)}
-              >
-                <Text
-                  style={[
-                    styles.dayBtnText,
-                    preferredDurationMins === dur && styles.dayBtnTextActive,
-                  ]}
-                >
-                  {dur}m
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={[styles.inputLabel, { marginTop: 16 }]}>Equipment Access</Text>
-          {[
-            { id: 'commercial_gym', label: 'Commercial Gym (Barbells, Dumbbells, Cables, Machines)' },
-            { id: 'garage_gym', label: 'Garage Gym (Barbells, Dumbbells, Pull-up Bar)' },
-            { id: 'dumbbells_only', label: 'Dumbbells Only (Dumbbells & Adjustable Bench)' },
-            { id: 'bodyweight_only', label: 'Bodyweight Only (Calisthenics)' },
-          ].map((eq) => (
-            <TouchableOpacity
-              key={eq.id}
-              testID={`equipment-${eq.id}`}
-              style={[
-                styles.optionRow,
-                equipmentAccess === eq.id && styles.optionRowActive,
-              ]}
-              onPress={() => setEquipmentAccess(eq.id as EquipmentAccess)}
-            >
-              <View style={styles.optionRadio}>
-                {equipmentAccess === eq.id && <View style={styles.optionRadioInner} />}
+                    <Text style={styles.openBodyMetricsBtnText}>
+                      Anthropometry, Tape Measurements & Navy BF% ⚖️
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
-              <Text
-                style={[
-                  styles.optionTitle,
-                  equipmentAccess === eq.id && styles.optionTitleActive,
-                ]}
-              >
-                {eq.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
 
-          {/* Section: Gym Equipment & Gear Inventory (ADR-025) */}
-          <View style={styles.gearCard}>
-            <View style={styles.gearCardHeader}>
-              <Text style={styles.gearCardTitle}>Gear & Equipment Inventory</Text>
-            </View>
-            <Text style={styles.gearCardDesc}>
-              Configure your gym's specific barbells (Olympic, Safety Squat Bar, Trap Bar) and cable machines. Equipment saved here is available for selection across exercises, workout sessions, and program templates.
-            </Text>
-            {gearRepo ? (
-              <TouchableOpacity
-                testID="open-gear-inventory-btn"
-                style={styles.openGearBtn}
-                onPress={() => setShowGearInventory(true)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.openGearBtnText}>Manage Equipment Inventory ➔</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.gearDisabledText}>Gear repository not connected</Text>
-            )}
-          </View>
-        </View>
+              {/* Section 2: Dynamic Training Mood */}
+              <Text style={styles.sectionTitle}>2. DYNAMIC TRAINING MOOD</Text>
+              <View style={styles.card}>
+                <Text style={styles.cardDescription}>
+                  Select your current training mood and philosophy. Changes staged here will dynamically evolve Meso N+1 upon accumulation completion.
+                </Text>
+                {[
+                  {
+                    id: 'fury' as TrainingMentality,
+                    title: 'Fury ⚡',
+                    subtitle: 'High Effort Density / Maximum Efficiency',
+                  },
+                  {
+                    id: 'precision' as TrainingMentality,
+                    title: 'Precision 🎯',
+                    subtitle: 'Technical Mastery / Controlled Proximity',
+                  },
+                  {
+                    id: 'get_out' as TrainingMentality,
+                    title: 'I Wanna Get Out of Here ⏱️',
+                    subtitle: 'Temporal Density / Antagonist Supersets',
+                  },
+                ].map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    testID={`mentality-option-${item.id}`}
+                    style={[
+                      styles.optionRow,
+                      trainingMentality === item.id && styles.optionRowActive,
+                    ]}
+                    onPress={() => setTrainingMentality(item.id)}
+                  >
+                    <View style={styles.optionRadio}>
+                      {trainingMentality === item.id && <View style={styles.optionRadioInner} />}
+                    </View>
+                    <View style={styles.optionTextContainer}>
+                      <Text
+                        style={[
+                          styles.optionTitle,
+                          trainingMentality === item.id && styles.optionTitleActive,
+                        ]}
+                      >
+                        {item.title}
+                      </Text>
+                      <Text style={styles.optionSubtitle}>{item.subtitle}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity
-            testID="generate-custom-program-btn"
-            style={[styles.generateProgramBtn, generating && styles.btnDisabled]}
-            onPress={handleGenerateProgram}
-            disabled={generating}
-            activeOpacity={0.8}
-          >
-            {generating ? (
-              <ActivityIndicator size="small" color="#0A0A0A" />
-            ) : (
-              <Text style={styles.generateProgramBtnText}>⚡ 1-Tap Generate Custom Program</Text>
-            )}
-          </TouchableOpacity>
+                <Text style={[styles.inputLabel, { marginTop: 16 }]}>Target Workout Duration</Text>
+                <View style={styles.daysSelectorRow}>
+                  {[15, 30, 45, 60, 75, 90].map((dur) => (
+                    <TouchableOpacity
+                      key={dur}
+                      testID={`duration-${dur}`}
+                      style={[
+                        styles.dayBtn,
+                        preferredDurationMins === dur && styles.dayBtnActive,
+                      ]}
+                      onPress={() => setPreferredDurationMins(dur)}
+                    >
+                      <Text
+                        style={[
+                          styles.dayBtnText,
+                          preferredDurationMins === dur && styles.dayBtnTextActive,
+                        ]}
+                      >
+                        {dur}m
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-          <TouchableOpacity
-            testID="save-profile-btn"
-            style={[styles.saveProfileBtn, saving && styles.btnDisabled]}
-            onPress={handleSaveProfile}
-            disabled={saving}
-            activeOpacity={0.8}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="#00E676" />
-            ) : (
-              <Text style={styles.saveProfileBtnText}>Save Preferences Only</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+                <Text style={[styles.inputLabel, { marginTop: 16 }]}>Available Training Days Per Week</Text>
+                <View style={styles.daysSelectorRow}>
+                  {[2, 3, 4, 5, 6].map((days) => (
+                    <TouchableOpacity
+                      key={days}
+                      testID={`days-per-week-${days}`}
+                      style={[
+                        styles.dayBtn,
+                        preferredDays === days && styles.dayBtnActive,
+                      ]}
+                      onPress={() => setPreferredDays(days)}
+                    >
+                      <Text
+                        style={[
+                          styles.dayBtnText,
+                          preferredDays === days && styles.dayBtnTextActive,
+                        ]}
+                      >
+                        {days}d
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={[styles.inputLabel, { marginTop: 16 }]}>Primary Training Goal</Text>
+                <View style={styles.goalPillContainer}>
+                  {(
+                    [
+                      'hypertrophy',
+                      'strength',
+                      'powerbuilding',
+                      'endurance',
+                      'longevity',
+                    ] as PrimaryGoal[]
+                  ).map((goal) => (
+                    <TouchableOpacity
+                      key={goal}
+                      testID={`primary-goal-${goal}`}
+                      style={[
+                        styles.goalPill,
+                        primaryGoal === goal && styles.goalPillActive,
+                      ]}
+                      onPress={() => setPrimaryGoal(goal)}
+                    >
+                      <Text
+                        style={[
+                          styles.goalPillText,
+                          primaryGoal === goal && styles.goalPillTextActive,
+                        ]}
+                      >
+                        {goal.charAt(0).toUpperCase() + goal.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={[styles.inputLabel, { marginTop: 16 }]}>Secondary Goals (Multi-select)</Text>
+                <View style={styles.secondaryGoalRow}>
+                  {['strength', 'hypertrophy', 'powerbuilding', 'endurance', 'longevity'].map((goal) => {
+                    const selected = secondaryGoals.includes(goal);
+                    return (
+                      <TouchableOpacity
+                        key={goal}
+                        testID={`secondary-goal-${goal}`}
+                        style={[styles.secondaryPill, selected && styles.secondaryPillActive]}
+                        onPress={() => toggleSecondaryGoal(goal)}
+                      >
+                        <Text
+                          style={[
+                            styles.secondaryPillText,
+                            selected && styles.secondaryPillTextActive,
+                          ]}
+                        >
+                          {selected ? '✓ ' : '+ '}
+                          {goal}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Section 3: Logistics & Equipment Inventory */}
+              <Text style={styles.sectionTitle}>3. LOGISTICS & EQUIPMENT INVENTORY</Text>
+              <View style={styles.card}>
+                <Text style={styles.inputLabel}>Equipment Access</Text>
+                {[
+                  { id: 'commercial_gym', label: 'Commercial Gym (Barbells, Dumbbells, Cables, Machines)' },
+                  { id: 'garage_gym', label: 'Garage Gym (Barbells, Dumbbells, Pull-up Bar)' },
+                  { id: 'dumbbells_only', label: 'Dumbbells Only (Dumbbells & Adjustable Bench)' },
+                  { id: 'bodyweight_only', label: 'Bodyweight Only (Calisthenics)' },
+                ].map((eq) => (
+                  <TouchableOpacity
+                    key={eq.id}
+                    testID={`equipment-${eq.id}`}
+                    style={[
+                      styles.optionRow,
+                      equipmentAccess === eq.id && styles.optionRowActive,
+                    ]}
+                    onPress={() => setEquipmentAccess(eq.id as EquipmentAccess)}
+                  >
+                    <View style={styles.optionRadio}>
+                      {equipmentAccess === eq.id && <View style={styles.optionRadioInner} />}
+                    </View>
+                    <Text
+                      style={[
+                        styles.optionTitle,
+                        equipmentAccess === eq.id && styles.optionTitleActive,
+                      ]}
+                    >
+                      {eq.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+
+                {/* Section: Gym Equipment & Gear Inventory (ADR-025) */}
+                <View style={styles.gearCard}>
+                  <View style={styles.gearCardHeader}>
+                    <Text style={styles.gearCardTitle}>Gear & Equipment Inventory</Text>
+                  </View>
+                  <Text style={styles.gearCardDesc}>
+                    Configure your gym's specific barbells (Olympic, Safety Squat Bar, Trap Bar) and cable machines. Equipment saved here is available for selection across exercises, workout sessions, and program templates.
+                  </Text>
+                  {gearRepo ? (
+                    <TouchableOpacity
+                      testID="open-gear-inventory-btn"
+                      style={styles.openGearBtn}
+                      onPress={() => setShowGearInventory(true)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.openGearBtnText}>Manage Equipment Inventory ➔</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={styles.gearDisabledText}>Gear repository not connected</Text>
+                  )}
+                </View>
+              </View>
+
+              {/* Action Buttons (3 Distinct Paths: Step 8.3 & Beta Gating) */}
+              <View style={styles.actionButtonsContainer}>
+                {(!isBeta || isCycleCompleted) && (
+                  <TouchableOpacity
+                    testID="evolve-ongoing-program-btn"
+                    style={[
+                      styles.evolveProgramBtn,
+                      evolving && styles.btnDisabled,
+                      isCycleCompleted && styles.evolveProgramBtnCompleted,
+                    ]}
+                    onPress={handleEvolveOngoingProgram}
+                    disabled={evolving || generating || saving}
+                    activeOpacity={0.8}
+                  >
+                    {evolving ? (
+                      <ActivityIndicator size="small" color="#0A0A0A" />
+                    ) : (
+                      <Text style={styles.evolveProgramBtnText}>
+                        {isCycleCompleted
+                          ? '🎉 Mesocycle Completed — Evolve Next Meso'
+                          : '⚡ Evolve Ongoing Program for Next Meso'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  testID="generate-custom-program-btn"
+                  style={[styles.generateProgramBtn, generating && styles.btnDisabled]}
+                  onPress={handleGenerateProgram}
+                  disabled={generating || evolving || saving}
+                  activeOpacity={0.8}
+                >
+                  {generating ? (
+                    <ActivityIndicator size="small" color="#0A0A0A" />
+                  ) : (
+                    <Text style={styles.generateProgramBtnText}>Create Brand New Program</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  testID="save-profile-btn"
+                  style={[styles.saveProfileBtn, saving && styles.btnDisabled]}
+                  onPress={handleSaveProfile}
+                  disabled={saving || generating || evolving}
+                  activeOpacity={0.8}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#00E676" />
+                  ) : (
+                    <Text style={styles.saveProfileBtnText}>Save Preferences Only</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
       </ScrollView>
+
+      {/* Mesocycle Evolution Diff Modal */}
+      {showEvolutionModal && evolutionResult && (
+        <Modal
+          visible={showEvolutionModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowEvolutionModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.evolutionModalCard}>
+              <View style={styles.evolutionModalHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.evolutionModalBadge}>
+                    MESOCYCLE {evolutionResult.mesoNumber} STAGED
+                  </Text>
+                  <Text style={styles.evolutionModalTitle}>What Changed & Why</Text>
+                </View>
+                <TouchableOpacity
+                  testID="close-evolution-modal-x"
+                  onPress={() => {
+                    setShowEvolutionModal(false);
+                    setShowProgramOverview(true);
+                  }}
+                  style={styles.modalCloseBtn}
+                >
+                  <Text style={styles.modalCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.evolutionDiffScroll}>
+                <Text style={styles.evolutionDiffMarkdown}>
+                  {evolutionResult.diffMarkdown}
+                </Text>
+              </ScrollView>
+              <TouchableOpacity
+                testID="close-evolution-modal-btn"
+                style={styles.closeEvolutionBtn}
+                onPress={() => {
+                  setShowEvolutionModal(false);
+                  setShowProgramOverview(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.closeEvolutionBtnText}>
+                  Accept Meso {evolutionResult.mesoNumber} Adjustments ✓
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* Program Overview & Builder Modal */}
       {showProgramOverview && programRepo && programBlockService && (
@@ -693,6 +923,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           animationType="slide"
           onRequestClose={() => {
             setShowProgramOverview(false);
+            setLastGeneratedProgramId(null);
             loadProfile();
           }}
         >
@@ -701,13 +932,10 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
             programBlockService={programBlockService}
             exerciseRepo={exerciseRepo}
             gearRepo={gearRepo}
+            initialProgramId={lastGeneratedProgramId || activeInfo?.program.id}
             onClose={() => {
               setShowProgramOverview(false);
-              loadProfile();
-            }}
-            onSelectProgram={async (progId) => {
-              await programBlockService.swapActiveProgram(progId);
-              setShowProgramOverview(false);
+              setLastGeneratedProgramId(null);
               loadProfile();
             }}
           />
@@ -1122,18 +1350,37 @@ const styles = StyleSheet.create({
     marginTop: 16,
     gap: 12,
   },
-  generateProgramBtn: {
+  evolveProgramBtn: {
     backgroundColor: '#00E676',
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  generateProgramBtnText: {
+  evolveProgramBtnCompleted: {
+    backgroundColor: '#38BDF8',
+    borderWidth: 1,
+    borderColor: '#7DD3FC',
+  },
+  evolveProgramBtnText: {
     color: '#0A0A0A',
     fontSize: 15,
     fontWeight: '900',
     letterSpacing: -0.2,
+  },
+  generateProgramBtn: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    paddingVertical: 13,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  generateProgramBtnText: {
+    color: '#38BDF8',
+    fontSize: 14,
+    fontWeight: '800',
   },
   saveProfileBtn: {
     backgroundColor: '#18181B',
@@ -1147,6 +1394,84 @@ const styles = StyleSheet.create({
     color: '#D4D4D8',
     fontSize: 13,
     fontWeight: '600',
+  },
+  pendingMoodBadge: {
+    backgroundColor: '#002914',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  pendingMoodBadgeText: {
+    color: '#00E676',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  evolutionModalCard: {
+    backgroundColor: '#121214',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#00E676',
+    width: '100%',
+    maxHeight: '80%',
+    padding: 20,
+  },
+  evolutionModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  evolutionModalBadge: {
+    color: '#00E676',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  evolutionModalTitle: {
+    color: '#FAFAFA',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalCloseBtn: {
+    padding: 6,
+  },
+  modalCloseText: {
+    color: '#A1A1AA',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  evolutionDiffScroll: {
+    maxHeight: 320,
+    marginVertical: 12,
+  },
+  evolutionDiffMarkdown: {
+    color: '#D4D4D8',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  closeEvolutionBtn: {
+    backgroundColor: '#00E676',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  closeEvolutionBtnText: {
+    color: '#0A0A0A',
+    fontSize: 14,
+    fontWeight: '900',
   },
   btnDisabled: {
     opacity: 0.6,

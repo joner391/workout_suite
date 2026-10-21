@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "exported_at": "2026-10-19T11:37:26.215Z",
+  "exported_at": "2026-10-21T07:31:54.318Z",
   "programs": [
     {
       "id": "prog-hypertrophy-01",
@@ -40,7 +40,8 @@
       "target_rpe": 8.5,
       "target_rir": 1.5,
       "order_index": 0,
-      "exercise_group_id": null
+      "exercise_group_id": null,
+      "set_type": "working"
     }
   ],
   "progression_rules": [
@@ -130,7 +131,11 @@
       "is_custom": false,
       "parent_exercise_id": null,
       "standard_lift_type": "bench",
-      "default_rest_seconds": 180
+      "default_rest_seconds": 180,
+      "axial_loading": "none",
+      "rom_tier": "standard_full",
+      "baseline_sfr": 50,
+      "exercise_tier": 2
     },
     {
       "id": "dumbbell_incline_press",
@@ -146,7 +151,11 @@
       "is_custom": false,
       "parent_exercise_id": "barbell_bench_press",
       "standard_lift_type": "bench",
-      "default_rest_seconds": 120
+      "default_rest_seconds": 120,
+      "axial_loading": "none",
+      "rom_tier": "standard_full",
+      "baseline_sfr": 50,
+      "exercise_tier": 2
     }
   ],
   "gear_inventory": [
@@ -221,6 +230,10 @@
       "preferred_days_per_week": 4,
       "preferred_session_duration_mins": 75,
       "equipment_access": "commercial_gym",
+      "experience_level": "intermediate",
+      "pending_meso_mood": false,
+      "has_axial_fatigue_sensitivity": false,
+      "is_caloric_deficit": false,
       "created_at": "2026-10-01T07:00:00.000Z",
       "updated_at": "2026-10-13T20:00:00.000Z"
     }
@@ -236,5 +249,30 @@
       "calibrated_at": "2026-10-13T20:00:00.000Z"
     }
   ],
-  "pain_reports": []
+  "pain_reports": [
+    {
+      "id": "pain-bench-01",
+      "workout_id": "workout-20261013-01",
+      "exercise_id": "barbell_bench_press",
+      "set_id": "set-bench-w1",
+      "pain_type": "joint",
+      "severity": 4,
+      "joint_location": "shoulder",
+      "notes": "Pinch at the bottom of the rep",
+      "created_at": "2026-10-13T17:55:00.000Z"
+    }
+  ],
+  "exercise_preferences": [
+    {
+      "exercise_id": "barbell_bench_press",
+      "sentiment": "liked",
+      "swap_in_count": 2,
+      "swap_out_count": 0,
+      "affinity_score": 25,
+      "last_pain_reported_at": "2026-10-15T12:00:00.000Z",
+      "max_pain_severity": 2,
+      "pain_joint": "shoulder",
+      "updated_at": "2026-10-15T12:00:00.000Z"
+    }
+  ]
 }

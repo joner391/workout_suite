@@ -7,6 +7,7 @@ import {
   IntensityStyle,
   PrimaryGoal,
   EquipmentAccess,
+  ExperienceLevel,
 } from '../../core/types';
 import { ISQLiteDatabase } from '../schema';
 
@@ -23,6 +24,10 @@ interface UserProfileRow {
   preferred_days_per_week: number;
   preferred_session_duration_mins: number;
   equipment_access: EquipmentAccess;
+  experience_level?: any;
+  pending_meso_mood?: number | boolean;
+  has_axial_fatigue_sensitivity?: number | boolean;
+  is_caloric_deficit?: number | boolean;
   created_at: string;
   updated_at: string;
 }
@@ -57,6 +62,10 @@ function mapRowToUserProfile(row: UserProfileRow): UserProfile {
     preferred_days_per_week: Number(row.preferred_days_per_week ?? 4),
     preferred_session_duration_mins: Number(row.preferred_session_duration_mins ?? 60),
     equipment_access: row.equipment_access ?? 'commercial_gym',
+    experience_level: row.experience_level ?? 'intermediate',
+    pending_meso_mood: Boolean(row.pending_meso_mood),
+    has_axial_fatigue_sensitivity: Boolean(row.has_axial_fatigue_sensitivity),
+    is_caloric_deficit: Boolean(row.is_caloric_deficit),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -90,21 +99,25 @@ export class SQLiteUserProfileRepository implements IUserProfileRepository {
 
     await this.db.runAsync(
       `INSERT OR REPLACE INTO user_profiles (
-         id, gender, birthdate, height_cm, training_mentality, intensity_style,
+         id, gender, birthdate, height_cm, training_mentality,
          primary_goal, secondary_goals, preferred_days_per_week,
-         preferred_session_duration_mins, equipment_access, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+         preferred_session_duration_mins, equipment_access, experience_level, pending_meso_mood,
+         has_axial_fatigue_sensitivity, is_caloric_deficit, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       profile.id,
       profile.gender,
       profile.birthdate,
       profile.height_cm,
       profile.training_mentality,
-      profile.intensity_style ?? null,
       profile.primary_goal,
       serializedSecondaryGoals,
       profile.preferred_days_per_week,
       profile.preferred_session_duration_mins,
       profile.equipment_access,
+      profile.experience_level ?? 'intermediate',
+      profile.pending_meso_mood ? 1 : 0,
+      profile.has_axial_fatigue_sensitivity ? 1 : 0,
+      profile.is_caloric_deficit ? 1 : 0,
       profile.created_at,
       profile.updated_at
     );

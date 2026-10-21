@@ -1,3 +1,5 @@
+> **Historical reference:** This document contains past plans, audits, or proposals with mixed completion status. Its agent instructions, verification gates, and unchecked items do not assign current work. Follow the latest user request, root `AGENTS.md`, and [current documentation guidance](../README.md). Verify implementation claims against source.
+
 # datSet — UX & Navigation Feedback Report
 
 > Full-codebase audit of every screen, modal, and component in the mobile app.
@@ -39,14 +41,14 @@ Every secondary screen is wrapped in a React Native `<Modal>`. This causes:
 
 | Parent Screen | Modal Opened | File |
 |---------------|-------------|------|
-| [App.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/App.tsx) | WorkoutTabRouter (kept mounted), other tabs conditional-rendered | Root |
-| [UserProfileScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/profile/UserProfileScreen.tsx) | ProgramOverviewScreen, GearInventoryScreen, BodyMetricsScreen | 3 modals |
-| [SettingsScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/settings/SettingsScreen.tsx) | ProgramOverviewScreen, ExerciseLibraryScreen, ImportScreen | 3 modals |
-| [ActiveLoggerScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/ActiveLoggerScreen.tsx) | **9 modals** (Gear Picker, Add Exercise, Full Library, Finish Confirm, Superset, CrashRecovery, PlateCalc, Pain, Substitution) | 9 modals |
-| [ExerciseLibraryScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/inspection/ExerciseLibraryScreen.tsx) | ExerciseDetailScreen, ExerciseFormModal | 2 modals |
-| [ExerciseDetailScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/inspection/ExerciseDetailScreen.tsx) | SessionDetailModal, SBDBalanceRadarChart | 2 modals |
-| [ProgramOverviewScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/progression/ProgramOverviewScreen.tsx) | EditTemplateModal, CatalogPickerModal, PrescriptionEditorModal, ProgressionBuilderModal + 2 inline | **6 modals** |
-| [HomeScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/home/HomeScreen.tsx) | BodyMetricsScreen, SBDBalanceRadarChart, WorkloadDeepDiveModal + embedded CalendarScreen's modal | 4 modals |
+| [App.tsx](../../mobile/App.tsx) | WorkoutTabRouter (kept mounted), other tabs conditional-rendered | Root |
+| [UserProfileScreen](../../mobile/src/features/profile/UserProfileScreen.tsx) | ProgramOverviewScreen, GearInventoryScreen, BodyMetricsScreen | 3 modals |
+| [SettingsScreen](../../mobile/src/features/settings/SettingsScreen.tsx) | ProgramOverviewScreen, ExerciseLibraryScreen, ImportScreen | 3 modals |
+| [ActiveLoggerScreen](../../mobile/src/features/logger/ActiveLoggerScreen.tsx) | **9 modals** (Gear Picker, Add Exercise, Full Library, Finish Confirm, Superset, CrashRecovery, PlateCalc, Pain, Substitution) | 9 modals |
+| [ExerciseLibraryScreen](../../mobile/src/features/inspection/ExerciseLibraryScreen.tsx) | ExerciseDetailScreen, ExerciseFormModal | 2 modals |
+| [ExerciseDetailScreen](../../mobile/src/features/inspection/ExerciseDetailScreen.tsx) | SessionDetailModal, SBDBalanceRadarChart | 2 modals |
+| [ProgramOverviewScreen](../../mobile/src/features/progression/ProgramOverviewScreen.tsx) | EditTemplateModal, CatalogPickerModal, PrescriptionEditorModal, ProgressionBuilderModal + 2 inline | **6 modals** |
+| [HomeScreen](../../mobile/src/features/home/HomeScreen.tsx) | BodyMetricsScreen, SBDBalanceRadarChart, WorkloadDeepDiveModal + embedded CalendarScreen's modal | 4 modals |
 
 > [!IMPORTANT]
 > **Proposed fix:** Introduce a lightweight navigation stack (React Navigation
@@ -63,7 +65,7 @@ and cognitive overload.
 
 #### HomeScreen — "The Infinite Dashboard"
 
-[HomeScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/home/HomeScreen.tsx) stacks **4 major subsystems** vertically:
+[HomeScreen.tsx](../../mobile/src/features/home/HomeScreen.tsx) stacks **4 major subsystems** vertically:
 
 ```
 ┌─────────────────────────────┐
@@ -84,7 +86,7 @@ and cognitive overload.
 **Concrete problems:**
 - The **Next Workout card looks like a primary CTA** (green `#00E676` border)
   but is **completely non-tappable** — `onNavigateToWorkout` prop exists but is
-  never wired to any `<TouchableOpacity>`. ([Lines 318–332](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/home/HomeScreen.tsx#L318-L332))
+  never wired to any `<TouchableOpacity>`. ([Lines 318–332](../../mobile/src/features/home/HomeScreen.tsx#L318-L332))
 - **Nested scroll conflict**: CalendarScreen's inner `FlatList` sits inside
   HomeScreen's outer `ScrollView` — classic RN virtualization warning, erratic
   scroll physics, momentum lockups
@@ -99,7 +101,7 @@ and cognitive overload.
 
 #### SettingsScreen — "Everything Drawer"
 
-[SettingsScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/settings/SettingsScreen.tsx) (1,005 lines) mixes:
+[SettingsScreen.tsx](../../mobile/src/features/settings/SettingsScreen.tsx) (1,005 lines) mixes:
 
 - Quick daily toggles (kg/lbs, RPE/RIR)
 - Feature launchers (Exercise Library, Program Builder)
@@ -119,7 +121,7 @@ wizards, database internals, and Epley/Brzycki citations.
 
 #### UserProfileScreen — "The Giant Form"
 
-[UserProfileScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/profile/UserProfileScreen.tsx) (1,301 lines) hides the Gear Inventory button inside
+[UserProfileScreen.tsx](../../mobile/src/features/profile/UserProfileScreen.tsx) (1,301 lines) hides the Gear Inventory button inside
 "Section 4: Schedule & Equipment Constraints" of a collapsible questionnaire.
 When expanded, the scroll height exceeds **1500pt**.
 
@@ -163,11 +165,11 @@ obscure inputs and action buttons:
 
 | Component | Issue |
 |-----------|-------|
-| [EditTemplateModal](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/progression/EditTemplateModal.tsx) | Notes input + Save button pushed off-screen |
-| [PrescriptionEditorModal](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/progression/PrescriptionEditorModal.tsx) | Nested scroll with `maxHeight: 80%` clips under keyboard |
-| [PainReportModal](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/PainReportModal.tsx) | Notes field at `maxHeight: 460` clips Submit buttons |
-| [GearInventoryScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/gear/GearInventoryScreen.tsx) | Hardcoded `maxHeight: 400` modal form |
-| [BodyMetricsScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/bodyMetrics/BodyMetricsScreen.tsx) | 9 raw text inputs without keyboard handling |
+| [EditTemplateModal](../../mobile/src/features/progression/EditTemplateModal.tsx) | Notes input + Save button pushed off-screen |
+| [PrescriptionEditorModal](../../mobile/src/features/progression/PrescriptionEditorModal.tsx) | Nested scroll with `maxHeight: 80%` clips under keyboard |
+| [PainReportModal](../../mobile/src/features/logger/PainReportModal.tsx) | Notes field at `maxHeight: 460` clips Submit buttons |
+| [GearInventoryScreen](../../mobile/src/features/gear/GearInventoryScreen.tsx) | Hardcoded `maxHeight: 400` modal form |
+| [BodyMetricsScreen](../../mobile/src/features/bodyMetrics/BodyMetricsScreen.tsx) | 9 raw text inputs without keyboard handling |
 
 ---
 
@@ -175,7 +177,7 @@ obscure inputs and action buttons:
 
 ### 2.1 Calendar
 
-**File:** [CalendarScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/calendar/CalendarScreen.tsx)
+**File:** [CalendarScreen.tsx](../../mobile/src/features/calendar/CalendarScreen.tsx)
 
 | Issue | Impact | Suggested Fix |
 |-------|--------|--------------|
@@ -189,7 +191,7 @@ obscure inputs and action buttons:
 
 ### 2.2 Session Detail Modal
 
-**File:** [SessionDetailModal.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/calendar/SessionDetailModal.tsx)
+**File:** [SessionDetailModal.tsx](../../mobile/src/features/calendar/SessionDetailModal.tsx)
 
 | Issue | Impact | Suggested Fix |
 |-------|--------|--------------|
@@ -201,7 +203,7 @@ obscure inputs and action buttons:
 
 ### 2.3 Active Logger (The God Component)
 
-**File:** [ActiveLoggerScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/ActiveLoggerScreen.tsx) — **2,415 lines**
+**File:** [ActiveLoggerScreen.tsx](../../mobile/src/features/logger/ActiveLoggerScreen.tsx) — **2,415 lines**
 
 > [!WARNING]
 > This single file manages crash recovery, plate math, progression evaluation,
@@ -211,7 +213,7 @@ obscure inputs and action buttons:
 
 #### 2.3a — Set Row Density Crisis
 
-**File:** [SetRowComponent.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/SetRowComponent.tsx) (1,105 lines)
+**File:** [SetRowComponent.tsx](../../mobile/src/features/logger/SetRowComponent.tsx) (1,105 lines)
 
 7 interactive elements packed into ~360px of horizontal width:
 
@@ -252,7 +254,7 @@ Each exercise header crams **7 touch targets** in a ~44px bar:
 
 #### 2.3c — Progression Banner Blocks Content
 
-[ProgressionProposalBanner.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/ProgressionProposalBanner.tsx)
+[ProgressionProposalBanner.tsx](../../mobile/src/features/logger/ProgressionProposalBanner.tsx)
 occupies 140–180px when active, pushing exercise cards off-screen on phones under
 800px. Additionally, only **one proposal is shown at a time** even if 4 exercises
 qualify — the rest are silently dropped.
@@ -263,7 +265,7 @@ qualify — the rest are silently dropped.
 
 #### 2.3d — Plate Calculator UX Gaps
 
-[PlateCalculatorModal.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/PlateCalculatorModal.tsx)
+[PlateCalculatorModal.tsx](../../mobile/src/features/logger/PlateCalculatorModal.tsx)
 
 - **No direct numeric input** — to calculate plates for 142.5 kg starting
   from 20 kg, you must tap `+5` twenty-four times
@@ -272,7 +274,7 @@ qualify — the rest are silently dropped.
 
 #### 2.3e — Pain Report Cognitive Overload
 
-[PainReportModal.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/PainReportModal.tsx)
+[PainReportModal.tsx](../../mobile/src/features/logger/PainReportModal.tsx)
 
 Mid-workout with an elevated heart rate, athletes are asked to:
 1. Select a joint from chips
@@ -289,7 +291,7 @@ Mid-workout with an elevated heart rate, athletes are asked to:
 
 #### 2.3f — Rest Timer Button Cluster
 
-[RestTimerBanner.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/RestTimerBanner.tsx)
+[RestTimerBanner.tsx](../../mobile/src/features/logger/RestTimerBanner.tsx)
 
 4 buttons (`-30s`, `+30s`, `⏸`, `SKIP`) are ~32px wide with 6px gap.
 Fatigued fingers between sets will frequently mis-tap.
@@ -302,7 +304,7 @@ Fatigued fingers between sets will frequently mis-tap.
 
 ### 2.4 Program Builder
 
-**File:** [ProgramOverviewScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/progression/ProgramOverviewScreen.tsx)
+**File:** [ProgramOverviewScreen.tsx](../../mobile/src/features/progression/ProgramOverviewScreen.tsx)
 
 | Issue | Impact | Suggested Fix |
 |-------|--------|--------------|
@@ -313,7 +315,7 @@ Fatigued fingers between sets will frequently mis-tap.
 
 #### Progression Builder — Missing Threshold Input
 
-[ProgressionBuilderModal.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/progression/ProgressionBuilderModal.tsx)
+[ProgressionBuilderModal.tsx](../../mobile/src/features/progression/ProgressionBuilderModal.tsx)
 
 > [!CAUTION]
 > **Bug:** The component declares `conditionThreshold` state but **renders no
@@ -343,7 +345,7 @@ When all sets hit target reps → add +2.5 kg
 
 #### BodyMetricsScreen
 
-[BodyMetricsScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/bodyMetrics/BodyMetricsScreen.tsx) (1,074 lines)
+[BodyMetricsScreen.tsx](../../mobile/src/features/bodyMetrics/BodyMetricsScreen.tsx) (1,074 lines)
 
 | Issue | Suggested Fix |
 |-------|--------------|
@@ -358,7 +360,7 @@ When all sets hit target reps → add +2.5 kg
 
 #### ExerciseLibraryScreen
 
-[ExerciseLibraryScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/inspection/ExerciseLibraryScreen.tsx)
+[ExerciseLibraryScreen.tsx](../../mobile/src/features/inspection/ExerciseLibraryScreen.tsx)
 
 | Issue | Suggested Fix |
 |-------|--------------|
@@ -367,7 +369,7 @@ When all sets hit target reps → add +2.5 kg
 
 #### ExerciseFormModal — Extremely Tall Form
 
-[ExerciseFormModal.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/inspection/ExerciseFormModal.tsx)
+[ExerciseFormModal.tsx](../../mobile/src/features/inspection/ExerciseFormModal.tsx)
 
 9 field groups inside a 90% modal card. Users scroll 3–4 viewport lengths.
 
@@ -382,7 +384,7 @@ When all sets hit target reps → add +2.5 kg
 
 #### PlotsScreen — Monolithic Data Loader
 
-[PlotsScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/plots/PlotsScreen.tsx) (1,528 lines, 16 props)
+[PlotsScreen.tsx](../../mobile/src/features/plots/PlotsScreen.tsx) (1,528 lines, 16 props)
 
 | Issue | Suggested Fix |
 |-------|--------------|
@@ -392,7 +394,7 @@ When all sets hit target reps → add +2.5 kg
 
 #### ProgramEraShadedChart — Invisible Touch Targets
 
-[ProgramEraShadedChart.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/plots/ProgramEraShadedChart.tsx)
+[ProgramEraShadedChart.tsx](../../mobile/src/features/plots/ProgramEraShadedChart.tsx)
 
 - Data point circles are **3.5px radius** (7px diameter) — impossible to tap accurately
 - Beyond 35 points, circles are **hidden entirely** with no visible tap target
@@ -404,7 +406,7 @@ When all sets hit target reps → add +2.5 kg
 
 #### WorkloadDeepDiveModal — Endlessly Long
 
-[WorkloadDeepDiveModal.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/plots/WorkloadDeepDiveModal.tsx)
+[WorkloadDeepDiveModal.tsx](../../mobile/src/features/plots/WorkloadDeepDiveModal.tsx)
 
 4 KPI cards + 12 muscle group bars + 7 daily cards + 2 intensity panels with
 8 distribution bars = **4–5 screen lengths** of content with zero collapsible
@@ -421,7 +423,7 @@ sections.
 
 #### OnboardingWizardModal — Broken Import Handoff
 
-[OnboardingWizardModal.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/onboarding/OnboardingWizardModal.tsx)
+[OnboardingWizardModal.tsx](../../mobile/src/features/onboarding/OnboardingWizardModal.tsx)
 
 When a new user selects "Import Existing History", `App.tsx` does:
 ```tsx
@@ -435,7 +437,7 @@ scroll past 5 sections to find "Import Workouts (CSV Wizard)".
 
 #### ImportScreen — Navigation Dead-End
 
-[ImportScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/import/ImportScreen.tsx)
+[ImportScreen.tsx](../../mobile/src/features/import/ImportScreen.tsx)
 
 After completing an import, the "View Workouts in Calendar ➔" button just calls
 `onClose()`, leaving the user wherever they were (usually Settings), rather than
@@ -489,9 +491,9 @@ same patterns:
 
 ### Custom Tab Bar Without Navigation Library
 
-[App.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/App.tsx#L56-L135) implements tab navigation via raw `useState` and conditional rendering. This
+[App.tsx](../../mobile/App.tsx#L56-L135) implements tab navigation via raw `useState` and conditional rendering. This
 was likely chosen for simplicity and to keep the Workout tab mounted during
-active sessions (`display: 'none'` pattern at [line 337–341](file:///c:/Programmering/Eget/Workout_suite/mobile/App.tsx#L337-L341)). The trade-off is that **every sub-screen must
+active sessions (`display: 'none'` pattern at [line 337–341](../../mobile/App.tsx#L337-L341)). The trade-off is that **every sub-screen must
 be a Modal** because there's no stack navigator to push onto.
 
 **The keep-mounted pattern is valid** — React Navigation supports it via
@@ -509,8 +511,8 @@ eliminating the drilling.
 
 ### God Components
 
-[ActiveLoggerScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/ActiveLoggerScreen.tsx) (2,415 lines) and
-[PlotsScreen.tsx](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/plots/PlotsScreen.tsx) (1,528 lines) grew
+[ActiveLoggerScreen.tsx](../../mobile/src/features/logger/ActiveLoggerScreen.tsx) (2,415 lines) and
+[PlotsScreen.tsx](../../mobile/src/features/plots/PlotsScreen.tsx) (1,528 lines) grew
 organically as features were added. Extracting custom hooks
 (`useActiveWorkout`, `useCrashRecovery`, `useProgressionProposal`,
 `useExerciseModals`) would reduce these to manageable sizes without changing
@@ -522,13 +524,13 @@ any user-facing behavior.
 
 | Component | Lines | Props | Modals | Scroll Issues |
 |-----------|------:|------:|-------:|:---:|
-| [ActiveLoggerScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/ActiveLoggerScreen.tsx) | 2,415 | 14 | 9 | ⚠️ No virtualization |
-| [PlotsScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/plots/PlotsScreen.tsx) | 1,528 | 16 | 0 | ⚠️ No outer scroll, eager loading |
-| [UserProfileScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/profile/UserProfileScreen.tsx) | 1,301 | 11 | 3 | ⚠️ 1500pt+ expanded height |
-| [ImportScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/import/ImportScreen.tsx) | 1,182 | 5 | 0 | ⚠️ Unvirtualized exercise map |
-| [SetRowComponent](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/logger/SetRowComponent.tsx) | 1,105 | 12 | 0 | ⚠️ Double jolt on focus |
-| [GearInventoryScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/gear/GearInventoryScreen.tsx) | 1,091 | 4 | 1 | ⚠️ Fixed maxHeight modal |
-| [BodyMetricsScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/bodyMetrics/BodyMetricsScreen.tsx) | 1,074 | 5 | 0 | ⚠️ Unvirtualized history |
-| [SettingsScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/settings/SettingsScreen.tsx) | 1,005 | 13 | 3 | ⚠️ 2000pt+ scroll |
-| [ProgramOverviewScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/progression/ProgramOverviewScreen.tsx) | ~900 | 6 | 6 | ⚠️ No virtualization |
-| [HomeScreen](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/home/HomeScreen.tsx) | ~800 | 11 | 4 | ⚠️ Nested FlatList in ScrollView |
+| [ActiveLoggerScreen](../../mobile/src/features/logger/ActiveLoggerScreen.tsx) | 2,415 | 14 | 9 | ⚠️ No virtualization |
+| [PlotsScreen](../../mobile/src/features/plots/PlotsScreen.tsx) | 1,528 | 16 | 0 | ⚠️ No outer scroll, eager loading |
+| [UserProfileScreen](../../mobile/src/features/profile/UserProfileScreen.tsx) | 1,301 | 11 | 3 | ⚠️ 1500pt+ expanded height |
+| [ImportScreen](../../mobile/src/features/import/ImportScreen.tsx) | 1,182 | 5 | 0 | ⚠️ Unvirtualized exercise map |
+| [SetRowComponent](../../mobile/src/features/logger/SetRowComponent.tsx) | 1,105 | 12 | 0 | ⚠️ Double jolt on focus |
+| [GearInventoryScreen](../../mobile/src/features/gear/GearInventoryScreen.tsx) | 1,091 | 4 | 1 | ⚠️ Fixed maxHeight modal |
+| [BodyMetricsScreen](../../mobile/src/features/bodyMetrics/BodyMetricsScreen.tsx) | 1,074 | 5 | 0 | ⚠️ Unvirtualized history |
+| [SettingsScreen](../../mobile/src/features/settings/SettingsScreen.tsx) | 1,005 | 13 | 3 | ⚠️ 2000pt+ scroll |
+| [ProgramOverviewScreen](../../mobile/src/features/progression/ProgramOverviewScreen.tsx) | ~900 | 6 | 6 | ⚠️ No virtualization |
+| [HomeScreen](../../mobile/src/features/home/HomeScreen.tsx) | ~800 | 11 | 4 | ⚠️ Nested FlatList in ScrollView |

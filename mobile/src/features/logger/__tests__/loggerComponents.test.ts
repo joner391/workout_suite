@@ -1360,6 +1360,39 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
       expect(updatedSets[0].raw_input_weight).toBe(105);
       expect(updatedSets[1].raw_input_weight).toBe(105);
     });
+
+    test('resolves planned working weight from ghost sets when active sets have weight 0', async () => {
+      // Historical completed session with 100kg squat
+      const pastWorkout = await sessionService.startWorkout({
+        name: 'Past Squat',
+      });
+      await sessionService.addSet(pastWorkout.id, {
+        exerciseId: mockSquat.id,
+        rawInputWeight: 100,
+        reps: 5,
+        rpe: 8,
+        rir: 2,
+        setType: 'working',
+      });
+      await sessionService.finishWorkout(pastWorkout.id);
+
+      const activeWorkout = await sessionService.startWorkout({
+        name: 'Active Squat Session',
+      });
+
+      const ghosts = await sessionService.getGhostSetsForExercise(mockSquat.id);
+      expect(ghosts.length).toBeGreaterThan(0);
+      expect(ghosts[0].raw_input_weight).toBe(100);
+
+      // Generating warmups automatically leverages ghost 100kg
+      const warmups = await sessionService.generateWarmupSetsForExercise(
+        activeWorkout.id,
+        mockSquat.id
+      );
+      expect(warmups.length).toBeGreaterThanOrEqual(3);
+      expect(warmups[0].raw_input_weight).toBe(20);
+      expect(warmups[warmups.length - 1].raw_input_weight).toBeGreaterThan(50);
+    });
   });
 });
 

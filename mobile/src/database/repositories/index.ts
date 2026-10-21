@@ -6,3 +6,4 @@ export * from './SQLiteProgramRepository';
 export * from './SQLiteUserProfileRepository';
 export * from './SQLiteBodyMetricsRepository';
 export * from './SQLitePainReportRepository';
+export * from './SQLiteExercisePreferenceRepository';

@@ -28,6 +28,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import math
+import re
 from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
@@ -75,6 +76,10 @@ ProgramAuditType = Literal[
     "JUNK_VOLUME",
     "AXIAL_BOTTLENECK",
     "REP_MONOTONY",
+    "VOLUME_ESCALATION",
+    "AMRAP_LOAD_INCREASE",
+    "CONVERT_TO_MYOREP",
+    "BLOCK_LENGTH_DECISION",
 ]
 
 AuditSeverity = Literal["INFO", "WARNING", "CRITICAL"]
@@ -311,6 +316,8 @@ def generate_parameter_audits(
     preparedness_series: Optional[Sequence[DailyPreparedness]] = None,
     as_of_date: Optional[Union[str, datetime, date]] = None,
     k_t: float = 0.10,
+    mesocycle_recommendation: Optional[Any] = None,
+    preferred_session_duration_mins: int = 60,
 ) -> List[ProgramParameterAudit]:
     """Evaluates program parameter audit rules and returns structured advisories.
 
@@ -327,8 +334,20 @@ def generate_parameter_audits(
     4. REP_MONOTONY:
        > 85% of working sets within +/- 1 rep band AND e10RM slope <= 0
        -> Undulate rep brackets (e.g. top set 5-7 reps + back-off 10-14 reps)
+    5. VOLUME_ESCALATION:
+       Weekly volume <= MAV_m AND mean RPE < 7.8 AND e10RM slope >= 0
+       -> Increase weekly sets by +2 sets/week toward optimal adaptive volume
+    6. AMRAP_LOAD_INCREASE:
+       Diagnostic AMRAP set reps > targetMax
+       -> Increase load by +1% per rep over cap (floor-rounded to 2.5 kg)
+    7. CONVERT_TO_MYOREP:
+       Median session duration > preferred_session_duration_mins
+       -> Convert candidate accessory to Myo-rep cluster
+    8. BLOCK_LENGTH_DECISION:
+       Bayesian optimal accumulation weeks and greedy fatigue pathway
+       -> Set mesocycle block length (weeks) and schedule deload
     """
-    if not workout_sets:
+    if not workout_sets and mesocycle_recommendation is None:
         return []
 
     # 1. Resolve anchor date
@@ -540,6 +559,8 @@ def generate_parameter_audits(
                 muscle_working_rpes.setdefault(sm_clean, []).append(rpe_val)
 
     # Check each muscle against MAV
+    junk_volume_muscles: Set[str] = set()
+
     for muscle, total_sets in muscle_volume_sets.items():
         weekly_sets = total_sets / 4.0  # 4 weeks in 28 days
 
@@ -559,6 +580,7 @@ def generate_parameter_audits(
                 mean_slope = float(np.mean(slopes)) if slopes else 0.0
 
                 if mean_slope <= 0.0:
+                    junk_volume_muscles.add(muscle)
                     audits.append(
                         ProgramParameterAudit(
                             audit_type="JUNK_VOLUME",
@@ -576,6 +598,7 @@ def generate_parameter_audits(
                                 "(1-1.5 RIR) to eliminate non-stimulating junk volume."
                             ),
                             parameter_adjustments={
+                                "prune_percentage": int(JUNK_VOLUME_REDUCTION_FACTOR * 100),
                                 "recommended_volume_multiplier": 1.0 - JUNK_VOLUME_REDUCTION_FACTOR,
                                 "target_rpe_min": JUNK_VOLUME_RECOMMENDED_RPE_MIN,
                                 "target_rpe_max": JUNK_VOLUME_RECOMMENDED_RPE_MAX,
@@ -608,6 +631,17 @@ def generate_parameter_audits(
                         )
                         bb_share = bb_sets / float(len(m_sets))
                         if bb_share > AXIAL_BARBELL_VOLUME_SHARE_THRESHOLD:
+                            # Search for a candidate machine/cable replacement in the catalog
+                            candidate_sub_id: Optional[str] = None
+                            for cand_ex in (exercises or []):
+                                if (
+                                    str(_get_val(cand_ex, "muscle_group", "")).strip().capitalize() == muscle
+                                    and str(_get_val(cand_ex, "category", "")).strip().lower() in ("machine", "cable", "dumbbell")
+                                ):
+                                    candidate_sub_id = str(_get_val(cand_ex, "id", ""))
+                                    break
+                            sub_val = candidate_sub_id if candidate_sub_id else "Machine/Cable Variant"
+
                             audits.append(
                                 ProgramParameterAudit(
                                     audit_type="AXIAL_BOTTLENECK",
@@ -624,7 +658,10 @@ def generate_parameter_audits(
                                         "Swap 1 compound Barbell exercise for an equivalent Dumbbell, Machine, or Cable movement "
                                         "to deload spinal compression while preserving high local mechanical tension."
                                     ),
-                                    parameter_adjustments={"swap_barbell_for_machine_or_cable": True},
+                                    parameter_adjustments={
+                                        "substitute_exercise_id": sub_val,
+                                        "swap_barbell_for_machine_or_cable": True,
+                                    },
                                 )
                             )
 
@@ -677,6 +714,162 @@ def generate_parameter_audits(
                             },
                         )
                     )
+
+    # -------------------------------------------------------------------------
+    # Rule 5: VOLUME_ESCALATION (Under-Stimulated Archetype A)
+    # -------------------------------------------------------------------------
+    for muscle, total_sets in muscle_volume_sets.items():
+        if muscle in junk_volume_muscles:
+            continue
+        weekly_sets = total_sets / 4.0
+        mav_val = 14.0
+        if landmarks_by_muscle and muscle in landmarks_by_muscle:
+            lm_obj = landmarks_by_muscle[muscle]
+            mav_val = float(_get_val(lm_obj, "mav", 14.0))
+
+        if weekly_sets <= mav_val:
+            rpes = muscle_working_rpes.get(muscle, [])
+            mean_rpe = float(np.mean(rpes)) if rpes else 8.0
+            eids = muscle_exercise_ids.get(muscle, set())
+            slopes = [e10rm_slope_by_ex.get(eid, 0.0) for eid in eids]
+            mean_slope = float(np.mean(slopes)) if slopes else 0.0
+
+            if mean_rpe < 7.8 and mean_slope >= 0.0:
+                audits.append(
+                    ProgramParameterAudit(
+                        audit_type="VOLUME_ESCALATION",
+                        severity="INFO",
+                        target_id=muscle,
+                        target_type="muscle_group",
+                        message=(
+                            f"Muscle group '{muscle}' recovered easily with low fatigue (mean RPE {mean_rpe:.1f}) "
+                            f"and steady progression. Added +2 sets/week (new target: {int(weekly_sets + 2)} sets) "
+                            "to reach optimal adaptive growth volume."
+                        ),
+                        recommended_action=f"Increase weekly sets for '{muscle}' by +2 sets/week.",
+                        parameter_adjustments={
+                            "set_delta": 2,
+                            "new_weekly_sets": int(weekly_sets + 2),
+                            "mean_rpe": round(mean_rpe, 1),
+                        },
+                    )
+                )
+
+    # -------------------------------------------------------------------------
+    # Rule 6: AMRAP_LOAD_INCREASE (Floor Rounded AMRAP Escalation)
+    # -------------------------------------------------------------------------
+    for s in window_sets:
+        stype = str(_get_val(s, "set_type", "")).strip().lower()
+        snotes = str(_get_val(s, "set_notes", "") or "").lower()
+        if stype == "amrap" or "amrap" in snotes:
+            actual_reps = int(_get_val(s, "reps", 0))
+            target_max = 10
+            m_target = re.search(r'(?:target_reps|pred(?:icted)?_reps)[\"\'\s:=]+(\d+)', snotes)
+            if m_target:
+                target_max = int(m_target.group(1))
+
+            if actual_reps > target_max:
+                reps_over = actual_reps - target_max
+                pct_gain = round(reps_over * 1.0, 1)  # +1% per rep over cap
+                old_weight = float(_get_val(s, "weight", 0.0))
+                raw_new = old_weight * (1.0 + (pct_gain / 100.0))
+                new_weight = math.floor((raw_new + 1e-9) / 2.5) * 2.5
+                if new_weight > old_weight:
+                    eid = str(_get_val(s, "exercise_id", ""))
+                    ex = ex_map.get(eid)
+                    ex_name = str(_get_val(ex, "name", eid))
+                    audits.append(
+                        ProgramParameterAudit(
+                            audit_type="AMRAP_LOAD_INCREASE",
+                            severity="INFO",
+                            target_id=eid,
+                            target_type="exercise",
+                            message=(
+                                f"On your diagnostic AMRAP set, you completed {actual_reps} reps against your {target_max} "
+                                f"rep target ({reps_over} reps over). Working load on '{ex_name}' increased from "
+                                f"{old_weight:.1f} kg to {new_weight:.1f} kg (+{pct_gain}%)."
+                            ),
+                            recommended_action=f"Increase working load on '{ex_name}' to {new_weight:.1f} kg.",
+                            parameter_adjustments={
+                                "new_weight_kg": new_weight,
+                                "actual_reps": actual_reps,
+                                "target_max": target_max,
+                                "reps_over": reps_over,
+                                "pct_gain": pct_gain,
+                                "old_weight_kg": old_weight,
+                            },
+                        )
+                    )
+
+    # -------------------------------------------------------------------------
+    # Rule 7: CONVERT_TO_MYOREP (Time-Budget Compression)
+    # -------------------------------------------------------------------------
+    durations = [
+        float(_get_val(w, "duration_seconds", 0.0)) / 60.0
+        for w in workouts
+        if _get_val(w, "duration_seconds") is not None and float(_get_val(w, "duration_seconds", 0.0)) > 0
+    ]
+    median_duration = float(np.median(durations)) if durations else 0.0
+    if median_duration > preferred_session_duration_mins:
+        for eid, e_sets in sets_by_exercise.items():
+            ex = ex_map.get(eid)
+            is_comp = bool(_get_val(ex, "is_compound", True))
+            cat = str(_get_val(ex, "category", "")).strip().lower()
+            if not is_comp or cat in ("cable", "machine", "dumbbell"):
+                ex_name = str(_get_val(ex, "name", eid))
+                audits.append(
+                    ProgramParameterAudit(
+                        audit_type="CONVERT_TO_MYOREP",
+                        severity="INFO",
+                        target_id=eid,
+                        target_type="exercise",
+                        message=(
+                            f"To keep your workout strictly within your {preferred_session_duration_mins}-minute limit, "
+                            f"straight sets for '{ex_name}' were converted into 1 Myo-rep cluster, harvesting "
+                            "12 stimulating reps in under 2 minutes."
+                        ),
+                        recommended_action=f"Convert accessory exercise '{ex_name}' to Myo-reps.",
+                        parameter_adjustments={
+                            "set_type": "myorep",
+                            "session_duration_limit_mins": preferred_session_duration_mins,
+                            "e_reps_yield": 12,
+                        },
+                    )
+                )
+                break  # Convert one candidate accessory slot
+
+    # -------------------------------------------------------------------------
+    # Rule 8: BLOCK_LENGTH_DECISION (Bayesian Block Length Adaptation)
+    # -------------------------------------------------------------------------
+    if mesocycle_recommendation is not None:
+        rec_wks = int(getattr(mesocycle_recommendation, "recommended_block_weeks", 4))
+        peak_w = int(round(getattr(mesocycle_recommendation, "optimal_accumulation_weeks", 3.5)))
+        pathway_val = str(getattr(mesocycle_recommendation, "pathway", "SHORT_CYCLE"))
+        exertion_tier_val = "high" if pathway_val == "SHORT_CYCLE" else "moderate"
+        is_def = bool(
+            getattr(mesocycle_recommendation, "deficit_adjusted_weeks", 0)
+            < getattr(mesocycle_recommendation, "optimal_accumulation_weeks", 0)
+        )
+        audits.append(
+            ProgramParameterAudit(
+                audit_type="BLOCK_LENGTH_DECISION",
+                severity="INFO",
+                target_id="systemic",
+                target_type="systemic",
+                message=(
+                    f"Based on your {exertion_tier_val} exertion style{(' and caloric deficit' if is_def else '')}, "
+                    f"your strength progression peaks around Week {peak_w} before fatigue accumulates. "
+                    f"Scheduling a deload on Week {rec_wks} guarantees steady progress without burnout."
+                ),
+                recommended_action=f"Set mesocycle length to {rec_wks} weeks ({pathway_val}).",
+                parameter_adjustments={
+                    "recommended_block_weeks": rec_wks,
+                    "peak_week": peak_w,
+                    "exertion_tier": exertion_tier_val,
+                    "is_deficit": is_def,
+                },
+            )
+        )
 
     return audits
 

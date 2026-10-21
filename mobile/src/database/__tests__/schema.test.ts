@@ -186,6 +186,51 @@ describe('Database Schema & Migrations', () => {
     );
   });
 
+  it('runs v6 -> v7 migration when user_version is 6', async () => {
+    mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 6 }]);
+
+    await migrateDatabase(mockDb);
+
+    // Should run v6 -> v7
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE template_exercises ADD COLUMN set_type TEXT DEFAULT'))
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) => q.includes('ALTER TABLE user_profiles ADD COLUMN experience_level TEXT DEFAULT'))
+    ).toBe(true);
+
+    expect(mockDb.execQueries).toContain(
+      `PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`
+    );
+  });
+
+  it('runs v8 -> v9 migration when user_version is 8, adding missing user_profiles columns', async () => {
+    mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 8 }]);
+
+    await migrateDatabase(mockDb);
+
+    // Should run v8 -> v9
+    expect(
+      mockDb.execQueries.some((q) =>
+        q.includes('ALTER TABLE user_profiles ADD COLUMN pending_meso_mood INTEGER DEFAULT 0;')
+      )
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) =>
+        q.includes('ALTER TABLE user_profiles ADD COLUMN has_axial_fatigue_sensitivity INTEGER DEFAULT 0;')
+      )
+    ).toBe(true);
+    expect(
+      mockDb.execQueries.some((q) =>
+        q.includes('ALTER TABLE user_profiles ADD COLUMN is_caloric_deficit INTEGER DEFAULT 0;')
+      )
+    ).toBe(true);
+
+    expect(mockDb.execQueries).toContain(
+      `PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`
+    );
+  });
+
   it('resets the database by dropping tables and re-migrating', async () => {
     // Simulate current version = 1 initially, but resetDatabase will drop and re-seed
     mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 0 }]);

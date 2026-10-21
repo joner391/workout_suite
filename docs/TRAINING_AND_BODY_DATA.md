@@ -96,7 +96,7 @@ Longitudinal body composition and circumference tracking. Implements **ADR-061**
 | :--- | :--- | :---: | :---: | :--- |
 | `id` | `TEXT` (UUID) | No | — | Primary key. |
 | `date` | `TEXT` (YYYY-MM-DD)| No | — | Calendar date of measurement. |
-| `bodyweight` | `REAL` | **Yes** | kg | Morning fasted bodyweight in canonical kilograms (nullable per ADR-061 for circumference-only logs). |
+| `bodyweight` | `REAL NOT NULL` in SQLite; nullable in the domain/export contract | **Yes** at the domain boundary | kg | Morning fasted bodyweight in canonical kilograms. SQLite stores `0` as a legacy missing-value sentinel; repository reads and JSON exports normalize it to `null` (ADR-061). |
 | `body_fat_manual` | `REAL` | Yes | % | Manually logged body fat percentage from external devices (DXA, skinfold calipers, InBody BIA). |
 | `waist_cm` | `REAL` | Yes | cm | Waist circumference measured horizontally at the midpoint between the lowest rib and iliac crest (or navel). Primary predictor for abdominal adiposity and U.S. Navy body fat equation. |
 | `neck_cm` | `REAL` | Yes | cm | Neck circumference measured just inferior to the laryngeal prominence (Adam's apple). Used in U.S. Navy body density estimation. |

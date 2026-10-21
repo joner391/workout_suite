@@ -30,6 +30,7 @@ import {
   ProgramBlockService,
   ActiveProgramInfo,
 } from '../../services/programBlockService';
+import { ProgramEvolutionService } from '../../services/programEvolutionService';
 import {
   computeDashboardMetrics,
   WeeklyMetrics,
@@ -89,6 +90,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [nextTemplate, setNextTemplate] = useState<WorkoutTemplate | null>(null);
   const [weeklyMetrics, setWeeklyMetrics] = useState<WeeklyMetrics | null>(null);
   const [metricsLoading, setMetricsLoading] = useState<boolean>(true);
+  const [isMesoCompleted, setIsMesoCompleted] = useState<boolean>(false);
 
   const loadDashboardData = useCallback(async () => {
     try {
@@ -101,6 +103,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           setActiveInfo(active);
 
           if (active) {
+            if (userProfileRepo) {
+              try {
+                const evoService = new ProgramEvolutionService(
+                  programRepo,
+                  userProfileRepo,
+                  workoutRepo,
+                  undefined,
+                  exerciseRepo,
+                  programBlockService
+                );
+                const readiness = await evoService.isReadyForEvolution(active.program.id);
+                setIsMesoCompleted(readiness.ready);
+              } catch {
+                setIsMesoCompleted(false);
+              }
+            }
+
             const details = await programRepo.getProgramWithDetails(active.program.id);
             if (details && details.templates.length > 0) {
               const tmpls = details.templates;
@@ -228,6 +247,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               </TouchableOpacity>
             )}
           </View>
+
+          {/* Mesocycle Completion Graduation Banner */}
+          {isMesoCompleted && onNavigateToProfile && (
+            <TouchableOpacity
+              testID="home-meso-completed-banner"
+              style={styles.mesoCompletedBanner}
+              onPress={onNavigateToProfile}
+              activeOpacity={0.8}
+            >
+              <View style={styles.mesoCompletedLeft}>
+                <Text style={styles.mesoCompletedBadge}>🎉 MESOCYCLE COMPLETED</Text>
+                <Text style={styles.mesoCompletedTitle}>Ready to Evolve for Next Meso</Text>
+                <Text style={styles.mesoCompletedSubtitle}>
+                  Accumulation target reached. Review your Meso N+1 adjustments.
+                </Text>
+              </View>
+              <Text style={styles.mesoCompletedArrow}>➔</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Next Scheduled Workout Quick Card */}
           {activeInfo && nextTemplate ? (
@@ -672,6 +710,44 @@ const styles = StyleSheet.create({
   startNowBtnText: {
     color: '#0A0A0A',
     fontSize: 13,
+    fontWeight: '900',
+  },
+  mesoCompletedBanner: {
+    backgroundColor: '#0F291E',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mesoCompletedLeft: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  mesoCompletedBadge: {
+    color: '#00E676',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  mesoCompletedTitle: {
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  mesoCompletedSubtitle: {
+    color: '#94A3B8',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  mesoCompletedArrow: {
+    color: '#00E676',
+    fontSize: 20,
     fontWeight: '900',
   },
   noProgramCard: {

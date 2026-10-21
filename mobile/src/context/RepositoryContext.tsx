@@ -15,8 +15,10 @@ import {
   IUserProfileRepository,
   IBodyMetricsRepository,
   IPainReportRepository,
+  IExercisePreferenceRepository,
 } from '../domain/repositories';
 import { ProgramBlockService } from '../services/programBlockService';
+import { ExercisePreferenceService } from '../services/exercisePreferenceService';
 
 export interface Repositories {
   workoutRepo: IWorkoutRepository;
@@ -28,6 +30,8 @@ export interface Repositories {
   bodyMetricsRepo: IBodyMetricsRepository;
   painReportRepo: IPainReportRepository;
   programBlockService: ProgramBlockService;
+  exercisePreferenceRepo?: IExercisePreferenceRepository;
+  exercisePreferenceService?: ExercisePreferenceService;
 }
 
 export const RepositoryContext = createContext<Repositories | null>(null);

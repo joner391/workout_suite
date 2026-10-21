@@ -132,15 +132,18 @@ export function calculateHypertrophicEffectiveReps(
     resolvedRir = Math.max(0.0, 10.0 - resolvedRpe);
   }
 
-  // Check heavy load threshold (>= 85% 1RM)
+  // Check heavy load threshold (>= 85% 1RM or (reps <= 5 and RPE >= 8.0) under Henneman's Size Principle)
   const weightKg = options?.weightKg;
   const e1rmKg = options?.e1rmKg;
-  const isHeavyLoad =
+  const isHeavyLoadRatio =
     weightKg != null &&
     e1rmKg != null &&
     e1rmKg > 0 &&
     weightKg > 0 &&
     weightKg / e1rmKg >= 0.85;
+
+  const isHeavyLoadRepRpe = reps <= 5 && resolvedRpe >= 8.0;
+  const isHeavyLoad = isHeavyLoadRatio || isHeavyLoadRepRpe;
 
   let effectiveReps: number;
   if (isHeavyLoad) {

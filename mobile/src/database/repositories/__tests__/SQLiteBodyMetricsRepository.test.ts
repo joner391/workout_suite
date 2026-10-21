@@ -117,6 +117,31 @@ describe('SQLiteBodyMetricsRepository', () => {
     expect(insertQuery?.params[11]).toBe(14.0);
   });
 
+  it('persists a first circumference-only entry as an unmeasured bodyweight', async () => {
+    const circumferenceOnly: BodyMetric = {
+      id: 'bm_circumference_only',
+      date: '2026-10-20',
+      bodyweight: null,
+      body_fat_manual: 18.0,
+      waist_cm: 82.0,
+      neck_cm: 37.0,
+      hip_cm: null,
+      bicep_cm: null,
+      chest_cm: null,
+      thigh_cm: null,
+      calf_cm: null,
+      navy_body_fat: null,
+    };
+
+    const saved = await repo.save(circumferenceOnly);
+    const insertQuery = mockDb.executedQueries.find((q) =>
+      q.sql.includes('INSERT OR REPLACE INTO body_metrics')
+    );
+
+    expect(saved.bodyweight).toBeNull();
+    expect(insertQuery?.params[2]).toBe(0);
+  });
+
   it('saves metric using explicit profileOverride for female Navy body fat computation', async () => {
     const femaleMetric: BodyMetric = {
       id: 'bm_female',

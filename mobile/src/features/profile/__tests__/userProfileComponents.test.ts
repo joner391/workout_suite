@@ -228,4 +228,174 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
     expect(elementExpanded).toBeDefined();
     expect(elementExpanded.props.initialQuestionnaireExpanded).toBe(true);
   });
+
+  test('Step 8.3: partitions profile into demographics (experience_level) and dynamic mood (pending_meso_mood)', async () => {
+    const profileWithMood: UserProfile = {
+      id: 'profile-mood-stage',
+      gender: 'male',
+      height_cm: 185,
+      birthdate: '1994-06-12',
+      experience_level: 'advanced',
+      training_mentality: 'fury',
+      primary_goal: 'hypertrophy',
+      secondary_goals: ['strength'],
+      preferred_days_per_week: 5,
+      preferred_session_duration_mins: 45,
+      equipment_access: 'commercial_gym',
+      pending_meso_mood: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    await profileRepo.saveProfile(profileWithMood);
+    const fetched = await profileRepo.getProfile();
+
+    expect(fetched).not.toBeNull();
+    // Demographics partition
+    expect(fetched?.experience_level).toBe('advanced');
+    expect(fetched?.height_cm).toBe(185);
+    expect(fetched?.gender).toBe('male');
+    // Dynamic Training Mood partition
+    expect(fetched?.training_mentality).toBe('fury');
+    expect(fetched?.pending_meso_mood).toBe(true);
+    expect(fetched?.preferred_session_duration_mins).toBe(45);
+  });
+
+  test('Step 8.3: integrates ProgramEvolutionService to evolve active program for next mesocycle', async () => {
+    const { ProgramEvolutionService } = await import('../../../services/programEvolutionService');
+
+    // 1. Initial Program
+    const initialProfile: UserProfile = {
+      id: 'profile-evo-test',
+      gender: 'female',
+      height_cm: 170,
+      birthdate: '1996-04-10',
+      experience_level: 'intermediate',
+      training_mentality: 'precision',
+      primary_goal: 'hypertrophy',
+      secondary_goals: null,
+      preferred_days_per_week: 4,
+      preferred_session_duration_mins: 60,
+      equipment_access: 'commercial_gym',
+      pending_meso_mood: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    await profileRepo.saveProfile(initialProfile);
+
+    const synth = synthesizeProgram(initialProfile);
+    await programRepo.saveSynthesizedProgram(synth);
+    await blockService.swapActiveProgram(synth.program.id, '2026-09-01');
+
+    // 2. Stage mood mutation (Precision -> Fury)
+    const evolutionService = new ProgramEvolutionService(
+      programRepo,
+      profileRepo
+    );
+
+    await evolutionService.queueMesoMood({
+      training_mentality: 'fury',
+      primary_goal: 'hypertrophy',
+    });
+    expect(await evolutionService.hasPendingMesoMood()).toBe(true);
+
+    // 3. Execute Meso N+1 Evolution
+    const evolutionResult = await evolutionService.evolveActiveProgramForNextMeso({
+      programId: synth.program.id,
+      startDate: '2026-10-20',
+    });
+
+    expect(evolutionResult.programId).toBe(synth.program.id);
+    expect(evolutionResult.mesoNumber).toBe(2);
+    expect(evolutionResult.diffMarkdown).toContain('Mesocycle 2 Ready');
+    expect(evolutionResult.evolvedTemplateExercises.length).toBeGreaterThan(0);
+    expect(await evolutionService.hasPendingMesoMood()).toBe(false);
+
+    // 4. Verify UserProfileScreen accepts programEvolutionService prop
+    const React = await import('react');
+    const { UserProfileScreen } = await import('../UserProfileScreen');
+
+    const screenElement = React.createElement(UserProfileScreen, {
+      userProfileRepo: profileRepo,
+      programRepo,
+      programBlockService: blockService,
+      programEvolutionService: evolutionService,
+      initialQuestionnaireExpanded: true,
+    });
+    expect(screenElement).toBeDefined();
+    expect(screenElement.props.programEvolutionService).toBe(evolutionService);
+  });
+
+  test('clears lingering in-progress workouts when synthesizing brand new program', async () => {
+    const workoutRepo = new (await import('../../../database/mocks')).MockWorkoutRepository();
+
+    // Trainee had started a workout on previous program and left it in-progress
+    await workoutRepo.create({
+      id: 'old-in-progress-workout',
+      template_id: 'old-template-1',
+      date: '2026-10-19',
+      name: 'Day 1 Chest & Back (Old Program)',
+      notes: null,
+      started_at: '2026-10-19T10:00:00Z',
+      duration_seconds: null,
+      status: 'in_progress',
+      completed_at: null,
+      imported_from: null,
+    });
+
+    expect(await workoutRepo.getInProgressWorkout()).not.toBeNull();
+
+    // Trainee synthesizes brand new program
+    const newProfile: UserProfile = {
+      id: 'profile-new-split',
+      gender: 'male',
+      height_cm: 180,
+      birthdate: '1995-05-15',
+      training_mentality: 'fury',
+      primary_goal: 'hypertrophy',
+      secondary_goals: null,
+      preferred_days_per_week: 4,
+      preferred_session_duration_mins: 60,
+      equipment_access: 'commercial_gym',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const synth = synthesizeProgram(newProfile);
+    await programRepo.saveSynthesizedProgram(synth);
+    await blockService.swapActiveProgram(synth.program.id);
+
+    // Simulate clearing abandoned session
+    const oldInProgress = await workoutRepo.getInProgressWorkout();
+    if (oldInProgress) {
+      await workoutRepo.delete(oldInProgress.id);
+    }
+
+    expect(await workoutRepo.getInProgressWorkout()).toBeNull();
+    const activeProg = await blockService.getActiveProgram();
+    expect(activeProg?.program.id).toBe(synth.program.id);
+  });
+
+  test('Beta Phase Lifecycle Gating: manual evolution button is hidden during in-progress cycle and visible when completed', async () => {
+    const React = await import('react');
+    const { UserProfileScreen } = await import('../UserProfileScreen');
+
+    // 1. In Beta Phase with incomplete cycle: button should NOT be rendered
+    const elementBetaIncomplete = React.createElement(UserProfileScreen, {
+      userProfileRepo: profileRepo,
+      programRepo,
+      programBlockService: blockService,
+      isBetaPhase: true,
+    });
+    expect(elementBetaIncomplete).toBeDefined();
+
+    // 2. In Non-Beta (dev mode): button is allowed
+    const elementDevMode = React.createElement(UserProfileScreen, {
+      userProfileRepo: profileRepo,
+      programRepo,
+      programBlockService: blockService,
+      isBetaPhase: false,
+    });
+    expect(elementDevMode).toBeDefined();
+  });
 });

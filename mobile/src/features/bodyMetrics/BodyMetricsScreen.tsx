@@ -203,41 +203,37 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
 
   // 3. Save Entry Handler
   const handleSaveMetric = async () => {
-    const enteredKg = parseWeightToKg(bodyweightInput);
-    const targetWeightKg = enteredKg ?? latestRecordedWeightKg;
-    if (!targetWeightKg) {
-      Alert.alert(
-        'Missing Bodyweight',
-        `Please enter a bodyweight in ${unitSystem} to record an initial measurement.`
-      );
-      return;
-    }
+    const manualBf = parseFloat(manualBfInput.trim());
+    const enteredCircumferences = [
+      enteredWaistCm,
+      enteredNeckCm,
+      enteredHipCm,
+      parseCircumferenceToCm(bicepInput),
+      parseCircumferenceToCm(chestInput),
+      parseCircumferenceToCm(thighInput),
+      parseCircumferenceToCm(calfInput),
+    ];
+    const hasValidMeasurement =
+      enteredWeightKg != null ||
+      enteredCircumferences.some((value) => value != null) ||
+      (Number.isFinite(manualBf) && manualBf >= 2 && manualBf <= 70);
 
-    if (
-      !bodyweightInput.trim() &&
-      !waistInput.trim() &&
-      !neckInput.trim() &&
-      !hipInput.trim() &&
-      !bicepInput.trim() &&
-      !chestInput.trim() &&
-      !thighInput.trim() &&
-      !calfInput.trim() &&
-      !manualBfInput.trim()
-    ) {
-      Alert.alert('Empty Entry', 'Please enter at least one measurement to save.');
+    if (!hasValidMeasurement) {
+      Alert.alert('Empty Entry', 'Please enter at least one valid measurement to save.');
       return;
     }
 
     try {
-      const manualBf = parseFloat(manualBfInput.trim());
       const newId = `bm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
       const metricToSave: BodyMetric = {
         id: newId,
         date: entryDate.trim() || todayStr,
-        bodyweight: Number(targetWeightKg.toFixed(2)),
+        // Preserve only a scale value entered for this measurement date.
+        bodyweight:
+          enteredWeightKg != null ? Number(enteredWeightKg.toFixed(2)) : null,
         body_fat_manual:
-          !isNaN(manualBf) && manualBf > 0 && manualBf < 100
+          Number.isFinite(manualBf) && manualBf >= 2 && manualBf <= 70
             ? Number(manualBf.toFixed(1))
             : null,
         waist_cm: enteredWaistCm != null ? Number(enteredWaistCm.toFixed(1)) : null,
@@ -420,7 +416,7 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
             </View>
 
             <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Weight ({unitSystem}) *</Text>
+              <Text style={styles.inputLabel}>Weight ({unitSystem}, optional)</Text>
               <TextInput
                 testID="input-bodyweight"
                 style={[styles.textInput, styles.primaryInput]}
@@ -640,8 +636,8 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
           ) : metricsHistory.length === 0 ? (
             <View style={styles.emptyCard} testID="history-empty-card">
               <Text style={styles.emptyCardText}>
-                No body measurements recorded yet. Enter your weight and tape
-                measurements above.
+                No body measurements recorded yet. Enter any measurement above;
+                bodyweight is optional.
               </Text>
             </View>
           ) : (

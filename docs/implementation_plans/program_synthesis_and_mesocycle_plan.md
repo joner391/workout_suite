@@ -1,3 +1,5 @@
+> **Historical reference:** This document contains past plans, audits, or proposals with mixed completion status. Its agent instructions, verification gates, and unchecked items do not assign current work. Follow the latest user request, root `AGENTS.md`, and [current documentation guidance](../README.md). Verify implementation claims against source.
+
 # Engineering Blueprint: Program Synthesizer & Meso-Cycle Review System
 
 ## Executive Summary & Design Vision
@@ -50,9 +52,9 @@ flowchart TD
 ## Phase 1: Generator & Synthesizer Core
 
 ### 1.1 Scope & Affected Components
-- [`mobile/src/core/generator/programSynthesizer.ts`](file:///c:/Programmering/Eget/Workout_suite/mobile/src/core/generator/programSynthesizer.ts)
-- [`mobile/src/core/generator/__tests__/programSynthesizer.test.ts`](file:///c:/Programmering/Eget/Workout_suite/mobile/src/core/generator/__tests__/programSynthesizer.test.ts)
-- [`mobile/src/core/types/index.ts`](file:///c:/Programmering/Eget/Workout_suite/mobile/src/core/types/index.ts)
+- [`mobile/src/core/generator/programSynthesizer.ts`](../../mobile/src/core/generator/programSynthesizer.ts)
+- [`mobile/src/core/generator/__tests__/programSynthesizer.test.ts`](../../mobile/src/core/generator/__tests__/programSynthesizer.test.ts)
+- [`mobile/src/core/types/index.ts`](../../mobile/src/core/types/index.ts)
 
 ### 1.2 Data Contract Updates
 
@@ -139,13 +141,13 @@ export interface ProgramSynthesizerOptions {
 ## Phase 2: Meso-Cycle Lifecycle & Review UI
 
 ### 2.1 Scope & Affected Components
-- [`mobile/src/services/programBlockService.ts`](file:///c:/Programmering/Eget/Workout_suite/mobile/src/services/programBlockService.ts)
-- [`mobile/src/database/schema.ts`](file:///c:/Programmering/Eget/Workout_suite/mobile/src/database/schema.ts)
+- [`mobile/src/services/programBlockService.ts`](../../mobile/src/services/programBlockService.ts)
+- [`mobile/src/database/schema.ts`](../../mobile/src/database/schema.ts)
 - New Screen / Modal: `mobile/src/features/progression/MesoCycleCompletionModal.tsx`
-- Integration in [`mobile/src/features/home/HomeScreen.tsx`](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/home/HomeScreen.tsx) and [`mobile/src/features/progression/ProgramOverviewScreen.tsx`](file:///c:/Programmering/Eget/Workout_suite/mobile/src/features/progression/ProgramOverviewScreen.tsx)
+- Integration in [`mobile/src/features/home/HomeScreen.tsx`](../../mobile/src/features/home/HomeScreen.tsx) and [`mobile/src/features/progression/ProgramOverviewScreen.tsx`](../../mobile/src/features/progression/ProgramOverviewScreen.tsx)
 
 ### 2.2 Database Schema Evolution
-In [`mobile/src/database/schema.ts`](file:///c:/Programmering/Eget/Workout_suite/mobile/src/database/schema.ts), add a migration for the `program_blocks` table and a `meso_cycle_reviews` table:
+In [`mobile/src/database/schema.ts`](../../mobile/src/database/schema.ts), add a migration for the `program_blocks` table and a `meso_cycle_reviews` table:
 
 ```sql
 -- Migration v4 -> v5

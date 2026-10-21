@@ -94,20 +94,22 @@ def test_detect_mesocycle_boundaries_rest_gap() -> None:
 
 
 def test_analyze_optimal_mesocycle_length_empty() -> None:
-    """Verifies that with zero blocks, the analyzer reverts safely to population baseline."""
+    """Verifies that with zero blocks, the analyzer reverts safely to Meso 0 baseline (3.5 weeks)."""
     rec = analyze_optimal_mesocycle_length(
         workouts=[],
         workout_sets=[],
         kalman_histories={},
         banister_series=[],
     )
-    assert rec.optimal_accumulation_weeks == 5.0
-    assert rec.ci_lower_weeks <= 5.0
-    assert rec.ci_upper_weeks >= 5.0
+    assert rec.optimal_accumulation_weeks == 3.5
+    assert rec.ci_lower_weeks <= 3.5
+    assert rec.ci_upper_weeks >= 3.5
     assert rec.confidence_tier == "LOW"
     assert rec.detected_blocks_count == 0
     assert rec.weekly_profile == []
-    assert "population baseline" in rec.summary_message
+    assert "Meso 0 fast-calibration baseline" in rec.summary_message
+    assert rec.pathway == "SHORT_CYCLE"
+    assert rec.recommended_block_weeks == 4
 
 
 def test_analyze_optimal_mesocycle_synthetic_drift() -> None:
@@ -116,7 +118,7 @@ def test_analyze_optimal_mesocycle_synthetic_drift() -> None:
     - Weeks 1-3: progressive 1RM gains, 0 RPE drift
     - Week 4: peak strength, RPE drift starts
     - Week 5: e1RM velocity turns negative (-1.5%), RPE drift jumps to +1.5
-    Verifies that best peak week u* = 4 is identified and Bayesian prior moves towards 4.0.
+    Verifies that best peak week u* = 4 is identified and Bayesian prior updates towards 4.0.
     """
     start = date(2026, 1, 5)
     workouts: List[Workout] = []
@@ -133,7 +135,6 @@ def test_analyze_optimal_mesocycle_synthetic_drift() -> None:
             d_str = d.strftime("%Y-%m-%d")
             w_id = f"w_{wk_idx}_{day}"
             workouts.append(Workout(id=w_id, name="Test Workout", status="completed", date=d_str, started_at=f"{d_str}T10:00:00Z"))
-
 
             # Log a set for exercise 'bench'
             weight = 85.0
@@ -154,7 +155,6 @@ def test_analyze_optimal_mesocycle_synthetic_drift() -> None:
                     created_at=f"{d_str}T10:15:00Z",
                 )
             )
-
 
             # Kalman state for this session
             current_e1rm = e1rms[wk_idx]
@@ -186,10 +186,109 @@ def test_analyze_optimal_mesocycle_synthetic_drift() -> None:
     )
 
     assert rec.detected_blocks_count >= 1
-    # Posterior should update towards 4 weeks (below initial 5.0)
-    assert rec.optimal_accumulation_weeks < 5.0
+    # Posterior updates towards observation (u*=3.0 pulling baseline 3.5 down to ~3.1)
+    assert 2.5 <= rec.optimal_accumulation_weeks <= 4.5
     # Deficit target should be 1 week less
     assert rec.deficit_adjusted_weeks < rec.optimal_accumulation_weeks
+
+
+def test_greedy_branching_short_cycle_high_exertion() -> None:
+    """Verifies that high exertion (RPE >= 9.5, deficit) branches to Short Mesocycle (Path A)."""
+    start = date(2026, 1, 1)
+    d_str = start.strftime("%Y-%m-%d")
+    w = Workout(id="w1", name="Test Session", status="completed", date=d_str, started_at=f"{d_str}T10:00:00Z")
+    s = WorkoutSet(
+        id="s1",
+        workout_id="w1",
+        exercise_id="bench",
+        set_number=1,
+        weight=100.0,
+        raw_input_weight=100.0,
+        reps=5,
+        rpe=9.5,  # High exertion
+        set_type="working",
+        created_at=f"{d_str}T10:15:00Z",
+    )
+    rec = analyze_optimal_mesocycle_length(
+        workouts=[w],
+        workout_sets=[s],
+        kalman_histories={},
+        banister_series=[],
+        energy_balance="deficit",
+    )
+    assert rec.pathway == "SHORT_CYCLE"
+    assert rec.recommended_block_weeks == 4
+    assert any("High exertion" in r for r in rec.branching_reasons)
+    assert any("Caloric deficit" in r for r in rec.branching_reasons)
+
+
+def test_greedy_branching_long_cycle_submaximal() -> None:
+    """Verifies that submaximal exertion (RPE 7.5, machine focus, surplus) branches to Long Mesocycle (Path B)."""
+    start = date(2026, 1, 1)
+    workouts: List[Workout] = []
+    sets: List[WorkoutSet] = []
+    banister: List[DailyPreparedness] = []
+    k_dates: List[str] = []
+    k_states: List[KalmanState] = []
+
+    # 7 weeks of steady progression (49 days) + 1 week deload
+    for wk in range(7):
+        for day in range(3):
+            d = start + timedelta(days=wk * 7 + day * 2)
+            d_str = d.strftime("%Y-%m-%d")
+            w_id = f"w_long_{wk}_{day}"
+            workouts.append(Workout(id=w_id, name="Machine Push", status="completed", date=d_str, started_at=f"{d_str}T10:00:00Z"))
+            sets.append(
+                WorkoutSet(
+                    id=f"s_long_{wk}_{day}",
+                    workout_id=w_id,
+                    exercise_id="chest_press",
+                    set_number=1,
+                    weight=80.0 + wk * 2.0,
+                    raw_input_weight=80.0 + wk * 2.0,
+                    reps=10,
+                    rpe=7.5,  # Submaximal
+                    set_type="working",
+                    created_at=f"{d_str}T10:15:00Z",
+                )
+            )
+            k_dates.append(d_str)
+            k_states.append(
+                KalmanState(
+                    x=np.array([math.log(100.0 + wk * 2.5), 0.085]),
+                    P=np.diag([0.001, 0.0001]),
+                    step_count=len(k_dates),
+                )
+            )
+
+    for i in range(49):
+        banister.append(_make_daily_preparedness(start + timedelta(days=i), 20.0))
+    for i in range(49, 56):
+        banister.append(_make_daily_preparedness(start + timedelta(days=i), 5.0))
+    for i in range(56, 80):
+        banister.append(_make_daily_preparedness(start + timedelta(days=i), 20.0))
+
+    ex = Exercise(
+        id="chest_press",
+        name="Machine Chest Press",
+        muscle_group="Chest",
+        category="Machine",
+        is_compound=True,
+        is_bodyweight=False,
+        is_unilateral=False,
+    )
+
+    rec = analyze_optimal_mesocycle_length(
+        workouts=workouts,
+        workout_sets=sets,
+        kalman_histories={"chest_press": (k_dates, k_states)},
+        banister_series=banister,
+        exercises=[ex],
+        energy_balance="surplus",
+    )
+    assert rec.pathway == "LONG_CYCLE"
+    assert rec.recommended_block_weeks in (6, 7, 8)
+    assert any("Submaximal" in r for r in rec.branching_reasons)
 
 
 def test_iso_load_rpe_drift_stability_at_low_loads() -> None:

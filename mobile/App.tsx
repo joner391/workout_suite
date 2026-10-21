@@ -33,6 +33,7 @@ import {
   IUserProfileRepository,
   IBodyMetricsRepository,
   IPainReportRepository,
+  IExercisePreferenceRepository,
 } from './src/domain/repositories';
 import {
   getDatabase,
@@ -45,8 +46,10 @@ import {
   SQLiteUserProfileRepository,
   SQLiteBodyMetricsRepository,
   SQLitePainReportRepository,
+  SQLiteExercisePreferenceRepository,
 } from './src/database';
 import { ProgramBlockService } from './src/services/programBlockService';
+import { ExercisePreferenceService } from './src/services/exercisePreferenceService';
 import { WorkoutTabRouter } from './src/features/logger';
 import { HomeScreen } from './src/features/home';
 import { CalendarScreen } from './src/features/calendar';
@@ -56,7 +59,7 @@ import { UserProfileScreen } from './src/features/profile';
 import { SettingsScreen } from './src/features/settings';
 import { OnboardingWizardModal } from './src/features/onboarding';
 import { Workout } from './src/core/types';
-import { RepositoryProvider } from './src/context/RepositoryContext';
+import { RepositoryProvider, Repositories } from './src/context/RepositoryContext';
 
 export type RootTab = 'home' | 'workout' | 'profile' | 'settings' | 'logger' | 'calendar';
 
@@ -71,6 +74,8 @@ export interface AppProps {
   userProfileRepo?: IUserProfileRepository;
   bodyMetricsRepo?: IBodyMetricsRepository;
   painReportRepo?: IPainReportRepository;
+  exercisePreferenceRepo?: IExercisePreferenceRepository;
+  exercisePreferenceService?: ExercisePreferenceService;
   programBlockService?: ProgramBlockService;
   db?: ISQLiteDatabase;
   [key: string]: unknown;
@@ -87,6 +92,8 @@ export default function App({
   userProfileRepo: propUserProfileRepo,
   bodyMetricsRepo: propBodyMetricsRepo,
   painReportRepo: propPainReportRepo,
+  exercisePreferenceRepo: propExercisePreferenceRepo,
+  exercisePreferenceService: propExercisePreferenceService,
   programBlockService: propProgramBlockService,
   db: propDb,
 }: AppProps = {}) {
@@ -154,22 +161,16 @@ export default function App({
   })();
 
   // Concrete repositories (fallback to SQLite if props omitted)
-  const [repos, setRepos] = useState<{
-    workoutRepo: IWorkoutRepository;
-    exerciseRepo: IExerciseRepository;
-    gearRepo: IGearRepository;
-    userSettingsRepo: IUserSettingsRepository;
-    programRepo: IProgramRepository;
-    userProfileRepo: IUserProfileRepository;
-    bodyMetricsRepo: IBodyMetricsRepository;
-    painReportRepo: IPainReportRepository;
-    programBlockService: ProgramBlockService;
-  } | null>(() => {
+  const [repos, setRepos] = useState<Repositories | null>(() => {
     if (propWorkoutRepo && propExerciseRepo && propUserSettingsRepo) {
       const pRepo = propProgramRepo || ({} as IProgramRepository);
       const upRepo = propUserProfileRepo || ({} as IUserProfileRepository);
       const bmRepo = propBodyMetricsRepo || ({} as IBodyMetricsRepository);
       const painRepo = propPainReportRepo || ({} as IPainReportRepository);
+      const prefRepo = propExercisePreferenceRepo;
+      const prefService =
+        propExercisePreferenceService ||
+        (prefRepo ? new ExercisePreferenceService(prefRepo) : undefined);
       const pbService =
         propProgramBlockService ||
         (propProgramRepo ? new ProgramBlockService(propProgramRepo) : ({} as ProgramBlockService));
@@ -182,6 +183,8 @@ export default function App({
         userProfileRepo: upRepo,
         bodyMetricsRepo: bmRepo,
         painReportRepo: painRepo,
+        exercisePreferenceRepo: prefRepo,
+        exercisePreferenceService: prefService,
         programBlockService: pbService,
       };
     }
@@ -211,6 +214,8 @@ export default function App({
         const upRepo = new SQLiteUserProfileRepository(db);
         const bmRepo = new SQLiteBodyMetricsRepository(db);
         const painRepo = new SQLitePainReportRepository(db);
+        const prefRepo = new SQLiteExercisePreferenceRepository(db);
+        const prefService = new ExercisePreferenceService(prefRepo);
         const pbService = new ProgramBlockService(pRepo);
 
         setRepos({
@@ -222,6 +227,8 @@ export default function App({
           userProfileRepo: upRepo,
           bodyMetricsRepo: bmRepo,
           painReportRepo: painRepo,
+          exercisePreferenceRepo: prefRepo,
+          exercisePreferenceService: prefService,
           programBlockService: pbService,
         });
 
@@ -257,6 +264,8 @@ export default function App({
       setHasActiveWorkout(!!inProgress);
       if (inProgress) {
         setCurrentWorkoutId(inProgress.id);
+      } else {
+        setCurrentWorkoutId(undefined);
       }
     } catch {
       // Ignore
@@ -436,9 +445,12 @@ export default function App({
               userSettingsRepo={repos.userSettingsRepo}
               programRepo={repos.programRepo}
               painReportRepo={repos.painReportRepo}
+              exercisePreferenceRepo={repos.exercisePreferenceRepo}
+              exercisePreferenceService={repos.exercisePreferenceService}
               programBlockService={repos.programBlockService}
               hasActiveWorkout={hasActiveWorkout}
               currentWorkoutId={currentWorkoutId}
+              isActiveTab={currentTab === 'workout'}
               onStartSession={handleStartSession}
               onFinishSession={handleFinishSession}
               onDiscardSession={handleDiscardSession}
@@ -457,9 +469,10 @@ export default function App({
                 gearRepo={repos.gearRepo}
                 userSettingsRepo={repos.userSettingsRepo}
                 bodyMetricsRepo={repos.bodyMetricsRepo}
+                workoutRepo={repos.workoutRepo}
+                painReportRepo={repos.painReportRepo}
                 onProgramGenerated={(progId) => {
                   checkActiveWorkout();
-                  setActiveTab('workout');
                 }}
               />
             </View>

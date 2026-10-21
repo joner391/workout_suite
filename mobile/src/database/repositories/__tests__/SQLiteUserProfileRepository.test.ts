@@ -82,7 +82,10 @@ describe('SQLiteUserProfileRepository', () => {
     expect(insertQuery).toBeDefined();
     expect(insertQuery?.params[0]).toBe('user_1');
     expect(insertQuery?.params[1]).toBe('female');
-    expect(insertQuery?.params[7]).toBe(JSON.stringify(['powerbuilding']));
+    expect(insertQuery?.params[6]).toBe(JSON.stringify(['powerbuilding']));
+    expect(insertQuery?.params[11]).toBe(0); // pending_meso_mood
+    expect(insertQuery?.params[12]).toBe(0); // has_axial_fatigue_sensitivity
+    expect(insertQuery?.params[13]).toBe(0); // is_caloric_deficit
   });
 
   it('deletes profile by id', async () => {

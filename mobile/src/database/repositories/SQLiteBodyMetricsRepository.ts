@@ -104,17 +104,6 @@ export class SQLiteBodyMetricsRepository implements IBodyMetricsRepository {
   ): Promise<BodyMetric> {
     const toSave: BodyMetric = { ...metric };
 
-    // Forward-fill bodyweight if not provided (satisfies NOT NULL constraint)
-    if (toSave.bodyweight == null || toSave.bodyweight <= 0) {
-      const row = await this.db.getFirstAsync<{ bodyweight: number }>(
-        'SELECT bodyweight FROM body_metrics WHERE bodyweight > 0 AND date <= ? ORDER BY date DESC, id DESC LIMIT 1;',
-        toSave.date
-      );
-      if (row && row.bodyweight > 0) {
-        toSave.bodyweight = Number(row.bodyweight);
-      }
-    }
-
     // Automatically calculate U.S. Navy body fat if not explicitly provided (using LOCF for missing circumferences)
     if (
       toSave.navy_body_fat == null &&

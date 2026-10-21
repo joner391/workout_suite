@@ -9,7 +9,7 @@
  * Implements ADR-017: Multi-Day Program Hierarchy
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -51,11 +51,122 @@ import { PrescriptionEditorModal } from './PrescriptionEditorModal';
 import { EditTemplateModal } from './EditTemplateModal';
 import { GearInventory } from '../../core/types';
 
+export type ProgressionBadge = 'LP' | 'DP' | 'DDP' | 'Custom';
+
+/**
+ * Detects whether an exercise slot has LP, DP, DDP, or Custom progression rule configured.
+ */
+export function detectProgressionBadge(rules?: ProgressionRule[]): ProgressionBadge | null {
+  if (!rules || rules.length === 0) return null;
+
+  // Check for DDP priority first
+  for (const r of rules) {
+    const id = (r.id || '').toLowerCase();
+    let def: any = r.rule_json;
+    if (typeof def === 'string') {
+      try {
+        def = JSON.parse(def);
+      } catch {
+        def = null;
+      }
+    }
+    const notes = (def?.notes || '').toLowerCase();
+    const condTypes: string[] = (def?.conditions || []).map((c: any) => c.type);
+
+    if (
+      id.includes('ddp') ||
+      notes.includes('dynamic double') ||
+      condTypes.includes('ANY_SET_HIT_TOP_REP_RANGE')
+    ) {
+      return 'DDP';
+    }
+  }
+
+  // Check for DP or LP
+  for (const r of rules) {
+    const id = (r.id || '').toLowerCase();
+    let def: any = r.rule_json;
+    if (typeof def === 'string') {
+      try {
+        def = JSON.parse(def);
+      } catch {
+        def = null;
+      }
+    }
+    const notes = (def?.notes || '').toLowerCase();
+    const condTypes: string[] = (def?.conditions || []).map((c: any) => c.type);
+
+    if (
+      id.includes('dp') ||
+      notes.includes('double progression') ||
+      condTypes.includes('ALL_SETS_HIT_TOP_REP_RANGE')
+    ) {
+      return 'DP';
+    }
+    if (
+      id.includes('lp') ||
+      notes.includes('linear progression') ||
+      condTypes.includes('ALL_SETS_HIT_TARGET_REPS')
+    ) {
+      return 'LP';
+    }
+  }
+
+  return 'Custom';
+}
+
+/**
+ * Formats program overview notes cleanly for lifters, eliminating raw JSON,
+ * HTML comment tokens (<!-- ... -->), and technical archetype IDs.
+ */
+export function formatLifterProgramNotes(rawNotes?: string | null): string | null {
+  if (!rawNotes || !rawNotes.trim()) return null;
+
+  // 1. Strip raw HTML comment blocks (e.g. <!-- TRANSITION_WAVE: ... -->)
+  let cleaned = rawNotes.replace(/<!--[\s\S]*?-->/g, '').trim();
+  if (!cleaned) return null;
+
+  // 2. Map internal archetype identifiers to clean names
+  const archetypeMap: Record<string, string> = {
+    archetype_i_powerlifting: 'Powerlifting (SBD)',
+    archetype_ii_strength_primary: 'Strength & Hypertrophy',
+    archetype_iii_athletic_power: 'Athletic Power',
+    archetype_iv_pure_hypertrophy: 'Hypertrophy & Aesthetics',
+    archetype_v_minimalist_longevity: 'Minimalist & Longevity',
+  };
+
+  for (const [key, label] of Object.entries(archetypeMap)) {
+    cleaned = cleaned.replace(new RegExp(key, 'g'), label);
+  }
+
+  // 3. Map mentality tokens
+  cleaned = cleaned.replace(/\bfury mentality\b/gi, 'Fury (High Intensity)');
+  cleaned = cleaned.replace(/\bprecision mentality\b/gi, 'Precision (Volume & Technique)');
+  cleaned = cleaned.replace(/\bget_out mentality\b/gi, 'Get Out (Time-Efficient)');
+
+  // 4. Remove robotic "Synthesized for male lifter" / "Synthesized for female lifter" boilerplate
+  cleaned = cleaned.replace(/Synthesized for (?:male|female) lifter\s*\(([^)]+)\)\.?/gi, '$1');
+  cleaned = cleaned.replace(
+    /Synthesized Two-Tier Novice Bifurcated Program for (?:male|female) lifter\s*\(([^)]+)\)\.?/gi,
+    'Novice Two-Tier Protocol ($1)'
+  );
+
+  // 5. Clean up duplicate lines from mesocycle chaining
+  const lines = cleaned
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const uniqueLines = Array.from(new Set(lines));
+
+  return uniqueLines.join(' • ');
+}
+
 export interface ProgramOverviewScreenProps {
   programRepo: IProgramRepository;
   programBlockService: ProgramBlockService;
   exerciseRepo?: IExerciseRepository;
   gearRepo?: IGearRepository;
+  initialProgramId?: string;
   onClose?: () => void;
   onSelectProgram?: (programId: string) => void;
 }
@@ -65,6 +176,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
   programBlockService,
   exerciseRepo,
   gearRepo,
+  initialProgramId,
   onClose,
   onSelectProgram,
 }) => {
@@ -127,6 +239,8 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
     isExLast: boolean;
   } | null>(null);
 
+  const lastInitialProgramIdRef = useRef<string | undefined>(undefined);
+
   // Initial Data Load
   const loadData = useCallback(async () => {
     try {
@@ -144,27 +258,51 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
       setExerciseCatalog(new Map(exercises.map((e) => [e.id, e])));
       setAvailableGear(gears);
 
-      const initialId =
-        selectedProgramId ??
-        active?.program.id ??
-        (allPrograms.length > 0 ? allPrograms[0].id : null);
+      setSelectedProgramId((currentSelected) => {
+        const targetId =
+          currentSelected ??
+          initialProgramId ??
+          active?.program.id ??
+          (allPrograms.length > 0 ? allPrograms[0].id : null);
 
-      setSelectedProgramId(initialId);
-
-      if (initialId) {
-        const details = await programRepo.getProgramWithDetails(initialId);
-        setProgramDetails(details);
-      }
+        if (targetId) {
+          programRepo
+            .getProgramWithDetails(targetId)
+            .then((details) => {
+              setProgramDetails(details);
+            })
+            .catch((err) => {
+              console.error('Failed to load program details for targetId:', err);
+            });
+        }
+        return targetId;
+      });
     } catch (err) {
       console.error('Failed to load program overview data:', err);
     } finally {
       setLoading(false);
     }
-  }, [programRepo, programBlockService, exerciseRepo, gearRepo, selectedProgramId]);
+  }, [programRepo, programBlockService, exerciseRepo, gearRepo, initialProgramId]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Synchronize when initialProgramId prop explicitly changes from outside (e.g. after program synthesis)
+  useEffect(() => {
+    if (initialProgramId && initialProgramId !== lastInitialProgramIdRef.current) {
+      lastInitialProgramIdRef.current = initialProgramId;
+      setSelectedProgramId(initialProgramId);
+      programRepo
+        .getProgramWithDetails(initialProgramId)
+        .then((details) => {
+          setProgramDetails(details);
+        })
+        .catch((err) => {
+          console.error('Failed to load program details for initialProgramId:', err);
+        });
+    }
+  }, [initialProgramId, programRepo]);
 
   // Handle selecting a program tab
   const handleSelectProgram = async (programId: string) => {
@@ -633,9 +771,15 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                       </View>
                     )}
                   </View>
-                  {selectedProgram.notes && (
-                    <Text style={styles.programNotesText}>{selectedProgram.notes}</Text>
-                  )}
+                  {(() => {
+                    const cleanNotes = formatLifterProgramNotes(selectedProgram.notes);
+                    if (!cleanNotes) return null;
+                    return (
+                      <View style={styles.programNotesContainer}>
+                        <Text style={styles.programNotesText}>{cleanNotes}</Text>
+                      </View>
+                    );
+                  })()}
                 </View>
 
                 {isActiveSelected ? (
@@ -771,6 +915,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                         const ex = exerciseCatalog.get(te.exercise_id);
                         const exName = ex?.name ?? te.exercise_id;
                         const hasRules = te.rules && te.rules.length > 0;
+                        const progBadge = detectProgressionBadge(te.rules);
                         const isExFirst = eIdx === 0;
                         const isExLast = eIdx === tmpl.exercises.length - 1;
 
@@ -784,6 +929,30 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                               <View style={styles.exerciseNameRow}>
                                 <Text style={styles.exerciseIndexText}>{eIdx + 1}.</Text>
                                 <Text style={styles.exerciseNameText}>{exName}</Text>
+                                {progBadge && (
+                                  <View
+                                    testID={`prog-badge-${te.id}`}
+                                    style={[
+                                      styles.progBadge,
+                                      progBadge === 'LP' && styles.progBadgeLP,
+                                      progBadge === 'DP' && styles.progBadgeDP,
+                                      progBadge === 'DDP' && styles.progBadgeDDP,
+                                      progBadge === 'Custom' && styles.progBadgeCustom,
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.progBadgeText,
+                                        progBadge === 'LP' && styles.progBadgeTextLP,
+                                        progBadge === 'DP' && styles.progBadgeTextDP,
+                                        progBadge === 'DDP' && styles.progBadgeTextDDP,
+                                        progBadge === 'Custom' && styles.progBadgeTextCustom,
+                                      ]}
+                                    >
+                                      {progBadge}
+                                    </Text>
+                                  </View>
+                                )}
                                 {te.exercise_group_id && (
                                   <View style={styles.supersetPill}>
                                     <Text style={styles.supersetPillText}>SUPERSET</Text>
@@ -1378,10 +1547,63 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: '800',
   },
+  programNotesContainer: {
+    marginTop: 6,
+    backgroundColor: '#141416',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderLeftWidth: 2,
+    borderLeftColor: '#3F3F46',
+  },
   programNotesText: {
     color: '#A1A1AA',
-    fontSize: 12,
-    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  progBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    backgroundColor: '#1E1E22',
+    marginLeft: 6,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: '#3F3F46',
+  },
+  progBadgeLP: {
+    borderColor: '#3B82F6',
+    backgroundColor: '#172554',
+  },
+  progBadgeDP: {
+    borderColor: '#10B981',
+    backgroundColor: '#064E3B',
+  },
+  progBadgeDDP: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#451A03',
+  },
+  progBadgeCustom: {
+    borderColor: '#A855F7',
+    backgroundColor: '#3B0764',
+  },
+  progBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#D4D4D8',
+    letterSpacing: 0.5,
+  },
+  progBadgeTextLP: {
+    color: '#93C5FD',
+  },
+  progBadgeTextDP: {
+    color: '#6EE7B7',
+  },
+  progBadgeTextDDP: {
+    color: '#FCD34D',
+  },
+  progBadgeTextCustom: {
+    color: '#D8B4FE',
   },
   activeStatusBadge: {
     paddingVertical: 4,

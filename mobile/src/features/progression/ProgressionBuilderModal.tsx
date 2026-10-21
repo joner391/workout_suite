@@ -45,6 +45,11 @@ export function formatProgressionRuleSummary(rule: ProgressionRule): string {
       `${t ?? 1} consecutive successful session${(t ?? 1) > 1 ? 's' : ''}`,
     CONSECUTIVE_FAILED_SESSIONS: (t) =>
       `${t ?? 2} consecutive failed session${(t ?? 2) > 1 ? 's' : ''} (plateau)`,
+    MESOCYCLE_FINAL_WEEK: () => 'final accumulation week (L)',
+    MESOCYCLE_MIDWAY_WEEK: (t) =>
+      t ? `mid-mesocycle week ${t}` : 'mid-mesocycle diagnostic week (floor(L/2))',
+    AMRAP_COMPLETED: (t) =>
+      t ? `AMRAP completed (>= ${t} reps)` : 'AMRAP set completed',
   };
 
   const actionMap: Record<string, (val: number) => string> = {
@@ -53,6 +58,10 @@ export function formatProgressionRuleSummary(rule: ProgressionRule): string {
     DECREASE_LOAD_FIXED: (v) => `decrease load by ${v} kg`,
     INCREASE_TARGET_REPS: (v) => `increase target reps by +${v || 1}`,
     TRIGGER_DELOAD: (v) => `trigger deload (-${v || 10}%)`,
+    SCHEDULE_AMRAP_FINAL_WEEK: () => 'schedule end-of-meso diagnostic AMRAP',
+    SCHEDULE_AMRAP_MIDWAY: () => 'schedule mid-meso diagnostic AMRAP',
+    INCREASE_LOAD_AMRAP_OVER_CAP: (v) =>
+      `+1%/rep over cap (floor-rounded to ${v || 2.5} kg)`,
   };
 
   const conditionText = def.conditions

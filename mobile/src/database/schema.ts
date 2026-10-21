@@ -2,7 +2,7 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { DEFAULT_EXERCISES, DEFAULT_GEAR } from './seeds/defaultExercises';
 
 export const DATABASE_NAME = 'workout_suite.db';
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 /**
  * Minimal abstraction matching the modern expo-sqlite async interface.
@@ -37,7 +37,15 @@ CREATE TABLE IF NOT EXISTS exercises (
     is_custom INTEGER NOT NULL DEFAULT 0,
     parent_exercise_id TEXT REFERENCES exercises(id) ON DELETE SET NULL,
     standard_lift_type TEXT,
-    default_rest_seconds INTEGER NOT NULL DEFAULT 120
+    default_rest_seconds INTEGER NOT NULL DEFAULT 120,
+    axial_loading TEXT DEFAULT 'none',
+    rom_tier TEXT DEFAULT 'standard_full',
+    muscle_biases TEXT,
+    primary_joints TEXT,
+    secondary_joints TEXT,
+    baseline_sfr REAL DEFAULT 50.0,
+    required_gear TEXT,
+    exercise_tier INTEGER DEFAULT 2
 );
 
 -- Gear & Equipment Inventory
@@ -90,7 +98,8 @@ CREATE TABLE IF NOT EXISTS template_exercises (
     target_rpe REAL,
     target_rir REAL,
     order_index INTEGER NOT NULL,
-    exercise_group_id TEXT
+    exercise_group_id TEXT,
+    set_type TEXT DEFAULT 'working'
 );
 
 -- Progression Rules (declarative condition-action engine)
@@ -104,7 +113,7 @@ CREATE TABLE IF NOT EXISTS progression_rules (
 -- Completed / In-Progress Workouts
 CREATE TABLE IF NOT EXISTS workouts (
     id TEXT PRIMARY KEY,
-    template_id TEXT REFERENCES workout_templates(id),
+    template_id TEXT REFERENCES workout_templates(id) ON DELETE SET NULL,
     date TEXT NOT NULL,
     name TEXT NOT NULL,
     notes TEXT,
@@ -188,6 +197,10 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     preferred_days_per_week INTEGER NOT NULL DEFAULT 4,
     preferred_session_duration_mins INTEGER NOT NULL DEFAULT 60,
     equipment_access TEXT NOT NULL DEFAULT 'commercial_gym',
+    experience_level TEXT DEFAULT 'intermediate',
+    pending_meso_mood INTEGER DEFAULT 0,
+    has_axial_fatigue_sensitivity INTEGER DEFAULT 0,
+    is_caloric_deficit INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -205,6 +218,19 @@ CREATE TABLE IF NOT EXISTS pain_reports (
     created_at TEXT NOT NULL
 );
 
+-- Exercise Preferences, Sentiment & Soft Affinity (ADR-096)
+CREATE TABLE IF NOT EXISTS exercise_preferences (
+    exercise_id TEXT PRIMARY KEY REFERENCES exercises(id) ON DELETE CASCADE,
+    sentiment TEXT NOT NULL DEFAULT 'neutral',
+    swap_in_count INTEGER NOT NULL DEFAULT 0,
+    swap_out_count INTEGER NOT NULL DEFAULT 0,
+    affinity_score REAL NOT NULL DEFAULT 0.0,
+    last_pain_reported_at TEXT,
+    max_pain_severity INTEGER,
+    pain_joint TEXT,
+    updated_at TEXT NOT NULL
+);
+
 -- Indices for rapid query performance and ghost set lookups
 CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_id ON workout_sets(workout_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise_id ON workout_sets(exercise_id);
@@ -215,6 +241,7 @@ CREATE INDEX IF NOT EXISTS idx_workouts_status_date ON workouts(status, date);
 CREATE INDEX IF NOT EXISTS idx_exercises_parent_id ON exercises(parent_exercise_id);
 CREATE INDEX IF NOT EXISTS idx_pain_reports_workout_id ON pain_reports(workout_id);
 CREATE INDEX IF NOT EXISTS idx_pain_reports_exercise_id ON pain_reports(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_exercise_preferences_sentiment ON exercise_preferences(sentiment);
 `;
 
 /**
@@ -243,8 +270,10 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
           `INSERT OR IGNORE INTO exercises (
             id, name, muscle_group, category, is_compound, is_bodyweight,
             is_unilateral, load_mode, default_cable_ratio, default_bar_weight_kg,
-            is_custom, parent_exercise_id, standard_lift_type, default_rest_seconds
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            is_custom, parent_exercise_id, standard_lift_type, default_rest_seconds,
+            axial_loading, rom_tier, muscle_biases, primary_joints, secondary_joints,
+            baseline_sfr, required_gear, exercise_tier
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
           ex.id,
           ex.name,
           ex.muscle_group,
@@ -258,7 +287,15 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
           ex.is_custom ? 1 : 0,
           ex.parent_exercise_id,
           ex.standard_lift_type,
-          ex.default_rest_seconds
+          ex.default_rest_seconds,
+          ex.axial_loading ?? 'none',
+          ex.rom_tier ?? 'standard_full',
+          ex.muscle_biases ? JSON.stringify(ex.muscle_biases) : null,
+          ex.primary_joints ? JSON.stringify(ex.primary_joints) : null,
+          ex.secondary_joints ? JSON.stringify(ex.secondary_joints) : null,
+          ex.baseline_sfr ?? 50.0,
+          ex.required_gear ? JSON.stringify(ex.required_gear) : null,
+          ex.exercise_tier ?? 2
         );
       }
 
@@ -438,6 +475,139 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
       } catch {
         // Indexes may already exist
       }
+      await db.execAsync('PRAGMA user_version = 6;');
+      await db.execAsync('COMMIT;');
+      currentVersion = 6;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  if (currentVersion < 7) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      // Migration v6 -> v7:
+      // 1. Add set_type column to template_exercises
+      // 2. Add experience_level column to user_profiles
+      try {
+        await db.execAsync(
+          "ALTER TABLE template_exercises ADD COLUMN set_type TEXT DEFAULT 'working';"
+        );
+      } catch {
+        // Column may already exist
+      }
+      try {
+        await db.execAsync(
+          "ALTER TABLE user_profiles ADD COLUMN experience_level TEXT DEFAULT 'intermediate';"
+        );
+      } catch {
+        // Column may already exist
+      }
+      try {
+        await db.execAsync(
+          "ALTER TABLE user_profiles ADD COLUMN pending_meso_mood INTEGER DEFAULT 0;"
+        );
+      } catch {
+        // Column may already exist
+      }
+      await db.execAsync('PRAGMA user_version = 7;');
+      await db.execAsync('COMMIT;');
+      currentVersion = 7;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  if (currentVersion < 8) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      // Migration v7 -> v8: Biomechanical Exercise Taxonomy & Exercise Preferences (ADR-095, ADR-096)
+      const columns = [
+        "ALTER TABLE exercises ADD COLUMN axial_loading TEXT DEFAULT 'none';",
+        "ALTER TABLE exercises ADD COLUMN rom_tier TEXT DEFAULT 'standard_full';",
+        "ALTER TABLE exercises ADD COLUMN muscle_biases TEXT;",
+        "ALTER TABLE exercises ADD COLUMN primary_joints TEXT;",
+        "ALTER TABLE exercises ADD COLUMN secondary_joints TEXT;",
+        "ALTER TABLE exercises ADD COLUMN baseline_sfr REAL DEFAULT 50.0;",
+        "ALTER TABLE exercises ADD COLUMN required_gear TEXT;",
+        "ALTER TABLE exercises ADD COLUMN exercise_tier INTEGER DEFAULT 2;",
+      ];
+      for (const colSql of columns) {
+        try {
+          await db.execAsync(colSql);
+        } catch {
+          // Ignore if column already exists (idempotence)
+        }
+      }
+
+      // Create exercise_preferences table in v8
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS exercise_preferences (
+            exercise_id TEXT PRIMARY KEY REFERENCES exercises(id) ON DELETE CASCADE,
+            sentiment TEXT NOT NULL DEFAULT 'neutral',
+            swap_in_count INTEGER NOT NULL DEFAULT 0,
+            swap_out_count INTEGER NOT NULL DEFAULT 0,
+            affinity_score REAL NOT NULL DEFAULT 0.0,
+            last_pain_reported_at TEXT,
+            max_pain_severity INTEGER,
+            pain_joint TEXT,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_exercise_preferences_sentiment ON exercise_preferences(sentiment);
+      `);
+
+      // Update existing exercises with enriched biomechanical properties from seeds
+      for (const ex of DEFAULT_EXERCISES) {
+        await db.runAsync(
+          `UPDATE exercises SET
+            axial_loading = ?,
+            rom_tier = ?,
+            muscle_biases = ?,
+            primary_joints = ?,
+            secondary_joints = ?,
+            baseline_sfr = ?,
+            required_gear = ?,
+            exercise_tier = ?
+          WHERE id = ?;`,
+          ex.axial_loading ?? 'none',
+          ex.rom_tier ?? 'standard_full',
+          ex.muscle_biases ? JSON.stringify(ex.muscle_biases) : null,
+          ex.primary_joints ? JSON.stringify(ex.primary_joints) : null,
+          ex.secondary_joints ? JSON.stringify(ex.secondary_joints) : null,
+          ex.baseline_sfr ?? 50.0,
+          ex.required_gear ? JSON.stringify(ex.required_gear) : null,
+          ex.exercise_tier ?? 2,
+          ex.id
+        );
+      }
+
+      await db.execAsync('PRAGMA user_version = 8;');
+      await db.execAsync('COMMIT;');
+      currentVersion = 8;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  if (currentVersion < 9) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      // Migration v8 -> v9: Fix missing user_profiles columns (pending_meso_mood, has_axial_fatigue_sensitivity, is_caloric_deficit)
+      const userProfileColumns = [
+        "ALTER TABLE user_profiles ADD COLUMN pending_meso_mood INTEGER DEFAULT 0;",
+        "ALTER TABLE user_profiles ADD COLUMN has_axial_fatigue_sensitivity INTEGER DEFAULT 0;",
+        "ALTER TABLE user_profiles ADD COLUMN is_caloric_deficit INTEGER DEFAULT 0;",
+      ];
+      for (const colSql of userProfileColumns) {
+        try {
+          await db.execAsync(colSql);
+        } catch {
+          // Ignore if column already exists (idempotence)
+        }
+      }
       await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
       await db.execAsync('COMMIT;');
       currentVersion = CURRENT_SCHEMA_VERSION;
@@ -470,6 +640,7 @@ export async function getDatabase(dbName: string = DATABASE_NAME): Promise<SQLit
 export async function resetDatabase(db: ISQLiteDatabase): Promise<void> {
   await db.execAsync('PRAGMA foreign_keys = OFF;');
   const tables = [
+    'exercise_preferences',
     'pain_reports',
     'user_profiles',
     'user_settings',

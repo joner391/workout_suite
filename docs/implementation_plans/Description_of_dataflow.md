@@ -1,3 +1,5 @@
+> **Historical reference:** This document contains past plans, audits, or proposals with mixed completion status. Its agent instructions, verification gates, and unchecked items do not assign current work. Follow the latest user request, root `AGENTS.md`, and [current documentation guidance](../README.md). Verify implementation claims against source.
+
 # Workout Suite — Data Flow & Tier Architecture Specification
 
 ## 1. System Vision & Local-First Philosophy

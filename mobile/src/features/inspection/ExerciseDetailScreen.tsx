@@ -26,6 +26,8 @@ import {
 } from 'react-native';
 import {
   Exercise,
+  ExercisePreference,
+  ExerciseSentiment,
   Gender,
   IntensityMetric,
   PRBoardResult,
@@ -37,7 +39,21 @@ import { IExerciseRepository } from '../../domain/repositories/IExerciseReposito
 import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
 import { IGearRepository } from '../../domain/repositories/IGearRepository';
+import { IExercisePreferenceRepository } from '../../domain/repositories/IExercisePreferenceRepository';
 import { ExerciseInspectionService } from '../../services/exerciseInspectionService';
+import {
+  ExercisePreferenceService,
+  calculateAffinityScore,
+} from '../../services/exercisePreferenceService';
+import { useOptionalRepositories } from '../../context/RepositoryContext';
+import {
+  formatRomTier,
+  getRomTierBadgeStyle,
+  formatAxialLoading,
+  getAxialLoadingBadgeStyle,
+  formatMuscleBias,
+  getSentimentPillStyle,
+} from './biomechanicalFormatters';
 import { PRBoardTable } from './PRBoardTable';
 import { SBDStandardsCard } from './SBDStandardsCard';
 import { SBDBalanceRadarChart } from './SBDBalanceRadarChart';
@@ -50,6 +66,8 @@ export interface ExerciseDetailScreenProps {
   workoutRepo: IWorkoutRepository;
   userSettingsRepo?: IUserSettingsRepository;
   gearRepo?: IGearRepository;
+  preferenceRepo?: IExercisePreferenceRepository;
+  preferenceService?: ExercisePreferenceService;
   inspectionService?: ExerciseInspectionService;
   onClose?: () => void;
 }
@@ -60,13 +78,24 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
   workoutRepo,
   userSettingsRepo,
   gearRepo,
+  preferenceRepo: propPreferenceRepo,
+  preferenceService: propPreferenceService,
   inspectionService: propInspectionService,
   onClose,
 }) => {
+  const optionalRepos = useOptionalRepositories();
+
   const inspectionService = useMemo(
     () => propInspectionService ?? new ExerciseInspectionService(workoutRepo, exerciseRepo),
     [propInspectionService, workoutRepo, exerciseRepo]
   );
+
+  const prefService = useMemo(() => {
+    if (propPreferenceService) return propPreferenceService;
+    const repo = propPreferenceRepo ?? optionalRepos?.exercisePreferenceRepo;
+    if (repo) return new ExercisePreferenceService(repo);
+    return null;
+  }, [propPreferenceService, propPreferenceRepo, optionalRepos?.exercisePreferenceRepo]);
 
   const [loading, setLoading] = useState<boolean>(true);
   const [exercise, setExercise] = useState<Exercise | null>(null);
@@ -74,6 +103,7 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
   const [standardSummary, setStandardSummary] = useState<StrengthStandardSummaryResult | null>(null);
   const [balanceProfile, setBalanceProfile] = useState<SBDBalanceProfile | null>(null);
   const [hasVariants, setHasVariants] = useState<boolean>(false);
+  const [preference, setPreference] = useState<ExercisePreference | null>(null);
 
   // User Profile & Settings
   const [userGender, setUserGender] = useState<Gender>('male');
@@ -190,6 +220,54 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
   useEffect(() => {
     loadExerciseData();
   }, [loadExerciseData]);
+
+  // Load Exercise Preference & Sentiment
+  const loadPreference = useCallback(async () => {
+    if (!prefService) return;
+    try {
+      const p = await prefService.getPreference(exerciseId);
+      setPreference(p);
+    } catch {
+      // Ignore
+    }
+  }, [prefService, exerciseId]);
+
+  useEffect(() => {
+    loadPreference();
+  }, [loadPreference]);
+
+  // Handle sentiment action toggle
+  const handleSelectSentiment = async (sentiment: ExerciseSentiment) => {
+    const prev = preference;
+    const currentSwapIn = prev?.swap_in_count ?? 0;
+    const currentSwapOut = prev?.swap_out_count ?? 0;
+    const optimisticAffinity = calculateAffinityScore({
+      sentiment,
+      swap_in_count: currentSwapIn,
+      swap_out_count: currentSwapOut,
+    });
+
+    setPreference({
+      exercise_id: exerciseId,
+      sentiment,
+      swap_in_count: currentSwapIn,
+      swap_out_count: currentSwapOut,
+      affinity_score: optimisticAffinity,
+      last_pain_reported_at: prev?.last_pain_reported_at ?? null,
+      max_pain_severity: prev?.max_pain_severity ?? null,
+      pain_joint: prev?.pain_joint ?? null,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (prefService) {
+      try {
+        const updated = await prefService.setSentiment(exerciseId, sentiment);
+        setPreference(updated);
+      } catch {
+        setPreference(prev);
+      }
+    }
+  };
 
   // Update PR Board when scope or includeVariants changes
   const handleScopeChange = async (newScope: 'all_time' | 'program_block') => {
@@ -330,6 +408,185 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
             <Text style={styles.statLabel}>LIFETIME TONNAGE</Text>
             <Text style={styles.statValue}>{displayLifetimeVolume}</Text>
           </View>
+        </View>
+
+        {/* Biomechanical Specifications & Badges */}
+        <View style={styles.biomechanicsCard} testID="exercise-biomechanics-card">
+          <Text style={styles.cardHeaderTitle}>BIOMECHANICAL SPECIFICATIONS</Text>
+
+          <View style={styles.biomechanicsBadgesRow}>
+            {/* ROM Tier Badge */}
+            {(() => {
+              const romStyle = getRomTierBadgeStyle(exercise.rom_tier);
+              return (
+                <View
+                  testID="badge-rom-tier"
+                  style={[
+                    styles.specBadge,
+                    { backgroundColor: romStyle.bg, borderColor: romStyle.border },
+                  ]}
+                >
+                  <Text style={[styles.specBadgeText, { color: romStyle.text }]}>
+                    {formatRomTier(exercise.rom_tier)}
+                  </Text>
+                </View>
+              );
+            })()}
+
+            {/* Axial Load Badge */}
+            {(() => {
+              const axialStyle = getAxialLoadingBadgeStyle(exercise.axial_loading);
+              return (
+                <View
+                  testID="badge-axial-loading"
+                  style={[
+                    styles.specBadge,
+                    { backgroundColor: axialStyle.bg, borderColor: axialStyle.border },
+                  ]}
+                >
+                  <Text style={[styles.specBadgeText, { color: axialStyle.text }]}>
+                    {formatAxialLoading(exercise.axial_loading)}
+                  </Text>
+                </View>
+              );
+            })()}
+
+            {/* Baseline SFR Badge if defined */}
+            {exercise.baseline_sfr != null && (
+              <View testID="badge-baseline-sfr" style={styles.sfrBadge}>
+                <Text style={styles.sfrBadgeText}>SFR {exercise.baseline_sfr}/100</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Regional Bias Chips */}
+          {exercise.muscle_biases && exercise.muscle_biases.length > 0 && (
+            <View style={styles.regionalBiasContainer}>
+              <Text style={styles.regionalBiasLabel}>REGIONAL FOCUS</Text>
+              <View style={styles.regionalBiasRow}>
+                {exercise.muscle_biases.map((bias) => (
+                  <View
+                    key={bias}
+                    testID={`chip-muscle-bias-${bias}`}
+                    style={styles.biasChip}
+                  >
+                    <Text style={styles.biasChipText}>{formatMuscleBias(bias)}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Planner Preference & Sentiment Controls */}
+        <View style={styles.preferenceCard} testID="exercise-preference-card">
+          <View style={styles.preferenceHeaderRow}>
+            <Text style={styles.cardHeaderTitle}>PLANNER PREFERENCE</Text>
+            {preference && preference.sentiment !== 'neutral' && (
+              <Text style={styles.affinityBadgeText}>
+                Affinity: {preference.affinity_score > 0 ? `+${preference.affinity_score.toFixed(0)}` : preference.affinity_score.toFixed(0)}
+              </Text>
+            )}
+          </View>
+
+          {/* Sentiment Action Pill Row */}
+          <View style={styles.sentimentPillRow} testID="sentiment-pill-row">
+            {/* Liked (Heart) */}
+            {(() => {
+              const isLiked = (preference?.sentiment ?? 'neutral') === 'liked';
+              const style = getSentimentPillStyle('liked', isLiked);
+              return (
+                <TouchableOpacity
+                  testID="sentiment-liked-btn"
+                  style={[
+                    styles.sentimentBtn,
+                    { backgroundColor: style.bg, borderColor: style.border },
+                  ]}
+                  onPress={() => handleSelectSentiment('liked')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.sentimentBtnText, { color: style.text }]}>♥ Liked</Text>
+                </TouchableOpacity>
+              );
+            })()}
+
+            {/* Neutral */}
+            {(() => {
+              const isNeutral = (preference?.sentiment ?? 'neutral') === 'neutral';
+              const style = getSentimentPillStyle('neutral', isNeutral);
+              return (
+                <TouchableOpacity
+                  testID="sentiment-neutral-btn"
+                  style={[
+                    styles.sentimentBtn,
+                    { backgroundColor: style.bg, borderColor: style.border },
+                  ]}
+                  onPress={() => handleSelectSentiment('neutral')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.sentimentBtnText, { color: style.text }]}>— Neutral</Text>
+                </TouchableOpacity>
+              );
+            })()}
+
+            {/* Disliked */}
+            {(() => {
+              const isDisliked = (preference?.sentiment ?? 'neutral') === 'disliked';
+              const style = getSentimentPillStyle('disliked', isDisliked);
+              return (
+                <TouchableOpacity
+                  testID="sentiment-disliked-btn"
+                  style={[
+                    styles.sentimentBtn,
+                    { backgroundColor: style.bg, borderColor: style.border },
+                  ]}
+                  onPress={() => handleSelectSentiment('disliked')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.sentimentBtnText, { color: style.text }]}>✕ Dislike</Text>
+                </TouchableOpacity>
+              );
+            })()}
+
+            {/* Blacklisted */}
+            {(() => {
+              const isBlacklisted = (preference?.sentiment ?? 'neutral') === 'blacklisted';
+              const style = getSentimentPillStyle('blacklisted', isBlacklisted);
+              return (
+                <TouchableOpacity
+                  testID="sentiment-blacklisted-btn"
+                  style={[
+                    styles.sentimentBtn,
+                    { backgroundColor: style.bg, borderColor: style.border },
+                  ]}
+                  onPress={() => handleSelectSentiment('blacklisted')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.sentimentBtnText, { color: style.text }]}>⊘ Blacklist</Text>
+                </TouchableOpacity>
+              );
+            })()}
+          </View>
+
+          {/* Helper / explanation note */}
+          <Text style={styles.preferenceExplanationText}>
+            {preference?.sentiment === 'liked' && 'Prioritized by program generator & adaptive substitution (+25 bonus).'}
+            {preference?.sentiment === 'disliked' && 'De-prioritized by generator (-60 penalty).'}
+            {preference?.sentiment === 'blacklisted' && 'Strictly excluded from synthesizer and logger substitutions.'}
+            {(!preference || preference.sentiment === 'neutral') &&
+              ((preference?.swap_in_count ?? 0) > 0 || (preference?.swap_out_count ?? 0) > 0
+                ? `Neutral balance: Swapped in ${preference?.swap_in_count}x, swapped out ${preference?.swap_out_count}x.`
+                : 'Neutral: Eligible for automated synthesizer rotation.')}
+          </Text>
+
+          {/* Pain correlation warning if recorded */}
+          {preference?.last_pain_reported_at && (
+            <View style={styles.painWarningBox}>
+              <Text style={styles.painWarningText}>
+                ⚠ Discomfort reported on {preference.pain_joint ?? 'joint'} (Severity {preference.max_pain_severity}/5)
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* SBD Strength Standards Card (If Standard Lift) */}
@@ -531,5 +788,135 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#A1A1AA',
+  },
+  biomechanicsCard: {
+    backgroundColor: '#121215',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  cardHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#71717A',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  biomechanicsBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    alignItems: 'center',
+  },
+  specBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  specBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  sfrBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: '#102A1E',
+    borderColor: '#00E676',
+  },
+  sfrBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#00E676',
+  },
+  regionalBiasContainer: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#1E1E24',
+  },
+  regionalBiasLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#71717A',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  regionalBiasRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  biasChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#1A1A22',
+    borderWidth: 1,
+    borderColor: '#2D2D38',
+  },
+  biasChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#D4D4D8',
+  },
+  preferenceCard: {
+    backgroundColor: '#121215',
+    borderWidth: 1,
+    borderColor: '#27272A',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  preferenceHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  affinityBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#00E676',
+  },
+  sentimentPillRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  sentimentBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sentimentBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  preferenceExplanationText: {
+    fontSize: 11,
+    color: '#A1A1AA',
+    lineHeight: 16,
+  },
+  painWarningBox: {
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: '#2E1515',
+    borderWidth: 1,
+    borderColor: '#E53935',
+  },
+  painWarningText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFCDD2',
   },
 });

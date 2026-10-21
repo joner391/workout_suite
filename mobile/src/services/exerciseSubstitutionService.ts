@@ -11,124 +11,25 @@
  * 4. Transfers target rep/RPE prescriptions and swaps sets in active session
  */
 
-import { Exercise, WorkoutSet, WorkoutWithSets, JointLocation } from '../core/types';
+import { Exercise, WorkoutSet, WorkoutWithSets, JointLocation, ExercisePreference } from '../core/types';
 import { normalizeExerciseLoad } from '../core/math/loadNormalizer';
 import { IExerciseRepository } from '../domain/repositories/IExerciseRepository';
 import { IWorkoutRepository } from '../domain/repositories/IWorkoutRepository';
 import { IGearRepository } from '../domain/repositories/IGearRepository';
+import { ExercisePreferenceService } from './exercisePreferenceService';
+import {
+  resolveExerciseJoints,
+  computeCandidateScore,
+  CandidateScoringContext,
+  CandidateScoreResult,
+} from '../core/generator/candidateScorer';
 
-// ============================================================================
-// Biomechanical Joint Resolution Helper
-// ============================================================================
-
-/**
- * Maps an exercise to its primary mechanically loaded joints and articulations.
- */
-export function resolveExerciseJoints(exercise: Exercise): JointLocation[] {
-  if (exercise.primary_joints && exercise.primary_joints.length > 0) {
-    return exercise.primary_joints;
-  }
-
-  const name = (exercise.name || '').toLowerCase();
-  const id = (exercise.id || '').toLowerCase();
-  const mg = (exercise.muscle_group || '').toLowerCase();
-
-  // Leg Extension / Leg Curl (single joint isolation)
-  if (name.includes('leg extension') || name.includes('leg curl') || id.includes('leg_extension') || id.includes('leg_curl')) {
-    return ['knee'];
-  }
-
-  // Calf Raise
-  if (name.includes('calf') || mg === 'calves') {
-    return ['ankle', 'knee'];
-  }
-
-  // Leg Press & Bulgarian Split Squat (machine/supported spinal offloading)
-  if (name.includes('leg press') || id.includes('leg_press') || name.includes('split squat') || id.includes('split_squat')) {
-    return ['knee', 'hip', 'ankle'];
-  }
-
-  // Squat variants (high axial shear on lower back)
-  if (name.includes('squat') || id.includes('squat') || name.includes('lunge') || id.includes('lunge')) {
-    return ['knee', 'hip', 'lower_back', 'ankle'];
-  }
-
-  // Deadlift / RDL / Good Morning / Hip Thrust
-  if (
-    name.includes('deadlift') ||
-    name.includes('rdl') ||
-    name.includes('good morning') ||
-    name.includes('hip thrust') ||
-    id.includes('deadlift') ||
-    id.includes('rdl') ||
-    id.includes('hip_thrust')
-  ) {
-    return ['lower_back', 'hip', 'knee', 'wrist'];
-  }
-
-  // Bench Press / Incline / Dip / Push-Up
-  if (
-    name.includes('bench press') ||
-    name.includes('chest press') ||
-    name.includes('dip') ||
-    name.includes('push-up') ||
-    name.includes('push up') ||
-    name.includes('incline bench') ||
-    id.includes('bench_press') ||
-    id.includes('dip')
-  ) {
-    return ['shoulder', 'elbow', 'wrist', 'chest_pec'];
-  }
-
-  // Overhead Press / Shoulder Press / Lateral Raise
-  if (
-    name.includes('overhead press') ||
-    name.includes('shoulder press') ||
-    name.includes('ohp') ||
-    name.includes('military press') ||
-    name.includes('lateral raise') ||
-    id.includes('ohp') ||
-    id.includes('shoulder_press') ||
-    id.includes('lateral_raise')
-  ) {
-    return ['shoulder', 'elbow', 'wrist', 'lower_back'];
-  }
-
-  // Row / Pulldown / Pull-Up
-  if (
-    name.includes('row') ||
-    name.includes('pulldown') ||
-    name.includes('pull-up') ||
-    name.includes('pull up') ||
-    name.includes('chin-up') ||
-    id.includes('row') ||
-    id.includes('pulldown') ||
-    id.includes('pull_up')
-  ) {
-    return ['shoulder', 'elbow', 'wrist', 'lower_back'];
-  }
-
-  // Bicep Curl / Tricep Pushdown / Skull Crusher
-  if (
-    name.includes('curl') ||
-    name.includes('pushdown') ||
-    name.includes('skull crusher') ||
-    name.includes('tricep') ||
-    (name.includes('extension') && (mg === 'arms' || mg === 'triceps' || mg === 'biceps'))
-  ) {
-    return ['elbow', 'wrist', 'shoulder'];
-  }
-
-  // Muscle group fallbacks
-  if (mg === 'chest') return ['shoulder', 'elbow', 'wrist', 'chest_pec'];
-  if (mg === 'back' || mg === 'lats' || mg === 'traps') return ['shoulder', 'elbow', 'wrist', 'lower_back'];
-  if (mg === 'shoulders') return ['shoulder', 'elbow', 'wrist', 'lower_back'];
-  if (mg === 'quads' || mg === 'hamstrings') return ['knee', 'hip', 'lower_back', 'ankle'];
-  if (mg === 'glutes') return ['hip', 'lower_back', 'knee'];
-  if (mg === 'biceps' || mg === 'triceps' || mg === 'forearms') return ['elbow', 'wrist', 'shoulder'];
-
-  return ['other'];
-}
+export {
+  resolveExerciseJoints,
+  computeCandidateScore,
+  CandidateScoringContext,
+  CandidateScoreResult,
+};
 
 // ============================================================================
 // Service DTOs & Output Types
@@ -136,6 +37,10 @@ export function resolveExerciseJoints(exercise: Exercise): JointLocation[] {
 
 export interface FindSubstitutesOptions {
   painfulJoint?: JointLocation | null;
+  painSeverity?: number;
+  isCaloricDeficit?: boolean;
+  hasAxialFatigueSensitivity?: boolean;
+  preferences?: Map<string, ExercisePreference> | ExercisePreference[];
 }
 
 export type SubstitutionMatchReason =
@@ -149,6 +54,7 @@ export interface ExerciseSubstitutionOption {
   exercise: Exercise;
   matchReason: SubstitutionMatchReason;
   relevanceScore: number;
+  candidateScore?: number;
   ghostSets: WorkoutSet[];
   hasGhostData: boolean;
 }
@@ -189,7 +95,8 @@ export class ExerciseSubstitutionService {
   constructor(
     private readonly exerciseRepo: IExerciseRepository,
     private readonly workoutRepo: IWorkoutRepository,
-    private readonly gearRepo?: IGearRepository
+    private readonly gearRepo?: IGearRepository,
+    private readonly preferenceService?: ExercisePreferenceService
   ) {}
 
   /**
@@ -281,21 +188,74 @@ export class ExerciseSubstitutionService {
       }
     }
 
-    // 4. Attach ghost sets and calculate final relevance score (with biomechanical joint awareness)
-    const results: ExerciseSubstitutionOption[] = await Promise.all(
+    // 4. Resolve preferences map
+    const prefMap = new Map<string, ExercisePreference>();
+    if (options?.preferences) {
+      if (options.preferences instanceof Map) {
+        options.preferences.forEach((val, key) => prefMap.set(key, val));
+      } else if (Array.isArray(options.preferences)) {
+        options.preferences.forEach((p) => prefMap.set(p.exercise_id, p));
+      }
+    } else if (this.preferenceService) {
+      try {
+        const allPrefs = await this.preferenceService.getAllPreferences();
+        allPrefs.forEach((p) => prefMap.set(p.exercise_id, p));
+      } catch {
+        // Fallback if preference retrieval fails
+      }
+    }
+
+    // 5. Attach ghost sets and calculate final relevance score (with biomechanical candidate scoring)
+    const rawResults = await Promise.all(
       candidates.map(async (candidate) => {
+        const pref = prefMap.get(candidate.exercise.id);
+
+        // Compute candidate score breakdown (evaluates baseline SFR, affinity bonus, axial & pain penalties, and ROM router)
+        const scoring = computeCandidateScore(candidate.exercise, {
+          preference: pref,
+          hasAxialFatigueSensitivity: options?.hasAxialFatigueSensitivity,
+          isCaloricDeficit: options?.isCaloricDeficit,
+          painfulJoint: options?.painfulJoint,
+          painSeverity: options?.painSeverity,
+        });
+
+        // Step 9.3: If candidate is blacklisted (affinity_score <= -900), completely exclude from substitutes
+        if (scoring.isExcluded) {
+          return null;
+        }
+
         const ghostSets = await this.workoutRepo.getMostRecentCompletedSetsForExercise(
           candidate.exercise.id
         );
         const hasGhostData = ghostSets.length > 0;
+
         // Prioritize movements the user has actually logged before (+5 bonus)
         let relevanceScore = candidate.baseScore + (hasGhostData ? 5 : 0);
+
+        // Apply affinity bonus from user preferences
+        if (pref && pref.affinity_score !== 0) {
+          relevanceScore += pref.affinity_score;
+        }
+
+        // Apply axial fatigue / deficit penalty
+        if (scoring.axialPenalty > 0) {
+          relevanceScore -= scoring.axialPenalty;
+        }
 
         if (options?.painfulJoint) {
           const candJoints = resolveExerciseJoints(candidate.exercise);
           if (candJoints.includes(options.painfulJoint)) {
             // Penalize candidate exercises that heavily load the painful articulation (-60)
             relevanceScore -= 60;
+
+            // Step 9.3 Joint-ROM Protection Router:
+            if (candidate.exercise.rom_tier === 'deep_stretch') {
+              relevanceScore -= 80;
+            } else if (candidate.exercise.rom_tier === 'shortened_restricted') {
+              relevanceScore += 20;
+            } else if (candidate.exercise.rom_tier === 'standard_full') {
+              relevanceScore += 10;
+            }
           } else {
             // Boost substitutes that spare the injured joint (+15)
             relevanceScore += 15;
@@ -311,15 +271,19 @@ export class ExerciseSubstitutionService {
           }
         }
 
-        return {
+        const resultOption: ExerciseSubstitutionOption = {
           exercise: candidate.exercise,
           matchReason: candidate.matchReason,
           relevanceScore,
+          candidateScore: scoring.score,
           ghostSets,
           hasGhostData,
         };
+        return resultOption;
       })
     );
+
+    const results = rawResults.filter((r): r is ExerciseSubstitutionOption => r !== null);
 
     // Sort by relevance score DESC, then name ASC
     return results.sort((a, b) => {
@@ -399,6 +363,18 @@ export class ExerciseSubstitutionService {
 
     if (updatedSets.length > 0) {
       await this.workoutRepo.saveSets(updatedSets);
+    }
+
+    // Record manual exercise swap in preference engine (ADR-096)
+    if (this.preferenceService) {
+      try {
+        await this.preferenceService.recordManualSwap(
+          input.oldExerciseId,
+          input.newExerciseId
+        );
+      } catch {
+        // Non-blocking preference tracking
+      }
     }
 
     return {

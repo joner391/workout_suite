@@ -11,4 +11,6 @@ export * from './exportService';
 export * from './importService';
 export * from './exerciseInspectionService';
 export * from './calibratedParamService';
+export * from './mesocycleDiffFormatter';
+export * from './programEvolutionService';
 

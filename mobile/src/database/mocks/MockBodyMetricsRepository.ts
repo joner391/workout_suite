@@ -70,16 +70,6 @@ export class MockBodyMetricsRepository implements IBodyMetricsRepository {
   ): Promise<BodyMetric> {
     const toSave: BodyMetric = { ...metric };
 
-    // Forward-fill bodyweight if not provided
-    if (toSave.bodyweight == null || toSave.bodyweight <= 0) {
-      const prior = Array.from(this.metrics.values())
-        .filter((m) => m.bodyweight != null && m.bodyweight > 0 && m.date <= toSave.date)
-        .sort((a, b) => b.date.localeCompare(a.date));
-      if (prior.length > 0 && prior[0].bodyweight) {
-        toSave.bodyweight = prior[0].bodyweight;
-      }
-    }
-
     if (
       toSave.navy_body_fat == null &&
       (toSave.waist_cm != null || toSave.neck_cm != null)

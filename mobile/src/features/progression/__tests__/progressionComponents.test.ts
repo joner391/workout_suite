@@ -10,6 +10,10 @@
  */
 
 import { MockProgramRepository } from '../../../database/mocks/MockProgramRepository';
+import {
+  detectProgressionBadge,
+  formatLifterProgramNotes,
+} from '../ProgramOverviewScreen';
 import { ProgramBlockService } from '../../../services/programBlockService';
 import {
   createLinearProgressionRule,
@@ -427,6 +431,56 @@ describe('Progression Builder & Program Overview Management (Step 4.4)', () => {
       expect(details?.exercises[0].gear_id).toBe('gear_bar_ssb_29kg');
       expect(details?.exercises[1].exercise_id).toBe('barbell_bench_press');
       expect(details?.exercises[1].gear_id).toBeNull();
+    });
+  });
+
+  describe('Lifter-Centric Program Overview Presentation & Progression Badges', () => {
+    test('detectProgressionBadge correctly identifies LP, DP, DDP, and Custom presets', () => {
+      expect(detectProgressionBadge([])).toBeNull();
+      expect(detectProgressionBadge(undefined)).toBeNull();
+
+      const lp = createLinearProgressionRule('te-1');
+      expect(detectProgressionBadge(lp)).toBe('LP');
+
+      const dp = createDoubleProgressionRule('te-2');
+      expect(detectProgressionBadge(dp)).toBe('DP');
+
+      const ddp = createDynamicDoubleProgressionRule('te-3');
+      expect(detectProgressionBadge(ddp)).toBe('DDP');
+
+      const customRule: ProgressionRule = {
+        id: 'rule-custom-99',
+        template_exercise_id: 'te-4',
+        priority: 1,
+        rule_json: {
+          conditions: [{ type: 'CONSECUTIVE_SUCCESSFUL_SESSIONS', threshold: 2 }],
+          actions: [{ type: 'INCREASE_LOAD_PERCENT', value: 0.05 }],
+          notes: 'Custom wave load progression',
+        },
+      };
+      expect(detectProgressionBadge([customRule])).toBe('Custom');
+    });
+
+    test('formatLifterProgramNotes removes raw HTML comments and formats mentalities & archetypes', () => {
+      expect(formatLifterProgramNotes(null)).toBeNull();
+      expect(formatLifterProgramNotes('')).toBeNull();
+
+      const rawEvolvedNotes =
+        'Mesocycle 2 (Evolved for fury mentality, archetype_ii_strength_primary).\n<!-- TRANSITION_WAVE: {"from":"precision","to":"fury","totalWeeks":3} -->\nSynthesized for male lifter (fury mentality, 60m/session, 4d/wk, archetype_ii_strength_primary).';
+
+      const formatted = formatLifterProgramNotes(rawEvolvedNotes);
+      expect(formatted).not.toBeNull();
+      expect(formatted).not.toContain('<!--');
+      expect(formatted).not.toContain('TRANSITION_WAVE');
+      expect(formatted).not.toContain('archetype_ii_strength_primary');
+      expect(formatted).toContain('Fury (High Intensity)');
+      expect(formatted).toContain('Strength & Hypertrophy');
+      expect(formatted).toContain('60m/session');
+    });
+
+    test('formatLifterProgramNotes preserves clean custom user notes', () => {
+      const userNotes = '4-Day Torso/Limbs specialized cycle with heavy bench focus';
+      expect(formatLifterProgramNotes(userNotes)).toBe(userNotes);
     });
   });
 });

@@ -20,7 +20,8 @@
     "user_settings",
     "user_profiles",
     "calibrated_params",
-    "pain_reports"
+    "pain_reports",
+    "exercise_preferences"
   ],
   "additionalProperties": false,
   "properties": {
@@ -130,6 +131,13 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/PainReport"
+      }
+    },
+    "exercise_preferences": {
+      "description": "Collection of exercise preferences, sentiment, soft affinity scores, and pain correlations.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExercisePreference"
       }
     }
   },
@@ -277,6 +285,11 @@
         "exercise_group_id": {
           "type": ["string", "null"],
           "description": "Group ID linking exercises performed as a superset, giant set, or circuit."
+        },
+        "set_type": {
+          "type": ["string", "null"],
+          "enum": ["warmup", "working", "drop", "myorep", "dc", "amrap", null],
+          "description": "Optional default set execution style (e.g. 'working' straight set, 'myorep' cluster, 'amrap' test)."
         }
       }
     },
@@ -531,6 +544,48 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Assisting / synergist muscle groups receiving 0.5 set volume credit."
+        },
+        "axial_loading": {
+          "type": "string",
+          "enum": ["none", "low", "moderate", "high"],
+          "description": "Spinal compressive loading classification."
+        },
+        "rom_tier": {
+          "type": "string",
+          "enum": ["deep_stretch", "standard_full", "shortened_restricted"],
+          "description": "Range of motion excursion tier."
+        },
+        "muscle_biases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Regional bodybuilding sub-target biases."
+        },
+        "primary_joints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Primary mechanically loaded joints."
+        },
+        "secondary_joints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Secondary assisting loaded joints."
+        },
+        "baseline_sfr": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Baseline Stimulus-to-Fatigue score (0-100)."
+        },
+        "required_gear": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Required equipment tags."
+        },
+        "exercise_tier": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Differentiated progression tier (1 = Anchor, 2 = Variant, 3 = Isolation)."
         }
       }
     },
@@ -743,6 +798,23 @@
           ],
           "description": "Available training facilities and equipment."
         },
+        "experience_level": {
+          "type": ["string", "null"],
+          "enum": ["beginner", "intermediate", "advanced", null],
+          "description": "Athlete resistance training experience tier."
+        },
+        "pending_meso_mood": {
+          "type": ["boolean", "null"],
+          "description": "Whether mid-flight mood changes are staged for deferred Meso N+1 evolution."
+        },
+        "has_axial_fatigue_sensitivity": {
+          "type": ["boolean", "null"],
+          "description": "Whether athlete is sensitive to spinal compressive / axial loading fatigue."
+        },
+        "is_caloric_deficit": {
+          "type": ["boolean", "null"],
+          "description": "Whether athlete is currently training in a caloric deficit / cutting phase."
+        },
         "created_at": {
           "type": "string",
           "format": "date-time",
@@ -835,6 +907,11 @@
           "enum": ["joint", "muscle"],
           "description": "Clinical category: joint (articular/tendon) vs muscle (belly strain)."
         },
+        "joint_location": {
+          "type": ["string", "null"],
+          "enum": ["shoulder", "elbow", "wrist", "lower_back", "hip", "knee", "ankle", "neck", "chest_pec", "other", null],
+          "description": "Optional anatomical location selected for a joint pain report."
+        },
         "severity": {
           "type": "integer",
           "minimum": 1,
@@ -849,6 +926,63 @@
           "type": "string",
           "format": "date-time",
           "description": "ISO 8601 UTC timestamp recording when pain was reported."
+        }
+      }
+    },
+    "ExercisePreference": {
+      "type": "object",
+      "required": [
+        "exercise_id",
+        "sentiment",
+        "swap_in_count",
+        "swap_out_count",
+        "affinity_score",
+        "updated_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "exercise_id": {
+          "type": "string",
+          "description": "Foreign key referencing exercises.id."
+        },
+        "sentiment": {
+          "type": "string",
+          "enum": ["liked", "neutral", "disliked", "blacklisted"],
+          "description": "Explicit user sentiment towards the exercise."
+        },
+        "swap_in_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of times this exercise was chosen as a substitute."
+        },
+        "swap_out_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of times this exercise was swapped out."
+        },
+        "affinity_score": {
+          "type": "number",
+          "description": "Computed soft affinity score (-999.0 to +25.0)."
+        },
+        "last_pain_reported_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of the last pain report."
+        },
+        "max_pain_severity": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum pain severity (1-10) reported."
+        },
+        "pain_joint": {
+          "type": ["string", "null"],
+          "description": "Joint location where pain was reported."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of last preference update."
         }
       }
     }

@@ -822,6 +822,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               programBlockService ?? new ProgramBlockService(programRepo)
             }
             exerciseRepo={exerciseRepo}
+            gearRepo={gearRepo}
             onClose={() => setShowProgramOverview(false)}
             onSelectProgram={() => {
               if (onSettingsChange) {

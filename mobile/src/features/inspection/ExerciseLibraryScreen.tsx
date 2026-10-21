@@ -29,6 +29,8 @@ import {
 import {
   Exercise,
   ExerciseCategory,
+  ExercisePreference,
+  ExerciseSentiment,
   MuscleGroup,
   WeightUnit,
 } from '../../core/types';
@@ -36,6 +38,20 @@ import { IExerciseRepository } from '../../domain/repositories/IExerciseReposito
 import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
 import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
+import { IExercisePreferenceRepository } from '../../domain/repositories/IExercisePreferenceRepository';
+import {
+  ExercisePreferenceService,
+  calculateAffinityScore,
+} from '../../services/exercisePreferenceService';
+import { useOptionalRepositories } from '../../context/RepositoryContext';
+import {
+  formatRomTier,
+  getRomTierBadgeStyle,
+  formatAxialLoading,
+  getAxialLoadingBadgeStyle,
+  formatMuscleBias,
+  getSentimentPillStyle,
+} from './biomechanicalFormatters';
 import { ExerciseFormModal } from './ExerciseFormModal';
 import { ExerciseDetailScreen } from './ExerciseDetailScreen';
 
@@ -44,6 +60,8 @@ export interface ExerciseLibraryScreenProps {
   workoutRepo?: IWorkoutRepository;
   gearRepo?: IGearRepository;
   userSettingsRepo?: IUserSettingsRepository;
+  preferenceRepo?: IExercisePreferenceRepository;
+  preferenceService?: ExercisePreferenceService;
   onSelectExercise?: (exercise: Exercise) => void;
   onClose?: () => void;
 }
@@ -79,12 +97,24 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
   workoutRepo,
   gearRepo,
   userSettingsRepo,
+  preferenceRepo: propPreferenceRepo,
+  preferenceService: propPreferenceService,
   onSelectExercise,
   onClose,
 }) => {
+  const optionalRepos = useOptionalRepositories();
+
+  const prefService = useMemo(() => {
+    if (propPreferenceService) return propPreferenceService;
+    const repo = propPreferenceRepo ?? optionalRepos?.exercisePreferenceRepo;
+    if (repo) return new ExercisePreferenceService(repo);
+    return null;
+  }, [propPreferenceService, propPreferenceRepo, optionalRepos?.exercisePreferenceRepo]);
+
   const [loading, setLoading] = useState<boolean>(true);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [unitSystem, setUnitSystem] = useState<WeightUnit>('kg');
+  const [preferences, setPreferences] = useState<Map<string, ExercisePreference>>(new Map());
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -101,22 +131,61 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
   const [inspectingExerciseId, setInspectingExerciseId] = useState<string | null>(null);
 
-  // Load all exercises & unit system
+  // Load all exercises & unit system & preferences
   const refreshCatalog = useCallback(async () => {
     try {
       setLoading(true);
-      const [allExercises, unit] = await Promise.all([
+      const [allExercises, unit, allPrefs] = await Promise.all([
         exerciseRepo.findAll(),
         userSettingsRepo ? userSettingsRepo.getUnitSystem() : Promise.resolve('kg' as WeightUnit),
+        prefService ? prefService.getAllPreferences() : Promise.resolve([]),
       ]);
       setExercises(allExercises);
       setUnitSystem(unit);
+      const prefMap = new Map<string, ExercisePreference>();
+      for (const p of allPrefs) {
+        prefMap.set(p.exercise_id, p);
+      }
+      setPreferences(prefMap);
     } catch {
       // Fallback
     } finally {
       setLoading(false);
     }
-  }, [exerciseRepo, userSettingsRepo]);
+  }, [exerciseRepo, userSettingsRepo, prefService]);
+
+  const handleToggleSentiment = async (exerciseId: string, sentiment: ExerciseSentiment) => {
+    setPreferences((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(exerciseId);
+      const swapIn = existing?.swap_in_count ?? 0;
+      const swapOut = existing?.swap_out_count ?? 0;
+      next.set(exerciseId, {
+        exercise_id: exerciseId,
+        sentiment,
+        swap_in_count: swapIn,
+        swap_out_count: swapOut,
+        affinity_score: calculateAffinityScore({
+          sentiment,
+          swap_in_count: swapIn,
+          swap_out_count: swapOut,
+        }),
+        last_pain_reported_at: existing?.last_pain_reported_at ?? null,
+        max_pain_severity: existing?.max_pain_severity ?? null,
+        pain_joint: existing?.pain_joint ?? null,
+        updated_at: new Date().toISOString(),
+      });
+      return next;
+    });
+
+    if (prefService) {
+      try {
+        await prefService.setSentiment(exerciseId, sentiment);
+      } catch {
+        await refreshCatalog();
+      }
+    }
+  };
 
   useEffect(() => {
     refreshCatalog();
@@ -254,6 +323,8 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
     const variants = variantChildrenMap.get(item.id) || [];
     const hasVariants = variants.length > 0;
     const isExpanded = expandedRoots.has(item.id);
+    const pref = preferences.get(item.id);
+    const currentSentiment: ExerciseSentiment = pref?.sentiment ?? 'neutral';
 
     return (
       <View
@@ -347,8 +418,138 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
                 <Text style={styles.tagBadgeMutedText}>{item.default_rest_seconds}s rest</Text>
               </View>
             )}
+
+            {/* Biomechanical Badges: ROM Tier */}
+            {(() => {
+              const romStyle = getRomTierBadgeStyle(item.rom_tier);
+              return (
+                <View
+                  testID={`badge-rom-tier-${item.id}`}
+                  style={[
+                    styles.tagBadge,
+                    { backgroundColor: romStyle.bg, borderColor: romStyle.border, borderWidth: 1 },
+                  ]}
+                >
+                  <Text style={[styles.tagBadgeText, { color: romStyle.text }]}>
+                    {formatRomTier(item.rom_tier)}
+                  </Text>
+                </View>
+              );
+            })()}
+
+            {/* Biomechanical Badges: Axial Loading */}
+            {(() => {
+              const axialStyle = getAxialLoadingBadgeStyle(item.axial_loading);
+              return (
+                <View
+                  testID={`badge-axial-${item.id}`}
+                  style={[
+                    styles.tagBadge,
+                    { backgroundColor: axialStyle.bg, borderColor: axialStyle.border, borderWidth: 1 },
+                  ]}
+                >
+                  <Text style={[styles.tagBadgeText, { color: axialStyle.text }]}>
+                    {formatAxialLoading(item.axial_loading)}
+                  </Text>
+                </View>
+              );
+            })()}
           </View>
+
+          {/* Regional Bias Chips */}
+          {item.muscle_biases && item.muscle_biases.length > 0 && (
+            <View style={styles.cardBiasesRow}>
+              {item.muscle_biases.map((bias) => (
+                <View
+                  key={bias}
+                  testID={`chip-bias-${item.id}-${bias}`}
+                  style={styles.cardBiasChip}
+                >
+                  <Text style={styles.cardBiasChipText}>{formatMuscleBias(bias)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </TouchableOpacity>
+
+        {/* Sentiment Action Pill Row */}
+        <View style={styles.cardSentimentRow} testID={`sentiment-pill-row-${item.id}`}>
+          {/* Liked (Heart) */}
+          {(() => {
+            const isLiked = currentSentiment === 'liked';
+            const pillStyle = getSentimentPillStyle('liked', isLiked);
+            return (
+              <TouchableOpacity
+                testID={`sentiment-liked-btn-${item.id}`}
+                style={[
+                  styles.cardSentimentPill,
+                  { backgroundColor: pillStyle.bg, borderColor: pillStyle.border },
+                ]}
+                onPress={() => handleToggleSentiment(item.id, 'liked')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.cardSentimentPillText, { color: pillStyle.text }]}>♥ Liked</Text>
+              </TouchableOpacity>
+            );
+          })()}
+
+          {/* Neutral */}
+          {(() => {
+            const isNeutral = currentSentiment === 'neutral';
+            const pillStyle = getSentimentPillStyle('neutral', isNeutral);
+            return (
+              <TouchableOpacity
+                testID={`sentiment-neutral-btn-${item.id}`}
+                style={[
+                  styles.cardSentimentPill,
+                  { backgroundColor: pillStyle.bg, borderColor: pillStyle.border },
+                ]}
+                onPress={() => handleToggleSentiment(item.id, 'neutral')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.cardSentimentPillText, { color: pillStyle.text }]}>— Neutral</Text>
+              </TouchableOpacity>
+            );
+          })()}
+
+          {/* Dislike */}
+          {(() => {
+            const isDisliked = currentSentiment === 'disliked';
+            const pillStyle = getSentimentPillStyle('disliked', isDisliked);
+            return (
+              <TouchableOpacity
+                testID={`sentiment-disliked-btn-${item.id}`}
+                style={[
+                  styles.cardSentimentPill,
+                  { backgroundColor: pillStyle.bg, borderColor: pillStyle.border },
+                ]}
+                onPress={() => handleToggleSentiment(item.id, 'disliked')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.cardSentimentPillText, { color: pillStyle.text }]}>✕ Dislike</Text>
+              </TouchableOpacity>
+            );
+          })()}
+
+          {/* Blacklist */}
+          {(() => {
+            const isBlacklisted = currentSentiment === 'blacklisted';
+            const pillStyle = getSentimentPillStyle('blacklisted', isBlacklisted);
+            return (
+              <TouchableOpacity
+                testID={`sentiment-blacklisted-btn-${item.id}`}
+                style={[
+                  styles.cardSentimentPill,
+                  { backgroundColor: pillStyle.bg, borderColor: pillStyle.border },
+                ]}
+                onPress={() => handleToggleSentiment(item.id, 'blacklisted')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.cardSentimentPillText, { color: pillStyle.text }]}>⊘ Blacklist</Text>
+              </TouchableOpacity>
+            );
+          })()}
+        </View>
 
         {/* Exercise action buttons */}
         {(workoutRepo || item.is_custom) && (
@@ -400,6 +601,8 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
     onSelectExercise,
     viewMode,
     workoutRepo,
+    preferences,
+    handleToggleSentiment,
   ]);
 
   const renderFlatItem = useCallback(
@@ -608,7 +811,10 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
         <Modal
           visible={!!inspectingExerciseId}
           animationType="slide"
-          onRequestClose={() => setInspectingExerciseId(null)}
+          onRequestClose={() => {
+            setInspectingExerciseId(null);
+            refreshCatalog();
+          }}
         >
           <ExerciseDetailScreen
             exerciseId={inspectingExerciseId}
@@ -616,7 +822,12 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
             workoutRepo={workoutRepo}
             gearRepo={gearRepo}
             userSettingsRepo={userSettingsRepo}
-            onClose={() => setInspectingExerciseId(null)}
+            preferenceRepo={propPreferenceRepo}
+            preferenceService={prefService ?? undefined}
+            onClose={() => {
+              setInspectingExerciseId(null);
+              refreshCatalog();
+            }}
           />
         </Modal>
       )}
@@ -970,5 +1181,44 @@ const styles = StyleSheet.create({
   },
   treeChildrenContainer: {
     marginTop: 4,
+  },
+  cardBiasesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
+  },
+  cardBiasChip: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+    backgroundColor: '#181820',
+    borderWidth: 1,
+    borderColor: '#2D2D38',
+  },
+  cardBiasChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#D4D4D8',
+  },
+  cardSentimentRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#18181B',
+  },
+  cardSentimentPill: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardSentimentPillText: {
+    fontSize: 10,
+    fontWeight: '800',
   },
 });

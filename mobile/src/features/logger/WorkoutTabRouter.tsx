@@ -25,11 +25,13 @@ import {
   IUserSettingsRepository,
   IProgramRepository,
   IPainReportRepository,
+  IExercisePreferenceRepository,
 } from '../../domain/repositories';
 import {
   ProgramBlockService,
   ActiveProgramInfo,
 } from '../../services/programBlockService';
+import { ExercisePreferenceService } from '../../services/exercisePreferenceService';
 import { ActiveSessionService } from '../../services/activeSessionService';
 import { ActiveLoggerScreen } from './ActiveLoggerScreen';
 import {
@@ -37,6 +39,7 @@ import {
   WorkoutTemplate,
   Exercise,
   TemplateExercise,
+  AutoWarmupMode,
 } from '../../core/types';
 import { ProgramWithDetails, WorkoutTemplateDetail } from '../../domain/repositories/IProgramRepository';
 
@@ -47,9 +50,12 @@ export interface WorkoutTabRouterProps {
   userSettingsRepo?: IUserSettingsRepository;
   programRepo?: IProgramRepository;
   painReportRepo?: IPainReportRepository;
+  exercisePreferenceRepo?: IExercisePreferenceRepository;
+  exercisePreferenceService?: ExercisePreferenceService;
   programBlockService?: ProgramBlockService;
   hasActiveWorkout: boolean;
   currentWorkoutId?: string;
+  isActiveTab?: boolean;
   onStartSession: (workoutId: string) => void;
   onFinishSession: (completedWorkout: Workout) => void;
   onDiscardSession: () => void;
@@ -63,9 +69,12 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
   userSettingsRepo,
   programRepo,
   painReportRepo,
+  exercisePreferenceRepo,
+  exercisePreferenceService,
   programBlockService,
   hasActiveWorkout,
   currentWorkoutId,
+  isActiveTab,
   onStartSession,
   onFinishSession,
   onDiscardSession,
@@ -122,10 +131,10 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
   }, [workoutRepo, exerciseRepo, programRepo, programBlockService]);
 
   useEffect(() => {
-    if (!hasActiveWorkout) {
+    if ((isActiveTab ?? true) && !hasActiveWorkout) {
       loadRouterState();
     }
-  }, [hasActiveWorkout, loadRouterState]);
+  }, [isActiveTab, hasActiveWorkout, loadRouterState]);
 
   // Start workout from a specific template
   const handleStartTemplateWorkout = async (template: WorkoutTemplateDetail) => {
@@ -138,6 +147,17 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
         templateId: template.id,
         notes: template.notes,
       });
+
+      // Fetch auto warmup mode preference
+      let warmupMode: AutoWarmupMode = 'smart_compounds';
+      if (userSettingsRepo) {
+        try {
+          const mode = await userSettingsRepo.getAutoWarmupMode();
+          if (mode) warmupMode = mode;
+        } catch {
+          // fallback to smart_compounds
+        }
+      }
 
       // Populate planned sets from template exercises
       if (template.exercises && template.exercises.length > 0) {
@@ -154,6 +174,29 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
               exerciseGroupId: te.exercise_group_id ?? null,
               setNumber: s,
             });
+          }
+
+          // Pre-populate smart warmups for SBD & compounds (ADR-082)
+          if (warmupMode !== 'off') {
+            const exObj = exerciseCatalog.get(te.exercise_id);
+            const isSBDorCompound =
+              exObj?.is_compound ||
+              exObj?.standard_lift_type === 'squat' ||
+              exObj?.standard_lift_type === 'bench' ||
+              exObj?.standard_lift_type === 'deadlift' ||
+              exObj?.category === 'Barbell' ||
+              (exObj?.parent_exercise_id &&
+                (exObj.parent_exercise_id.includes('squat') ||
+                  exObj.parent_exercise_id.includes('bench') ||
+                  exObj.parent_exercise_id.includes('deadlift')));
+
+            if (warmupMode === 'all_exercises' || isSBDorCompound) {
+              try {
+                await sessionService.generateWarmupSetsForExercise(newWorkout.id, te.exercise_id);
+              } catch (warmupErr) {
+                console.warn(`Could not generate warmups for ${te.exercise_id}:`, warmupErr);
+              }
+            }
           }
         }
       }
@@ -196,6 +239,8 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
           userSettingsRepo={userSettingsRepo}
           programRepo={programRepo}
           painReportRepo={painReportRepo}
+          exercisePreferenceRepo={exercisePreferenceRepo}
+          exercisePreferenceService={exercisePreferenceService}
           onFinishSession={onFinishSession}
           onDiscardSession={onDiscardSession}
         />

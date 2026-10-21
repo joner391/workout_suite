@@ -5,6 +5,9 @@ import {
   LoadMode,
   MuscleGroup,
   StandardLiftType,
+  AxialLoading,
+  RomTier,
+  JointLocation,
 } from '../../core/types';
 import { ISQLiteDatabase } from '../schema';
 
@@ -24,17 +27,31 @@ interface ExerciseRow {
   standard_lift_type: StandardLiftType | null;
   default_rest_seconds: number;
   secondary_muscles?: string | null;
+  axial_loading?: AxialLoading | null;
+  rom_tier?: RomTier | null;
+  muscle_biases?: string | null;
+  primary_joints?: string | null;
+  secondary_joints?: string | null;
+  baseline_sfr?: number | null;
+  required_gear?: string | null;
+  exercise_tier?: number | null;
+}
+
+function parseJsonArray<T = string>(val?: string | null): T[] | undefined {
+  if (!val) return undefined;
+  try {
+    return JSON.parse(val);
+  } catch {
+    return val.split(',').map((s) => s.trim() as unknown as T);
+  }
 }
 
 function mapRowToExercise(row: ExerciseRow): Exercise {
-  let secondaryMuscles: string[] | undefined = undefined;
-  if (row.secondary_muscles) {
-    try {
-      secondaryMuscles = JSON.parse(row.secondary_muscles);
-    } catch {
-      secondaryMuscles = row.secondary_muscles.split(',').map((s) => s.trim());
-    }
-  }
+  const secondaryMuscles = parseJsonArray<string>(row.secondary_muscles);
+  const muscleBiases = parseJsonArray<string>(row.muscle_biases);
+  const primaryJoints = parseJsonArray<JointLocation>(row.primary_joints);
+  const secondaryJoints = parseJsonArray<JointLocation>(row.secondary_joints);
+  const requiredGear = parseJsonArray<string>(row.required_gear);
 
   return {
     id: row.id,
@@ -52,6 +69,14 @@ function mapRowToExercise(row: ExerciseRow): Exercise {
     standard_lift_type: row.standard_lift_type,
     default_rest_seconds: row.default_rest_seconds,
     secondary_muscles: secondaryMuscles,
+    axial_loading: row.axial_loading ?? 'none',
+    rom_tier: row.rom_tier ?? 'standard_full',
+    muscle_biases: muscleBiases,
+    primary_joints: primaryJoints,
+    secondary_joints: secondaryJoints,
+    baseline_sfr: row.baseline_sfr ?? 50.0,
+    required_gear: requiredGear,
+    exercise_tier: row.exercise_tier ?? 2,
   };
 }
 
@@ -119,8 +144,10 @@ export class SQLiteExerciseRepository implements IExerciseRepository {
       `INSERT INTO exercises (
         id, name, muscle_group, category, is_compound, is_bodyweight,
         is_unilateral, load_mode, default_cable_ratio, default_bar_weight_kg,
-        is_custom, parent_exercise_id, standard_lift_type, default_rest_seconds
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        is_custom, parent_exercise_id, standard_lift_type, default_rest_seconds,
+        axial_loading, rom_tier, muscle_biases, primary_joints, secondary_joints,
+        baseline_sfr, required_gear, exercise_tier
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       exercise.id,
       exercise.name,
       exercise.muscle_group,
@@ -134,7 +161,15 @@ export class SQLiteExerciseRepository implements IExerciseRepository {
       exercise.is_custom ? 1 : 0,
       exercise.parent_exercise_id,
       exercise.standard_lift_type,
-      exercise.default_rest_seconds
+      exercise.default_rest_seconds,
+      exercise.axial_loading ?? 'none',
+      exercise.rom_tier ?? 'standard_full',
+      exercise.muscle_biases ? JSON.stringify(exercise.muscle_biases) : null,
+      exercise.primary_joints ? JSON.stringify(exercise.primary_joints) : null,
+      exercise.secondary_joints ? JSON.stringify(exercise.secondary_joints) : null,
+      exercise.baseline_sfr ?? 50.0,
+      exercise.required_gear ? JSON.stringify(exercise.required_gear) : null,
+      exercise.exercise_tier ?? 2
     );
     return { ...exercise };
   }
@@ -144,7 +179,9 @@ export class SQLiteExerciseRepository implements IExerciseRepository {
       `UPDATE exercises SET
         name = ?, muscle_group = ?, category = ?, is_compound = ?, is_bodyweight = ?,
         is_unilateral = ?, load_mode = ?, default_cable_ratio = ?, default_bar_weight_kg = ?,
-        is_custom = ?, parent_exercise_id = ?, standard_lift_type = ?, default_rest_seconds = ?
+        is_custom = ?, parent_exercise_id = ?, standard_lift_type = ?, default_rest_seconds = ?,
+        axial_loading = ?, rom_tier = ?, muscle_biases = ?, primary_joints = ?, secondary_joints = ?,
+        baseline_sfr = ?, required_gear = ?, exercise_tier = ?
       WHERE id = ?;`,
       exercise.name,
       exercise.muscle_group,
@@ -159,6 +196,14 @@ export class SQLiteExerciseRepository implements IExerciseRepository {
       exercise.parent_exercise_id,
       exercise.standard_lift_type,
       exercise.default_rest_seconds,
+      exercise.axial_loading ?? 'none',
+      exercise.rom_tier ?? 'standard_full',
+      exercise.muscle_biases ? JSON.stringify(exercise.muscle_biases) : null,
+      exercise.primary_joints ? JSON.stringify(exercise.primary_joints) : null,
+      exercise.secondary_joints ? JSON.stringify(exercise.secondary_joints) : null,
+      exercise.baseline_sfr ?? 50.0,
+      exercise.required_gear ? JSON.stringify(exercise.required_gear) : null,
+      exercise.exercise_tier ?? 2,
       exercise.id
     );
 

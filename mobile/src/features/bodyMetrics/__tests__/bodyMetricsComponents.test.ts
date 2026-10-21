@@ -381,7 +381,7 @@ describe('Body Metrics Screen & Anthropometry Management (Step 5.2)', () => {
   });
 
   describe('6. Last Observation Carried Forward (LOCF) Integration', () => {
-    test('forward-fills waist and weight when user logs only neck in a session', async () => {
+    test('uses prior waist for Navy calculation without inventing a new bodyweight', async () => {
       await userProfileRepo.saveProfile({
         id: 'profile_test',
         gender: 'male',
@@ -433,15 +433,18 @@ describe('Body Metrics Screen & Anthropometry Management (Step 5.2)', () => {
       });
 
       const s2 = await bodyMetricsRepo.getById('metric_s2');
-      // Bodyweight carried forward from s1 (80.0 kg)
-      expect(s2!.bodyweight).toBe(80.0);
+      // A missing scale measurement stays missing for export and trend calculations.
+      expect(s2!.bodyweight).toBeNull();
       // Circumferences: waist was carried forward internally for Navy calculation
       expect(s2!.navy_body_fat).not.toBeNull();
       expect(s2!.navy_body_fat!).toBeLessThan(14.0);
 
-      // eLBM calculated with carried-forward weight and new Navy BF
-      const elbm2 = calculateEstimatedLeanBodyMass(s2!.bodyweight!, s2!.navy_body_fat!);
-      expect(elbm2).toBeGreaterThan(68.8);
+      // eLBM is unavailable until a scale weight is recorded for this entry.
+      expect(
+        s2!.bodyweight != null
+          ? calculateEstimatedLeanBodyMass(s2!.bodyweight, s2!.navy_body_fat!)
+          : null
+      ).toBeNull();
     });
 
     test('historical logs forward-fill prior Navy BF for weight-only entries', async () => {

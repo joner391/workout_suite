@@ -259,6 +259,96 @@ describe('ExerciseSubstitutionService', () => {
       const frontSquatResult = jointAwareSubs.find((s) => s.exercise.id === 'barbell_front_squat');
       expect(frontSquatResult?.relevanceScore).toBe(40); // 100 - 60 = 40
     });
+
+    it('completely excludes blacklisted exercises from substitution options (Step 9.3)', async () => {
+      const preferences = [
+        {
+          exercise_id: 'incline_bench',
+          sentiment: 'blacklisted' as const,
+          swap_in_count: 0,
+          swap_out_count: 0,
+          affinity_score: -999,
+          updated_at: new Date().toISOString(),
+        },
+      ];
+
+      const substitutes = await subService.findSubstitutes('barbell_bench', { preferences });
+      const foundIncline = substitutes.find((s) => s.exercise.id === 'incline_bench');
+      expect(foundIncline).toBeUndefined();
+
+      // Non-blacklisted substitutes remain available
+      const foundDb = substitutes.find((s) => s.exercise.id === 'db_bench');
+      expect(foundDb).toBeDefined();
+    });
+
+    it('penalizes deep_stretch exercises on painful joints with -80 points and elevates shortened_restricted with +20 points (Step 9.3)', async () => {
+      const deepStretchFly: Exercise = {
+        id: 'db_chest_fly',
+        name: 'Dumbbell Chest Fly',
+        muscle_group: 'Chest',
+        category: 'Dumbbell',
+        is_compound: false,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'per_hand',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 0,
+        is_custom: false,
+        parent_exercise_id: null,
+        standard_lift_type: null,
+        default_rest_seconds: 90,
+        rom_tier: 'deep_stretch',
+        baseline_sfr: 85,
+        primary_joints: ['shoulder'],
+      };
+
+      const shortenedPress: Exercise = {
+        id: 'pin_press',
+        name: 'Pin Bench Press',
+        muscle_group: 'Chest',
+        category: 'Barbell',
+        is_compound: true,
+        is_bodyweight: false,
+        is_unilateral: false,
+        load_mode: 'total',
+        default_cable_ratio: 1.0,
+        default_bar_weight_kg: 20,
+        is_custom: false,
+        parent_exercise_id: 'barbell_bench',
+        standard_lift_type: 'bench',
+        default_rest_seconds: 180,
+        rom_tier: 'shortened_restricted',
+        baseline_sfr: 80,
+        primary_joints: ['shoulder', 'elbow'],
+      };
+
+      await exerciseRepo.create(deepStretchFly);
+      await exerciseRepo.create(shortenedPress);
+
+      const substitutes = await subService.findSubstitutes('barbell_bench', {
+        painfulJoint: 'shoulder',
+      });
+
+      const flyOption = substitutes.find((s) => s.exercise.id === 'db_chest_fly');
+      const pinOption = substitutes.find((s) => s.exercise.id === 'pin_press');
+
+      expect(flyOption).toBeDefined();
+      expect(pinOption).toBeDefined();
+
+      // db_chest_fly: baseScore 50 - 60 (pain) - 80 (deep_stretch) + 10 (dumbbell shoulder adaptation) = -80
+      expect(flyOption?.relevanceScore).toBe(50 - 60 - 80 + 10);
+
+      // pin_press: baseScore 100 - 60 (pain) + 20 (shortened_restricted elevation) = 60
+      expect(pinOption?.relevanceScore).toBe(100 - 60 + 20);
+    });
+
+    it('attaches candidateScore matching computeCandidateScore formula (Step 9.3)', async () => {
+      const substitutes = await subService.findSubstitutes('barbell_bench');
+      for (const sub of substitutes) {
+        expect(sub.candidateScore).toBeDefined();
+        expect(typeof sub.candidateScore).toBe('number');
+      }
+    });
   });
 
   describe('transferRepBrackets', () => {

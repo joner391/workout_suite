@@ -48,6 +48,22 @@ EquipmentAccess = Literal[
     "dumbbells_only",
     "bodyweight_only",
 ]
+ExperienceLevel = Literal["beginner", "intermediate", "advanced"]
+AxialLoading = Literal["none", "low", "moderate", "high"]
+RomTier = Literal["deep_stretch", "standard_full", "shortened_restricted"]
+ExerciseSentiment = Literal["liked", "neutral", "disliked", "blacklisted"]
+JointLocation = Literal[
+    "shoulder",
+    "elbow",
+    "wrist",
+    "lower_back",
+    "hip",
+    "knee",
+    "ankle",
+    "neck",
+    "chest_pec",
+    "other",
+]
 
 SEMVER_REGEX = r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 HEX_COLOR_REGEX = r"^#[0-9a-fA-F]{6}$"
@@ -168,6 +184,10 @@ class TemplateExercise(StrictSchemaModel):
     exercise_group_id: Optional[str] = Field(
         default=None,
         description="Group ID for supersets, giant sets, or circuits.",
+    )
+    set_type: Optional[SetType] = Field(
+        default="working",
+        description="Default set execution style (e.g. 'working', 'myorep', 'amrap').",
     )
 
 
@@ -327,6 +347,42 @@ class Exercise(StrictSchemaModel):
     secondary_muscles: Optional[List[str]] = Field(
         default=None,
         description="Assisting / synergist muscle groups receiving 0.5 set volume credit.",
+    )
+    axial_loading: Optional[AxialLoading] = Field(
+        default="none",
+        description="Spinal compressive loading classification.",
+    )
+    rom_tier: Optional[RomTier] = Field(
+        default="standard_full",
+        description="Range of motion excursion tier.",
+    )
+    muscle_biases: Optional[List[str]] = Field(
+        default=None,
+        description="Regional bodybuilding sub-target biases.",
+    )
+    primary_joints: Optional[List[str]] = Field(
+        default=None,
+        description="Primary mechanically loaded joints.",
+    )
+    secondary_joints: Optional[List[str]] = Field(
+        default=None,
+        description="Secondary assisting loaded joints.",
+    )
+    baseline_sfr: Optional[float] = Field(
+        default=50.0,
+        ge=0.0,
+        le=100.0,
+        description="Baseline Stimulus-to-Fatigue score (0-100).",
+    )
+    required_gear: Optional[List[str]] = Field(
+        default=None,
+        description="Required equipment tags.",
+    )
+    exercise_tier: Optional[int] = Field(
+        default=2,
+        ge=1,
+        le=3,
+        description="Differentiated progression tier (1 = Anchor, 2 = Variant, 3 = Isolation).",
     )
 
 
@@ -489,6 +545,22 @@ class UserProfile(StrictSchemaModel):
         default="commercial_gym",
         description="Gym equipment environment access level.",
     )
+    experience_level: Optional[ExperienceLevel] = Field(
+        default="intermediate",
+        description="Athlete resistance training experience tier.",
+    )
+    pending_meso_mood: Optional[bool] = Field(
+        default=False,
+        description="Whether mid-flight mood changes are staged for deferred Meso N+1 evolution.",
+    )
+    has_axial_fatigue_sensitivity: Optional[bool] = Field(
+        default=False,
+        description="Whether athlete is sensitive to spinal compressive / axial loading fatigue.",
+    )
+    is_caloric_deficit: Optional[bool] = Field(
+        default=False,
+        description="Whether athlete is currently training in a caloric deficit / cutting phase.",
+    )
     created_at: str = Field(description="ISO 8601 creation timestamp.")
     updated_at: str = Field(description="ISO 8601 last update timestamp.")
 
@@ -568,12 +640,57 @@ class PainReport(StrictSchemaModel):
         le=10,
         description="Self-reported pain intensity on 1-10 numerical scale.",
     )
+    joint_location: Optional[JointLocation] = Field(
+        default=None,
+        description="Optional anatomical location selected for a joint pain report.",
+    )
     notes: Optional[str] = Field(
         default=None,
         description="Optional notes describing symptoms or sensations.",
     )
     created_at: str = Field(
         description="ISO 8601 UTC timestamp recording when pain was reported.",
+    )
+
+
+class ExercisePreference(StrictSchemaModel):
+    """Exercise sentiment, soft affinity, and pain correlation record."""
+
+    exercise_id: str = Field(description="Foreign key referencing exercises.id.")
+    sentiment: ExerciseSentiment = Field(
+        default="neutral",
+        description="Explicit user sentiment towards the exercise.",
+    )
+    swap_in_count: int = Field(
+        default=0,
+        ge=0,
+        description="Count of times this exercise was chosen as a substitute.",
+    )
+    swap_out_count: int = Field(
+        default=0,
+        ge=0,
+        description="Count of times this exercise was swapped out.",
+    )
+    affinity_score: float = Field(
+        default=0.0,
+        description="Computed soft affinity score (-999.0 to +25.0).",
+    )
+    last_pain_reported_at: Optional[str] = Field(
+        default=None,
+        description="ISO 8601 timestamp of the last pain report.",
+    )
+    max_pain_severity: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=10,
+        description="Maximum pain severity (1-10) reported.",
+    )
+    pain_joint: Optional[str] = Field(
+        default=None,
+        description="Joint location where pain was reported.",
+    )
+    updated_at: str = Field(
+        description="ISO 8601 timestamp of last preference update.",
     )
 
 
@@ -599,6 +716,7 @@ class WorkoutExportPayload(StrictSchemaModel):
     user_profiles: List[UserProfile] = Field(default_factory=list)
     calibrated_params: List[CalibratedParam] = Field(default_factory=list)
     pain_reports: List[PainReport] = Field(default_factory=list)
+    exercise_preferences: List[ExercisePreference] = Field(default_factory=list)
 
 
 # ============================================================================

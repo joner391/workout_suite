@@ -48,9 +48,11 @@ from src.ingestion.schemas import (
     WorkoutExportPayload,
     WorkoutSet,
 )
+from src.models.fatigue_banister import compute_daily_banister_series
 from src.models.kalman_1rm import Adaptive1RMKalmanFilter
-from src.models.recovery_modifier import compute_recovery_modifier
+from src.models.mesocycle_analyzer import analyze_optimal_mesocycle_length
 from src.models.recommendations import generate_parameter_audits
+from src.models.recovery_modifier import compute_recovery_modifier
 
 
 def compute_weekly_volumes_and_slopes_by_muscle(
@@ -296,11 +298,33 @@ def export_calibrated_parameters(
     }
 
     # 5. Program Parameter Audits
+    daily_banister = compute_daily_banister_series(
+        workouts=payload.workouts,
+        workout_sets=payload.workout_sets,
+        body_metrics=payload.body_metrics,
+        default_working_rpe=8.0,
+    )
+    meso_rec = analyze_optimal_mesocycle_length(
+        workouts=payload.workouts,
+        workout_sets=payload.workout_sets,
+        kalman_histories={},
+        banister_series=daily_banister,
+        exercises=payload.exercises,
+        energy_balance=rec_state.energy_balance,
+    )
+    pref_duration = (
+        int(payload.user_profiles[0].preferred_session_duration_mins)
+        if payload.user_profiles and getattr(payload.user_profiles[0], "preferred_session_duration_mins", None)
+        else 60
+    )
     audits_raw = generate_parameter_audits(
         workout_sets=payload.workout_sets,
         workouts=payload.workouts,
         exercises=payload.exercises,
         landmarks_by_muscle=landmarks_res,
+        preparedness_series=daily_banister,
+        mesocycle_recommendation=meso_rec,
+        preferred_session_duration_mins=pref_duration,
     )
     program_audit_payloads: List[ProgramAuditPayload] = []
     for audit in audits_raw:

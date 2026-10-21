@@ -600,8 +600,8 @@ export class ActiveSessionService {
             setNumber: 2,
             weight: barTareWeight,
             reps: 5,
-            isDiagnosticSingle: false,
-            notes: 'Empty bar - movement groove',
+            isDiagnosticSingle: true,
+            notes: 'Empty bar - movement groove & readiness check',
           },
         ];
       } else {

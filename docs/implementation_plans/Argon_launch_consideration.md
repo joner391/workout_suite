@@ -1,3 +1,5 @@
+> **Historical reference:** This document contains past plans, audits, or proposals with mixed completion status. Its agent instructions, verification gates, and unchecked items do not assign current work. Follow the latest user request, root `AGENTS.md`, and [current documentation guidance](../README.md). Verify implementation claims against source.
+
 Your architecture, domain modeling, and core feature set are **~85% complete** for an MVP, with all 15 planned engineering phases in `IMPLEMENTATION_PLAN.md` already implemented and covered by unit tests. However, your **store readiness and native production polish are at ~30%**, meaning you are roughly **3 to 4 weeks away** from a public launch (including Google Play's mandatory 14-day closed testing window).
 
 ---

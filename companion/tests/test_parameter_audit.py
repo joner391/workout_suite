@@ -421,3 +421,215 @@ def test_parameter_audit_rep_monotony() -> None:
     assert mono_audits[0].parameter_adjustments.get("recommended_top_rep_max") == 7
     assert mono_audits[0].parameter_adjustments.get("recommended_backoff_rep_min") == 10
     assert mono_audits[0].parameter_adjustments.get("recommended_backoff_rep_max") == 14
+
+
+def test_parameter_audit_volume_escalation() -> None:
+    """Verification Gate 2.5:
+
+    VOLUME_ESCALATION fires when weekly sets <= MAV (e.g. 8 sets/wk <= 14 MAV),
+    mean working RPE is low (< 7.8, e.g. 7.0), and 10RM progress is positive (slope >= 0).
+    Recommends adding +2 sets/week.
+    """
+    ref_time = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    db_curl = Exercise(
+        id="ex_curl",
+        name="Dumbbell Bicep Curl",
+        muscle_group="Biceps",
+        category="Dumbbell",
+        is_compound=False,
+        is_bodyweight=False,
+        is_unilateral=False,
+    )
+
+    workouts = [
+        Workout(
+            id=f"w_curl_{i}",
+            date=(ref_time - timedelta(days=21 - i * 7)).strftime("%Y-%m-%d"),
+            name="Pull Day",
+            started_at=(ref_time - timedelta(days=21 - i * 7)).isoformat(),
+            status="completed",
+        )
+        for i in range(4)
+    ]
+
+    # 4 workouts with 2 sets each = 8 total sets in 4 weeks = 2 sets/week <= 14 MAV
+    # Progressive weight increase: 12kg -> 14kg with low RPE 7.0 (RIR 3.0)
+    workout_sets = [
+        WorkoutSet(
+            id=f"s_curl_{i}_{s_idx}",
+            workout_id=workouts[i].id,
+            exercise_id=db_curl.id,
+            set_number=s_idx,
+            weight=12.0 + i * 0.5,
+            raw_input_weight=12.0 + i * 0.5,
+            reps=10,
+            rpe=7.0,  # Low fatigue < 7.8
+            rir=3.0,
+            set_type="working",
+            created_at=workouts[i].started_at,
+        )
+        for i in range(4)
+        for s_idx in range(1, 3)
+    ]
+
+    audits = generate_parameter_audits(
+        workout_sets=workout_sets,
+        workouts=workouts,
+        exercises=[db_curl],
+        as_of_date=ref_time,
+    )
+
+    vol_audits = [a for a in audits if a.audit_type == "VOLUME_ESCALATION"]
+    assert len(vol_audits) == 1
+    assert vol_audits[0].target_id == "Biceps"
+    assert vol_audits[0].parameter_adjustments.get("set_delta") == 2
+    assert "Volume Increased" in vol_audits[0].message or "recovered easily" in vol_audits[0].message
+
+
+def test_parameter_audit_amrap_load_increase() -> None:
+    """Verification Gate 2.6:
+
+    AMRAP_LOAD_INCREASE fires when an AMRAP set exceeds the rep target ceiling.
+    Recommends increasing load (+1% per rep over cap, floor-rounded to 2.5 kg).
+    """
+    ref_time = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    bb_bench = Exercise(
+        id="ex_bench",
+        name="Barbell Bench Press",
+        muscle_group="Chest",
+        category="Barbell",
+        is_compound=True,
+        is_bodyweight=False,
+        is_unilateral=False,
+    )
+
+    w = Workout(
+        id="w_amrap",
+        date=ref_time.strftime("%Y-%m-%d"),
+        name="Chest Day",
+        started_at=ref_time.isoformat(),
+        status="completed",
+    )
+
+    # Completed 14 reps against target 10 @ 80 kg
+    # Over by 4 reps -> +4% -> 80 * 1.04 = 83.2 kg -> floor to 2.5kg = 82.5 kg!
+    amrap_set = WorkoutSet(
+        id="s_amrap_1",
+        workout_id=w.id,
+        exercise_id=bb_bench.id,
+        set_number=1,
+        weight=80.0,
+        raw_input_weight=80.0,
+        reps=14,
+        rpe=10.0,
+        rir=0.0,
+        set_type="amrap",
+        set_notes='{"target_reps": 10}',
+        created_at=ref_time.isoformat(),
+    )
+
+    audits = generate_parameter_audits(
+        workout_sets=[amrap_set],
+        workouts=[w],
+        exercises=[bb_bench],
+        as_of_date=ref_time,
+    )
+
+    amrap_audits = [a for a in audits if a.audit_type == "AMRAP_LOAD_INCREASE"]
+    assert len(amrap_audits) == 1
+    assert amrap_audits[0].target_id == bb_bench.id
+    assert amrap_audits[0].parameter_adjustments.get("new_weight_kg") == 82.5
+    assert amrap_audits[0].parameter_adjustments.get("pct_gain") == 4.0
+    assert amrap_audits[0].parameter_adjustments.get("reps_over") == 4
+
+
+def test_parameter_audit_convert_to_myorep() -> None:
+    """Verification Gate 2.7:
+
+    CONVERT_TO_MYOREP fires when median session duration exceeds user time budget.
+    Converts accessory exercises to Myo-rep clusters.
+    """
+    ref_time = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    lat_raise = Exercise(
+        id="ex_lat",
+        name="Lateral Raises",
+        muscle_group="Shoulders",
+        category="Dumbbell",
+        is_compound=False,
+        is_bodyweight=False,
+        is_unilateral=True,
+    )
+
+    # Sessions take 75 minutes (duration_seconds = 4500) > preferred 45 minutes
+    workouts = [
+        Workout(
+            id=f"w_long_{i}",
+            date=(ref_time - timedelta(days=14 - i * 7)).strftime("%Y-%m-%d"),
+            name="Upper",
+            started_at=(ref_time - timedelta(days=14 - i * 7)).isoformat(),
+            duration_seconds=4500,  # 75 mins
+            status="completed",
+        )
+        for i in range(2)
+    ]
+
+    sets = [
+        WorkoutSet(
+            id=f"s_lat_{i}_{s_idx}",
+            workout_id=workouts[i].id,
+            exercise_id=lat_raise.id,
+            set_number=s_idx,
+            weight=10.0,
+            raw_input_weight=10.0,
+            reps=12,
+            rpe=8.5,
+            set_type="working",
+            created_at=workouts[i].started_at,
+        )
+        for i in range(2)
+        for s_idx in range(1, 4)
+    ]
+
+    audits = generate_parameter_audits(
+        workout_sets=sets,
+        workouts=workouts,
+        exercises=[lat_raise],
+        as_of_date=ref_time,
+        preferred_session_duration_mins=45,
+    )
+
+    myo_audits = [a for a in audits if a.audit_type == "CONVERT_TO_MYOREP"]
+    assert len(myo_audits) == 1
+    assert myo_audits[0].target_id == lat_raise.id
+    assert myo_audits[0].parameter_adjustments.get("set_type") == "myorep"
+    assert myo_audits[0].parameter_adjustments.get("session_duration_limit_mins") == 45
+
+
+def test_parameter_audit_block_length_decision() -> None:
+    """Verification Gate 2.8:
+
+    BLOCK_LENGTH_DECISION fires when mesocycle recommendation is supplied.
+    """
+    from dataclasses import dataclass
+
+    @dataclass
+    class MockMesoRec:
+        optimal_accumulation_weeks: float = 3.5
+        deficit_adjusted_weeks: float = 2.5
+        recommended_block_weeks: int = 4
+        pathway: str = "SHORT_CYCLE"
+
+    rec = MockMesoRec()
+    audits = generate_parameter_audits(
+        workout_sets=[],
+        workouts=[],
+        mesocycle_recommendation=rec,
+    )
+
+    block_audits = [a for a in audits if a.audit_type == "BLOCK_LENGTH_DECISION"]
+    assert len(block_audits) == 1
+    assert block_audits[0].target_id == "systemic"
+    assert block_audits[0].parameter_adjustments.get("recommended_block_weeks") == 4

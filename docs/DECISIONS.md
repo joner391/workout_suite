@@ -1,4 +1,7 @@
+> **Read on demand:** Historical rationale, not current goals or current validation evidence. Search the [generated ADR index](generated/DECISION_INDEX.md), then read the matching record. Implementation and [current architecture](ARCHITECTURE.md) take precedence over outdated descriptions; old test counts describe past runs.
+
 # Workout Suite — Architecture Decision Records (ADRs)
+> **ADR index note:** Earlier versions reused IDs. The duplicate headings were assigned unique IDs: second ADR-032 → ADR-047 (set types); second ADR-040 → ADR-048 (gear assignment); ADR-041 body-fat → ADR-049; ADR-041 UI optimization → ADR-050; ADR-042 schema sync → ADR-051; ADR-043 rep-max envelope → ADR-052; ADR-044 plot time spans → ADR-053; ADR-045 eLBM → ADR-054. The earlier headings retain their IDs.
 
 ## ADR-001: Local-First Architecture with SQLite for Mobile
 - **Context**: Mobile workout loggers are used in gym environments with unreliable or non-existent cellular reception (e.g., basements). High latency or cloud dependency ruins the UX during set logging.
@@ -72,17 +75,17 @@
   1. **Strict Inward Dependency Flow (Ports & Adapters)**: Organize both codebases into concentric layers: `Domain Core` (pure business and mathematical logic) $\rightarrow$ `Application/Services` (use case orchestration) $\rightarrow$ `Infrastructure` (SQLite, OS APIs, file systems) $\rightarrow$ `Presentation` (React components, Streamlit UI). Domain logic must never import from UI, framework, or database drivers.
   2. **Headless Domain Logic**: All scientific formulas (1RM power law, Navy body fat, Banister ODEs, Kalman state-space) and progression rule evaluators are implemented as pure, side-effect-free functions with zero framework dependencies.
   3. **Repository Pattern for Storage Abstraction**: Decouple UI screens from SQLite using domain repository interfaces (`IWorkoutRepository`, `IExerciseRepository`, etc.). This enables trivial mocking during testing and seamless migration to Supabase cloud sync in Phase 7 without altering UI components.
-  4. **Schema-First Data Exchange Contract**: Formalize the mobile-to-companion export format via a shared JSON schema (`schemas/workout_export.schema.json`) with automated contract validation tests across TypeScript and Python in CI.
+  4. **Schema-First Data Exchange Contract**: Formalize the mobile-to-companion export format via a shared JSON schema (`schemas/workout_export.schema.json`) and contract validation tests across TypeScript and Python.
   5. **Vertical Feature Slicing**: Structure mobile code into self-contained feature slices (`features/logger`, `features/progression`, `features/inspection`, `features/bodyMetrics`) exposing public API barrels (`index.ts`) to prevent cross-module coupling.
 - **Consequences**:
   - *Pros*: 
     - Domain math can be unit-tested in milliseconds without launching simulators or database engines.
     - Zero code churn on UI screens when upgrading the database from local SQLite to Supabase.
-    - Cross-language schema changes are caught by CI contract tests before causing runtime deserialization bugs.
+    - Cross-language schema changes can be caught by the mobile and companion contract tests when those suites are run. No CI workflow is currently configured.
     - Features can be developed and refactored in complete isolation.
   - *Cons*:
     - Requires interface boilerplate (DTOs, repository interfaces, and public barrels) upfront.
-    - Developers must strictly adhere to boundary rules and linting configurations.
+    - Developers must follow dependency-boundary conventions; automated boundary linting is not currently configured.
 
 ---
 
@@ -459,7 +462,7 @@
   - *Cons*:
 ---
 
-## ADR-032: Phase 2 Set Types, Spelled-Out Badges, Set-Specific Rest Timer Automations, and Decimal Separator Normalization
+## ADR-047: Phase 2 Set Types, Spelled-Out Badges, Set-Specific Rest Timer Automations, and Decimal Separator Normalization
 - **Context**: In Phase 2 mobile logger refinement, three ergonomic and functional issues were addressed:
   1. **Ambiguous Set Types & Badges**: Single-letter abbreviations ('D', 'M', 'F') caused cognitive friction in the gym. 'Failure' was redundant because set intensity is tracked directly via RPE 10 / RIR 0. Doggcrapp (DC) rest-pause sets were unrepresented.
   2. **Rest Timer Inflexibility**: All completed sets universally triggered the exercise default rest timer (e.g. 90s–180s), forcing lifters to manually skip the timer on Drop sets (which require immediate execution) or repeatedly adjust the timer for high-intensity techniques like Myo-reps (10s rest) and DC sets (30s rest).
@@ -799,7 +802,7 @@
 
 ---
 
-## ADR-040: Three-Level Implement & Gear Assignment Architecture and Profile Co-Location
+## ADR-048: Three-Level Implement & Gear Assignment Architecture and Profile Co-Location
 - **Context**: Serious lifters frequently utilize specialty implements (such as Safety Squat Bars, Trap Bars, or specialized cable pulleys) for specific movements without wanting those bars to globally replace standard barbells for unrelated movements (e.g. Bench Press or Deadlift). Furthermore, managing gym equipment inventory naturally belongs within the athlete's training environment profile rather than application display settings.
 - **Decision**:
   1. **Co-Locate Gear Inventory in Profile**:
@@ -825,7 +828,7 @@
 
 ---
 
-## ADR-041: U.S. Navy Body Fat Formulation, Automatic Profile Resolution & Bodyweight Rolling Smoothing
+## ADR-049: U.S. Navy Body Fat Formulation, Automatic Profile Resolution & Bodyweight Rolling Smoothing
 - **Context**: Longitudinal physique and body composition tracking requires estimating body fat percentage from circumference tape measurements and smoothing daily bodyweight fluctuations (water weight, glycogen, and sodium variations). The historical U.S. Navy circumference equations (Hodgdon & Beckett, 1984) were empirically derived using inches ($86.010, 70.041, 36.76$ for men and $163.205, 97.684, -78.387$ for women). Directly inserting centimeter measurements into the imperial linear log form without adjustment produces mathematically invalid results (e.g. an athletic female at 21% body fat calculates as ~48%). Furthermore, while circumference values (`waist_cm`, `neck_cm`, `hip_cm`) are logged in `body_metrics`, the athlete's biological `gender` and `height_cm` reside in the separate `user_profiles` table.
 - **Decision**:
   1. **Official DoD Metric Density Equation & Siri Formula (`navyBodyFat.ts`)**:
@@ -1020,7 +1023,7 @@
 
 ---
 
-## ADR-041: UI Render Optimization, SQLite Keystroke Debouncing & Timer Lifecycle Isolation
+## ADR-050: UI Render Optimization, SQLite Keystroke Debouncing & Timer Lifecycle Isolation
 - **Context**:
   1. Comprehensive audit of mobile architecture identified three critical performance bottlenecks:
      - **Keystroke Write-Through Churn**: In `SetRowComponent.tsx`, text inputs for weight, reps, intensity, and notes triggered `onUpdateSet` on every `onChangeText` event. Each keystroke invoked `ActiveSessionService.updateSet`, performing 2 SQLite `SELECT` queries and 1 SQLite `UPDATE` per character typed (e.g. typing "100" fired 9 database operations and 6 full component tree re-renders).
@@ -1060,7 +1063,7 @@
 
 ---
 
-## ADR-042: Pre-Phase 7 Schema Synchronization, Sync Outbox Strategy, and Bundle Optimization
+## ADR-051: Pre-Phase 7 Schema Synchronization, Sync Outbox Strategy, and Bundle Optimization
 - **Context**:
   A rigorous architectural and contract audit prior to Phase 7 (Supabase Cloud Migration) surfaced several structural risks and schema drifts:
   1. **Direct Swap to Supabase Trap (`ARCHITECTURE.md` Section 5.3)**:
@@ -1115,7 +1118,7 @@
 
 ---
 
-## ADR-043: Dynamic Monotonic Upper Envelope for Rep-Max PR Records
+## ADR-052: Dynamic Monotonic Upper Envelope for Rep-Max PR Records
 - **Context**:
   - In longitudinal strength training, empirical PR boards occasionally exhibit non-monotonic artifacts where an older set at repetition count $r_a$ (e.g., 40 kg × 20 reps) remains logged, while subsequent progression establishes a higher load at a greater repetition count $r_b > r_a$ (e.g., 62.5 kg × 21 reps).
   - From a physical and mathematical standpoint, lifting 62.5 kg for 21 reps proves the athlete possesses the capacity to lift at least 62.5 kg for 20 reps (as well as 1..19 reps).
@@ -1144,7 +1147,7 @@
 
 ---
 
-## ADR-044: Longitudinal Plot Time Span Windowing, In-Memory Responsive Slicing & Boundary-Aware Smoothing
+## ADR-053: Longitudinal Plot Time Span Windowing, In-Memory Responsive Slicing & Boundary-Aware Smoothing
 - **Context**:
   - The Home screen dashboard previously rendered longitudinal progress plots (`e1RM`, `Volume`, `Bodyweight`, `Body Fat %`, `Circumferences`) spanning the athlete's entire recorded history ("All data").
   - Lifters frequently need to narrow their focus to micro- and meso-cycle timeframes (`Week`, `Month`, `3 months`, `Year`) to evaluate recent adaptations, peak performances within a training block, and rate of weight change without older historical data compressing recent variance.
@@ -1174,7 +1177,7 @@
 
 ---
 
-## ADR-045: Derived Estimated Lean Body Mass (eLBM) Tracking & Longitudinal Plotting
+## ADR-054: Derived Estimated Lean Body Mass (eLBM) Tracking & Longitudinal Plotting
 - **Context**:
   - Resistance training athletes pursuing body recomposition, hypertrophy, or cutting/bulking cycles require an objective metric to track lean muscle tissue changes independent of transient hydration and adipose tissue fluctuations.
   - Scale bodyweight alone cannot differentiate muscle hypertrophy from fat accumulation, while body fat percentage alone obscures whether total contractile tissue is growing or depleting.
@@ -1197,7 +1200,7 @@
      - *Algorithm Selection*: Implemented chronological Last Observation Carried Forward (LOCF) forward-fill:
        - Chronological direction: Ascending date order ($t_0 \to t_n$).
        - Invariance: If a measurement is omitted in session $t_k$, the latest valid observation from prior history $t_{j < k}$ is carried forward to compute Navy BF% and eLBM.
-       - Tape ground truth: Omitted circumferences remain `null` on the database row to prevent synthetic points on raw circumference charts, while `navy_body_fat` and `bodyweight` capture the effective state for that calendar day.
+       - Tape ground truth: Omitted circumferences remain `null` on the database row to prevent synthetic points on raw circumference charts. A derived Navy estimate may use prior circumference observations, but it does not make an unmeasured scale value a new bodyweight observation.
      - *Core Math Pipeline (`calculateChronologicalELBM`)*:
        - Forward-fills `lastWeight`, `lastWaist`, `lastNeck`, `lastHip`, and `lastBf`.
        - Recalculates Navy BF% whenever any circumference changes.
@@ -1207,13 +1210,13 @@
        - Dynamically sets text input placeholders to the last recorded value formatted in the user's active unit system (e.g. `80.0 kg [last]`, `38.0 cm [last]`).
        - Live Navy card calculates real-time BF% and eLBM as soon as *any* measurement is entered, utilizing historical fallbacks for unentered fields.
        - Subtext (`navy-estimate-subtext`) explicitly indicates which values are newly entered versus carried forward from past sessions.
-       - When saving a circumference update without stepping on the scale, `latestRecordedWeightKg` is assigned to satisfy SQLite's `bodyweight REAL NOT NULL` constraint.
+       - When saving a circumference update without stepping on the scale, the domain entry keeps `bodyweight: null`; the existing SQLite `NOT NULL` column stores the legacy sentinel `0`, which reads and exports back as `null`.
        - Historical log item cards forward-fill prior Navy BF% to render eLBM badges across all weigh-ins.
      - *Longitudinal Plot Integration (`PlotsScreen.tsx`)*:
        - `loadElbmData` leverages `calculateChronologicalELBM` with `userProfileRepo` biological context (`gender`, `height_cm`), rendering a continuous, unbroken eLBM trajectory across all training blocks.
        - `loadBodyFatData` applies LOCF forward-fill across circumference updates.
      - *Repository-Level Integrity (`SQLiteBodyMetricsRepository.ts` & `MockBodyMetricsRepository.ts`)*:
-       - `save()` automatically forward-fills missing circumferences and bodyweight via historical queries prior to calculating and persisting `navy_body_fat`.
+       - `save()` may use historical circumferences to calculate `navy_body_fat`, but preserves missing bodyweight as `null` in the domain model and uses the legacy `0` storage sentinel without forward-filling scale weight.
 - **Consequences**:
   - *Pros*:
     - Completely eliminates fragmented eLBM curves; athletes who weigh in daily and measure tape circumferences biweekly receive daily continuous eLBM tracking.
@@ -2015,11 +2018,76 @@
   - *Cons*:
     - Requires 1 tap from the athlete to confirm warm-up perception on the diagnostic set (or 1 tap to skip).
 
+## ADR-099: Foreign-Key Decoupling for Program Deletion, Lifter-Centric Overview Notes, SBD Smart Warmup Automation, and Compact Progression Scheme Badging
+- **Context**:
+  1. Deleting a program caused a SQLite foreign key constraint error when historical workouts referenced `workout_templates.id`.
+  2. In `ProgramOverviewScreen`, clicking another program tab previously reverted immediately to `initialProgramId`.
+  3. Program notes displayed internal JSON, HTML comment markers (`<!-- ... -->`), and technical archetype keys (`archetype_ii_strength_primary`).
+  4. SBD and primary compound lifts lacked automated smart warm-ups when launched from templates, preventing diagnostic single autoregulation.
+  5. Lifters could not distinguish whether an exercise was governed by LP, DP, DDP, or Custom progression schemes without tapping into the rules modal.
+- **Decision**:
+  1. **Foreign-Key Safe Deletion (`SQLiteProgramRepository.ts`)**:
+     - In `delete(id)` and `deleteTemplate(id)`, run a transactional cleanup that first updates historical workouts (`UPDATE workouts SET template_id = NULL WHERE template_id IN (SELECT id FROM workout_templates WHERE program_id = ?);`), then cascades through progression rules, template exercises, templates, and blocks before deleting the program.
+     - Added `ON DELETE SET NULL` to `workouts.template_id` in `schema.ts`.
+  2. **Decoupled Overview Tab Selection (`ProgramOverviewScreen.tsx`)**:
+     - Introduced `lastInitialProgramIdRef` so `initialProgramId` only initializes the selected tab on mount or external prop change without preventing the lifter from browsing other tabs.
+     - Removed `selectedProgramId` from `loadData` dependencies to avoid overriding active user browsing.
+  3. **Lifter-Centric Notes Formatter (`formatLifterProgramNotes`)**:
+     - Strips HTML comments, parses mesocycle markers, translates technical archetypes into friendly names ("Strength and Hypertrophy Foundation"), formats mentalities ("Fury (High Intensity)"), and deduplicates lines.
+  4. **Automated SBD Smart Warm-Ups (`WorkoutTabRouter.tsx`, `ActiveLoggerScreen.tsx`)**:
+     - When starting a workout from a template, inspect `autoWarmupMode`. If `'smart_compounds'` or `'all_exercises'`, automatically pre-populate warm-up progression ladders for SBD and compound movements via `sessionService.generateWarmupSetsForExercise`.
+     - Added an inline `+ WARMUPS` button to the logger card action row so warmups can be generated on-demand at any time.
+     - Autoregulation diagnostic single completion checks ghost sets if the working set load has not yet been typed in.
+  5. **Compact Progression Badges (`detectProgressionBadge`)**:
+     - Evaluates template exercise rules and renders a sleek, non-bloated 9pt badge (`LP`, `DP`, `DDP`, `Custom`) on each exercise row.
+- **Consequences**:
+  - *Pros*:
+    - Deleting programs preserves full workout history without foreign key errors.
+    - Lifters can freely inspect all routines and instantly see progression rules (LP/DP/DDP) at a glance.
+    - SBD movements always have warmups ready for intra-workout autoregulation.
+    - Raw technical jargon and HTML comments are completely eliminated from the UI.
+  - *Cons*:
+    - Workouts logged under deleted templates lose their direct template reference (stored as null), though all workout names, dates, and set data remain fully preserved.
 
 
+## ADR-100: Concise Mesocycle Evolution Summaries, Beta Phase Lifecycle Gating, and Multi-Meso Soundness Simulation Framework
+- **Context**:
+  1. **Diff Granularity**: When generating an evolved mesocycle ($N \rightarrow N+1$), the diff modal previously showed an overwhelming wall of granular technical items (e.g. 10–15 numbered paragraphs repeating formulas, plate step rounding, DDP explanations, and raw metrics). Lifters require concise, coach-level summary takeaways ("Increased your volume by 3 weekly sets", "RPE goal increased for accessory exercises", "Optimized meso-cycle length", "Changed exercises based on elbow pain").
+  2. **Beta Lifecycle Gating**: In development mode, a manual "Evolve Ongoing Program" button was placed on `UserProfileScreen.tsx` for debugging. In beta/production releases, lifters must not manually evolve cycles mid-flight; mesocycle evolution must only trigger upon completion of the active accumulation block.
+  3. **Multi-Meso Soundness Verification**: The engineering team needed an empirical simulation framework to prove that multi-mesocycle iterations ($1 \rightarrow 2 \rightarrow 3$) remain biomechanically sound, injury-preventative, and progressive across diverse lifter archetypes without regression or volume explosion.
+- **Decision**:
+  1. **Concise Coach-Level Summarization (`mesocycleDiffFormatter.ts`)**:
+     - Added `summarizeMesocycleChanges(items: MesocycleDiffItem[]): string[]` which groups and synthesizes granular technical diff items into clean, coach-level takeaways:
+       - Volume escalation/pruning: `"Increased your volume by X weekly sets"` or `"Reduced volume on over-reaching muscle groups to manage fatigue"`.
+       - Accessory progression/RPE: `"RPE goal increased for accessory exercises"`.
+       - Block length adaptation: `"Optimized meso-cycle length"`.
+       - Joint pain / injury sparing: `"Changed exercises based on elbow pain"` (and knee/shoulder/axial variants).
+       - Weight mastery holds & AMRAP load increases: `"Held working load on Bench Press to master technique"`, `"Increased working load on Squat based on AMRAP performance"`.
+     - Updated `formatMesocycleDiffMarkdown` to render concise summary bullets by default, while supporting `{ mode: 'detailed' }` for diagnostic audit logs.
+  2. **Beta Phase Lifecycle Gating (`UserProfileScreen.tsx`, `HomeScreen.tsx`, `programEvolutionService.ts`)**:
+     - Introduced `isBetaPhase?: boolean` prop and check for SQLite setting `is_beta_phase` / `app_phase === 'beta'`.
+     - In beta mode, the manual "⚡ Evolve Ongoing Program for Next Meso" button is hidden while a cycle is in progress.
+     - When `isReadyForEvolution` detects cycle completion (all planned sessions completed or target accumulation elapsed), the button dynamically unlocks as `"🎉 Mesocycle Completed — Evolve Next Meso"`.
+     - Added a prominent graduation banner on `HomeScreen.tsx` (`home-meso-completed-banner`) when an active cycle finishes, directly guiding the lifter to review and activate Meso $N+1$.
+     - Gated weight mastery RPE overshoots strictly on submaximal sets, ensuring diagnostic AMRAP sets (0 RIR / max effort) do not falsely trigger load holds.
+  3. **Multi-Meso Soundness Simulation Framework (`mesocycleSimulation.ts`)**:
+     - Created an automated simulation engine with 4 canonical lifter profiles:
+       - `Lukas`: Responsive Trainee (earns volume escalation, Bromley waves, AMRAP load gains).
+       - `Erik`: Heavy Powerbuilder with Elbow Tendonitis (protects elbow joint, swaps Barbell Skull Crusher $\rightarrow$ Cable Tricep Pushdown, holds Bench load via Weight Mastery until technique standardizes).
+       - `Sofia`: Caloric Deficit & High Axial Fatigue (offloads Barbell Squat $\rightarrow$ Leg Press, optimizes block length for deficit recovery).
+       - `Marcus`: Mentality Transitioner (3-week transition wave from Precision $\rightarrow$ Fury, preserves $\sim 32$ weekly stimulating eReps).
+     - Verified all transitions via automated test suite `mesocycleSimulation.test.ts`.
+- **Consequences**:
+  - *Pros*:
+    - Lifters receive clean, human-readable mesocycle adjustment summaries without information overload.
+    - Beta users cannot accidentally evolve or corrupt active mesocycles mid-cycle.
+    - Mesocycle completion is surfaced seamlessly on Home and Profile screens.
+    - Continuous simulation harness objectively guarantees the soundness of multi-mesocycle progressions over time.
+  - *Cons*:
+    - Diagnostic engineering details (raw percentages and formula parameters) are hidden in concise mode, requiring `{ mode: 'detailed' }` if a deep mathematical audit is needed.
 
+## ADR-101: Task-scoped documentation loading and validation
 
-
-
-
-
+- **Context**: Startup maps duplicated generated inventories, while historical plans mixed completed work, proposals, and old agent verification rules. Running every suite and both equivalent mobile static-check aliases after each edit repeated work without new evidence.
+- **Decision**: Root `AGENTS.md` and `docs/README.md` define the reading path; the current user request defines the active goal. Keep historical records searchable on demand, with a generated ADR index. Curated maps describe current boundaries and navigation rather than exhaustive file trees. Use the scope matrix in `docs/VALIDATION.md`: related behavior/caller tests during local iteration, full affected-workspace regressions for broad/shared changes and merge/release readiness, and ordered producer/consumer checks for contracts. Run mobile typecheck or its equivalent lint alias once after relevant edits.
+- **Constraints**: Preserve regression tests, type safety, contract synchronization, and native validation where needed. Related-test discovery does not establish coverage of dynamic dependencies. Unknown impact requires broader tests. Historical green counts are not current evidence. No runtime or test-runner configuration changes are required by this decision.

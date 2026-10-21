@@ -122,6 +122,29 @@ def test_effective_reps_defaults_and_amrap() -> None:
     assert compute_effective_reps(8, rir=1.0, set_type="amrap") == 4.0
 
 
+def test_effective_reps_load_gating_henneman() -> None:
+    """Tests load-gated eReps under Henneman's Size Principle (>=85% 1RM or <=5 reps @ RPE>=8)."""
+    # 1. Heavy load ratio: 100 kg on 110 kg e1RM (90.9% >= 85%), 3 reps @ 2 RIR (would be 3 eReps)
+    ereps_heavy = compute_effective_reps(3, rir=2.0, weight=100.0, e1rm=110.0)
+    assert ereps_heavy == 3.0
+
+    # 4 reps @ 3 RIR with 90% load: 4 reps completed -> all 4 are effective
+    ereps_heavy_4 = compute_effective_reps(4, rir=3.0, weight=90.0, e1rm=100.0)
+    assert ereps_heavy_4 == 4.0
+
+    # 6 reps @ 85% load -> capped at 5 eReps
+    ereps_capped = compute_effective_reps(6, rir=1.0, weight=85.0, e1rm=100.0)
+    assert ereps_capped == 5.0
+
+    # 2. Heavy rep/RPE trigger: 4 reps @ RPE 8.5 without explicit e1rm
+    ereps_rep_rpe = compute_effective_reps(4, rpe=8.5)
+    assert ereps_rep_rpe == 4.0
+
+    # 3. Submaximal set: 10 reps @ 5 RIR (Josef Eriksson base work) -> 0 eReps
+    ereps_submax = compute_effective_reps(10, rir=5.0)
+    assert ereps_submax == 0.0
+
+
 def test_effective_reps_rest_pause_boost() -> None:
     """Tests myorep, drop, and dc sets with Delta t_rest <= 45s applying the 0.5 * max(0, reps - 5) bonus."""
     # Myorep set of 8 reps @ RPE 10 (RIR 0) with 20s rest:

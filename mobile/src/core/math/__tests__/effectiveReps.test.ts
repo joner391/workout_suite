@@ -147,6 +147,18 @@ describe('effectiveReps math module', () => {
         e1rmKg: 100,
       });
       expect(resCapped.effectiveReps).toBe(5);
+
+      // Reps <= 5 at RPE >= 8.0 without explicit e1rm triggers load gating
+      const resRepRpe = calculateHypertrophicEffectiveReps(4, {
+        rpe: 8.5,
+      });
+      expect(resRepRpe.effectiveReps).toBe(4);
+
+      // Submaximal sets (> 4 RIR / RPE < 6.0) yield 0 eReps
+      const resSubmax = calculateHypertrophicEffectiveReps(10, {
+        rir: 5,
+      });
+      expect(resSubmax.effectiveReps).toBe(0);
     });
   });
 

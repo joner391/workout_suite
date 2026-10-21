@@ -26,8 +26,10 @@ import {
   BodyMetric,
   UserProfile,
   TrainingMentality,
+  JointLocation,
   CalibratedParam,
   PainReport,
+  ExercisePreference,
 } from '../core/types';
 
 export const EXPORT_SCHEMA_VERSION = '1.0.0';
@@ -136,7 +138,7 @@ export class ExportService {
     // 4. Template Exercises
     const rawTemplateExercises = await db.getAllAsync<any>(
       `SELECT id, template_id, exercise_id, gear_id, target_sets, target_reps_min,
-              target_reps_max, target_rpe, target_rir, order_index, exercise_group_id
+              target_reps_max, target_rpe, target_rir, order_index, exercise_group_id, set_type
        FROM template_exercises
        ORDER BY template_id ASC, order_index ASC;`
     );
@@ -152,6 +154,7 @@ export class ExportService {
       target_rir: r.target_rir != null ? Number(r.target_rir) : null,
       order_index: Number(r.order_index ?? 0),
       exercise_group_id: r.exercise_group_id != null ? String(r.exercise_group_id) : null,
+      set_type: r.set_type != null ? (r.set_type as any) : 'working',
     }));
 
     // 5. Progression Rules
@@ -226,10 +229,20 @@ export class ExportService {
     const rawExercises = await db.getAllAsync<any>(
       `SELECT id, name, muscle_group, category, is_compound, is_bodyweight,
               is_unilateral, load_mode, default_cable_ratio, default_bar_weight_kg,
-              is_custom, parent_exercise_id, standard_lift_type, default_rest_seconds
+              is_custom, parent_exercise_id, standard_lift_type, default_rest_seconds,
+              axial_loading, rom_tier, muscle_biases, primary_joints, secondary_joints,
+              baseline_sfr, required_gear, exercise_tier
        FROM exercises
        ORDER BY name ASC;`
     );
+    const parseArray = (val: any) => {
+      if (!val) return undefined;
+      try {
+        return typeof val === 'string' ? JSON.parse(val) : val;
+      } catch {
+        return undefined;
+      }
+    };
     const exercises: Exercise[] = (rawExercises || []).map((r) => ({
       id: String(r.id),
       name: String(r.name),
@@ -245,6 +258,14 @@ export class ExportService {
       parent_exercise_id: r.parent_exercise_id != null ? String(r.parent_exercise_id) : null,
       standard_lift_type: r.standard_lift_type != null ? r.standard_lift_type : null,
       default_rest_seconds: Number(r.default_rest_seconds ?? 120),
+      axial_loading: r.axial_loading ?? 'none',
+      rom_tier: r.rom_tier ?? 'standard_full',
+      muscle_biases: parseArray(r.muscle_biases),
+      primary_joints: parseArray(r.primary_joints),
+      secondary_joints: parseArray(r.secondary_joints),
+      baseline_sfr: r.baseline_sfr != null ? Number(r.baseline_sfr) : 50.0,
+      required_gear: parseArray(r.required_gear),
+      exercise_tier: r.exercise_tier != null ? Number(r.exercise_tier) : 2,
     }));
 
     // 9. Gear Inventory (Convert is_default integer to boolean)
@@ -325,6 +346,10 @@ export class ExportService {
         preferred_days_per_week: Number(r.preferred_days_per_week ?? 4),
         preferred_session_duration_mins: Number(r.preferred_session_duration_mins ?? 60),
         equipment_access: r.equipment_access ?? 'commercial_gym',
+        experience_level: r.experience_level ?? 'intermediate',
+        pending_meso_mood: Boolean(r.pending_meso_mood),
+        has_axial_fatigue_sensitivity: r.has_axial_fatigue_sensitivity != null ? Boolean(r.has_axial_fatigue_sensitivity) : false,
+        is_caloric_deficit: r.is_caloric_deficit != null ? Boolean(r.is_caloric_deficit) : false,
         created_at: String(r.created_at),
         updated_at: String(r.updated_at),
       };
@@ -350,7 +375,8 @@ export class ExportService {
     let pain_reports: PainReport[] = [];
     try {
       const rawPainReports = await db.getAllAsync<any>(
-        `SELECT id, workout_id, exercise_id, set_id, pain_type, severity, notes, created_at
+        `SELECT id, workout_id, exercise_id, set_id, pain_type, severity,
+                joint_location, notes, created_at
          FROM pain_reports
          ORDER BY created_at ASC;`
       );
@@ -361,8 +387,35 @@ export class ExportService {
         set_id: r.set_id != null ? String(r.set_id) : null,
         pain_type: r.pain_type,
         severity: Number(r.severity),
+        joint_location:
+          r.joint_location != null ? (String(r.joint_location) as JointLocation) : null,
         notes: r.notes != null ? String(r.notes) : null,
         created_at: String(r.created_at),
+      }));
+    } catch {
+      // Table might not exist in un-migrated databases
+    }
+
+    // 15. Exercise Preferences (ADR-096)
+    let exercise_preferences: ExercisePreference[] = [];
+    try {
+      const rawPrefs = await db.getAllAsync<any>(
+        `SELECT exercise_id, sentiment, swap_in_count, swap_out_count,
+                affinity_score, last_pain_reported_at, max_pain_severity,
+                pain_joint, updated_at
+         FROM exercise_preferences
+         ORDER BY exercise_id ASC;`
+      );
+      exercise_preferences = (rawPrefs || []).map((r) => ({
+        exercise_id: String(r.exercise_id),
+        sentiment: r.sentiment ?? 'neutral',
+        swap_in_count: Number(r.swap_in_count ?? 0),
+        swap_out_count: Number(r.swap_out_count ?? 0),
+        affinity_score: Number(r.affinity_score ?? 0.0),
+        last_pain_reported_at: r.last_pain_reported_at != null ? String(r.last_pain_reported_at) : null,
+        max_pain_severity: r.max_pain_severity != null ? Number(r.max_pain_severity) : null,
+        pain_joint: r.pain_joint != null ? String(r.pain_joint) : null,
+        updated_at: String(r.updated_at),
       }));
     } catch {
       // Table might not exist in un-migrated databases
@@ -385,6 +438,7 @@ export class ExportService {
       user_profiles,
       calibrated_params,
       pain_reports,
+      exercise_preferences,
     };
   }
 

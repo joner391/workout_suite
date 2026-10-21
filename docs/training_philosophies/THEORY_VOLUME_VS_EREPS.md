@@ -264,31 +264,43 @@ The `programSynthesizer` operationalizes this unified model across two distinct 
 
 ---
 
-### Horizon 1: Static Synthesis Profiles
+### Horizon 1: Static Synthesis Profiles & Mentality Reframing
 
-When generating initial routines, the user's `training_mentality` and `experience_level` serve as proxies for their exertion depth and motor skill tier:
+When generating initial routines, the user's `training_mentality` (reframed around stimulating effective-rep density and proximity to failure rather than dogmatic set counts) and `experience_level` serve as proxies for their exertion depth, motor skill tier, and goal-derived archetype:
 
 ```mermaid
 flowchart TD
     Profile["UserProfile Questionnaire"] --> CheckExp{"Novice / Beginner?"}
     
-    CheckExp -->|"Yes"| Bifurcated["Bifurcated Structure:\n• Tier 1 Barbell Practice (4x4 @ RPE 7.0)\n• Tier 2 Safe eRep Drivers (3 sets @ RPE 9.0)"]
+    CheckExp -->|"Yes"| Bifurcated["Bifurcated Structure:\n• Tier 1 Barbell Practice (4 sets @ RPE 7.0 LP)\n• Tier 2 Safe eRep Drivers (3 sets @ RPE 9.0 DP)"]
     CheckExp -->|"No / Intermediate+"| CheckMent{"training_mentality"}
 
-    CheckMent -->|"fury"| Fury["Fury Profile (RPE 9.5-10)\n• 1-2 sets/exercise (Myo-reps & DC)\n• 6-8 sets/muscle/wk (30-40 eReps)\n• Dynamic Double Progression"]
-    CheckMent -->|"precision"| Prec["Precision Profile (RPE 7.5-8.5)\n• 3-4 straight sets/exercise\n• 12-16 sets/muscle/wk (32-44 eReps)\n• Double Progression / Linear"]
-    CheckMent -->|"get_out"| GetOut["Get Out Profile (RPE 8.5-9)\n• 2 sets/exercise (Antagonist Pairs & Clusters)\n• 8-10 sets/muscle/wk (28-36 eReps)\n• Density / Paired Sets"]
+    CheckMent -->|"fury"| Fury["Fury ⚡ (High Effort Density / Maximum Efficiency)\n• Close to failure: RPE 9.5-10 (0-0.5 RIR) on accessories; RPE 8.0 on compounds\n• Max ~5 eReps/set, requiring fewer total sets (dynamically calculated)\n• Dynamic Double Progression (DDP)"]
+    CheckMent -->|"precision"| Prec["Precision 🎯 (Technical Mastery / Controlled Proximity)\n• Controlled proximity: RPE 7.5-8.5 (1.5-2.5 RIR) to protect bar velocity\n• ~2.5-3 eReps/set, requiring higher set volume to reach 32 eRep target\n• Linear Progression (LP) on main compounds / DDP on accessories"]
+    CheckMent -->|"get_out"| GetOut["Get Out ⏱️ (Temporal Density / Antagonist Supersets)\n• Strict rest & antagonist paired supersets\n• Controlled exertion: RPE 8.5 (1.5 RIR)\n• Dynamic Double Progression (DDP)"]
 ```
 
 | Parameter | Fury ⚡ | Precision 🎯 | Get Out ⏱️ | Novice Bifurcated 🎓 |
 | :--- | :---: | :---: | :---: | :---: |
-| **Primary Lift Goal** | Absolute Failure / HIT | Volume Accumulation | Density / Efficiency | Motor Skill Acquisition |
-| **Compound Target RPE** | 9.5 – 10.0 | 7.5 – 8.5 | 8.5 – 9.0 | **6.5 – 7.5 (Practice Sets)** |
-| **Secondary Driver RPE** | 10.0 (Rest-Pause/Drop) | 8.0 – 9.0 | 9.0 (Antagonist) | **9.0 – 9.5 (Safe eRep Driver)** |
-| **Target Sets/Exercise** | 1 – 2 | 3 – 4 | 2 (strict) | 4–5 practice / 2–3 drivers |
-| **Weekly Sets / Muscle** | **6 – 8 sets** | **12 – 16 sets** | **8 – 10 sets** | **10 – 14 sets (mixed)** |
-| **Calculated Weekly eReps** | $\mathbf{30\text{–}40\text{ eReps}}$ | $\mathbf{30\text{–}45\text{ eReps}}$ | $\mathbf{28\text{–}40\text{ eReps}}$ | $\mathbf{25\text{–}35\text{ eReps}}$ |
-| **Progression Engine** | Dynamic Double (DDP) | Double Progression (DP) | Double Progression | Linear (LP) on Tier 1 / DP on Tier 2 |
+| **Effort Model** | Maximum Stimulating Density | Controlled Velocity & Quality | Temporal Density & Supersetting | Motor Learning & Driver Bifurcation |
+| **Compound Target RPE** | 8.0 (2.0 RIR accumulation) | 8.0 (2.0 RIR) | 8.5 (1.5 RIR) | **7.0 (3.0 RIR Practice Sets)** |
+| **Accessory Target RPE** | 9.5 (0.5 RIR, 5 eReps/set) | 8.0 (2.0 RIR, 3 eReps/set) | 8.5 (1.5 RIR, 4 eReps/set) | **9.0 (1.0 RIR Driver Sets)** |
+| **Target Sets Allocation** | Dynamically computed ($\approx 1\text{–}2$) | Dynamically computed ($\approx 3\text{–}4$) | Dynamically computed ($\approx 2$) | 4 practice / 3 drivers |
+| **Calculated Weekly eReps** | $\mathbf{\approx 32\text{ eReps / muscle}}$ | $\mathbf{\approx 32\text{ eReps / muscle}}$ | $\mathbf{\approx 32\text{ eReps / muscle}}$ | $\mathbf{\approx 28\text{–}32\text{ eReps}}$ |
+| **Progression Engine** | Dynamic Double (DDP) | LP on Tier 1 / DDP on Tier 2 & 3 | Dynamic Double (DDP) | LP on Tier 1 / DP on Tier 2 |
+
+#### Load-Gated eReps Mathematical Formulation (Henneman's Size Principle)
+
+Under Henneman's Size Principle, sets performed with heavy external loads ($\ge 85\%$ 1RM or $\le 5\text{ reps} \land \text{RPE} \ge 8.0$) recruit high-threshold motor units immediately from repetition 1. Thus, all completed reps count as hypertrophic effective reps (capped at 5 per set):
+
+$$\text{eReps}_{\text{set}} = \begin{cases} 
+\min(\text{reps}, 5) & \text{if } \frac{w}{\text{e1RM}} \ge 0.85 \lor (\text{reps} \le 5 \land \text{RPE} \ge 8.0) \\
+\max\big(0, \min(\text{reps}, \text{round}(5 - \text{RIR}))\big) & \text{otherwise}
+\end{cases}$$
+
+#### Submaximal Workload Tracking Policy
+
+In the logger, trainees are permitted to record submaximal sets ($> 4\text{ RIR}$, e.g. Josef Eriksson 10x10 @ 50% or Bromley 65% base sets) for tonnage/workload tracking, but they earn 0 eReps. The program synthesizer and mesocycle engine **never** generate submaximal non-eRep sets; all synthesized sets reside strictly in the stimulating zone ($0\text{–}3\text{ RIR}$ or $\ge 85\%\text{ 1RM}$).
 
 ---
 

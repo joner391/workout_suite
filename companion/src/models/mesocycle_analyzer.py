@@ -10,7 +10,7 @@ Implements ADR-066.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 import math
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -48,6 +48,10 @@ class MesocycleRecommendation:
     explicit_rpe_coverage: float     # 0.0 to 1.0
     weekly_profile: List[WeeklyBlockMetrics]
     summary_message: str
+    pathway: str = "SHORT_CYCLE"     # "SHORT_CYCLE" | "LONG_CYCLE"
+    pathway_name: str = "HIT Agile Sprints (3-4 Weeks)"
+    recommended_block_weeks: int = 4
+    branching_reasons: List[str] = field(default_factory=list)
 
 
 def _parse_dt(d_str: Union[str, date, datetime]) -> date:
@@ -173,8 +177,16 @@ def analyze_optimal_mesocycle_length(
     workout_sets: Sequence[WorkoutSet],
     kalman_histories: Dict[str, Tuple[List[str], List[KalmanState]]],
     banister_series: Sequence[DailyPreparedness],
+    exercises: Optional[Sequence[Any]] = None,
+    energy_balance: Optional[str] = None,
+    prior_mu: float = 3.5,
+    prior_sigma: float = 1.5,
 ) -> MesocycleRecommendation:
-    """Computes Bayesian optimal mesocycle length from e1RM velocity and RPE drift."""
+    """Computes Bayesian optimal mesocycle length from e1RM velocity and RPE drift,
+
+    and performs greedy branching between Short ('HIT Agile Sprints', 3-4 weeks)
+    and Long ('Progressive Accumulation Waves', 6-8 weeks) mesocycles.
+    """
     blocks = detect_mesocycle_boundaries(banister_series)
 
     # Calculate explicit RPE/RIR logging coverage across working sets
@@ -279,9 +291,9 @@ def analyze_optimal_mesocycle_length(
         block_peak_weeks.append((best_u, obs_precision))
 
     # Conjugate Normal-Normal Bayesian Update
-    # Prior: mu_0 = 5.0 weeks, sigma_0 = 1.5 weeks
-    mu_0 = 5.0
-    prec_0 = 1.0 / (1.5 ** 2)
+    # Meso 0 Prior: mu_0 = 3.5 weeks (universal fast-calibration baseline), sigma_0 = 1.5 weeks
+    mu_0 = prior_mu
+    prec_0 = 1.0 / (prior_sigma ** 2)
 
     total_prec = prec_0 + sum(w for _, w in block_peak_weeks)
     post_var = 1.0 / total_prec
@@ -329,20 +341,103 @@ def analyze_optimal_mesocycle_length(
     opt_wks = round(post_mean, 1)
     deficit_wks = max(2.5, round(opt_wks - 1.0, 1))
 
+    # -------------------------------------------------------------------------
+    # Greedy Branching Decision Logic (Section 3.2):
+    # Short Cycle (Path A: 'HIT Agile Sprints', 3-4 Weeks)
+    #   - High Exertion (mean RPE >= 9.0 or single-set RPE >= 9.5)
+    #   - Fast Velocity Stall (peaks or stalls by Wk 3, slope <= 0.15%)
+    #   - High Axial Ratio (> 60% Barbell volume)
+    #   - Caloric Deficit
+    # Long Cycle (Path B: 'Progressive Accumulation Waves', 6-8 Weeks)
+    #   - Submaximal Volume (mean RPE < 8.5)
+    #   - Steady Velocity Gains into Wk 4+
+    #   - Low Axial / Machine Focus (< 40% Barbell volume)
+    #   - Caloric Surplus or Maintenance
+    # -------------------------------------------------------------------------
+    # 1. Rated RPE exertion profile
+    rated_rpes: List[float] = []
+    for s in rated_sets:
+        if s.rpe is not None:
+            rated_rpes.append(float(s.rpe))
+        elif s.rir is not None:
+            rated_rpes.append(max(0.0, 10.0 - float(s.rir)))
+    mean_rated_rpe = float(np.mean(rated_rpes)) if rated_rpes else 8.2
+    has_extreme_rpe = any(r >= 9.5 for r in rated_rpes)
+
+    # 2. Caloric status
+    is_deficit = False
+    if energy_balance is not None:
+        is_deficit = str(energy_balance).strip().lower() in ("deficit", "cut", "hypocaloric")
+    elif banister_series:
+        recent_pts = banister_series[-7:] if len(banister_series) >= 7 else banister_series
+        is_deficit = any(str(getattr(pt, "energy_balance", "")).lower() in ("deficit", "cut") for pt in recent_pts)
+
+    # 3. Axial ratio
+    ex_map = {getattr(e, "id", ""): e for e in (exercises or [])}
+    if working_sets and ex_map:
+        bb_count = sum(
+            1 for s in working_sets
+            if str(getattr(ex_map.get(s.exercise_id), "category", "")).strip().lower() == "barbell"
+        )
+        axial_ratio = bb_count / float(len(working_sets))
+    else:
+        axial_ratio = 0.5  # Neutral baseline
+
+    # 4. Strength velocity progression characteristics
+    stalls_early = (opt_wks <= 3.5) or (len(weekly_profile) >= 3 and weekly_profile[2].e1rm_weekly_slope_pct <= 0.15)
+    steady_velocity_wk4 = (opt_wks >= 4.5) or (len(weekly_profile) >= 4 and weekly_profile[3].e1rm_weekly_slope_pct > 0.15)
+
+    short_flags: List[str] = []
+    long_flags: List[str] = []
+
+    if mean_rated_rpe >= 9.0 or has_extreme_rpe:
+        short_flags.append(f"High exertion profile (mean RPE {mean_rated_rpe:.1f} >= 9.0)")
+    elif mean_rated_rpe < 8.5:
+        long_flags.append(f"Submaximal fatigue profile (mean RPE {mean_rated_rpe:.1f} < 8.5)")
+
+    if stalls_early:
+        short_flags.append(f"Early strength velocity stall (peak accumulation around Week {opt_wks:.1f} <= 3.5)")
+    elif steady_velocity_wk4:
+        long_flags.append("Steady velocity gains progressing through Week 4+")
+
+    if axial_ratio > 0.60:
+        short_flags.append(f"High axial fatigue ratio ({axial_ratio:.0%} barbell volume)")
+    elif axial_ratio < 0.40:
+        long_flags.append(f"Low axial ratio ({axial_ratio:.0%} barbell volume) favoring guided machines/cables")
+
+    if is_deficit:
+        short_flags.append("Caloric deficit limits systemic recovery reserves")
+    else:
+        long_flags.append("Eucaloric or hypercaloric energy balance supports extended volume accumulation")
+
+    # Greedy branch decision
+    # If 2+ short flags or optimal weeks <= 4.0 (or Meso 0 baseline), branch to Short Cycle
+    if len(short_flags) >= len(long_flags) or opt_wks <= 4.0:
+        pathway = "SHORT_CYCLE"
+        pathway_name = "HIT Agile Sprints (3-4 Weeks)"
+        rec_block_wks = 4  # 3 weeks accumulation + 1 week deload
+        branching_reasons = short_flags if short_flags else ["Meso 0 calibration baseline: 3 weeks accumulation + 1 week deload"]
+    else:
+        pathway = "LONG_CYCLE"
+        pathway_name = "Progressive Accumulation Waves (6-8 Weeks)"
+        rec_block_wks = min(8, max(6, int(round(opt_wks + 1.0))))
+        branching_reasons = long_flags
+
     if n_blocks > 0:
         summary = (
             f"Across {n_blocks} historical training blocks, your strength velocity peaks around "
             f"**Week {opt_wks}** (90% Credible Interval: **{ci_lower}–{ci_upper} weeks**) before "
-            f"marginal e1RM gains stall and RPE drift accumulates. Schedule a deload every "
+            f"marginal e1RM gains stall and RPE drift accumulates. Branching recommendation: "
+            f"**{pathway_name}** ({rec_block_wks} total weeks with deload). Schedule a deload every "
             f"**{round(opt_wks)}th week** during maintenance/surplus, or every **{round(deficit_wks)}th week** "
             f"during a caloric deficit."
         )
     else:
         summary = (
             f"With insufficient historical training blocks (0 detected), mesocycle length defaults "
-            f"to the physiological population baseline of **{opt_wks} weeks** (90% Credible Interval: "
-            f"**{ci_lower}–{ci_upper} weeks**). Log at least 3–4 consistent accumulation blocks to "
-            f"unlock personalized Bayesian estimation."
+            f"to the Meso 0 fast-calibration baseline of **{opt_wks} weeks** (90% Credible Interval: "
+            f"**{ci_lower}–{ci_upper} weeks**). Branching recommendation: **{pathway_name}** ({rec_block_wks} weeks). "
+            f"Log at least 3–4 consistent accumulation blocks to unlock personalized Bayesian estimation."
         )
 
     return MesocycleRecommendation(
@@ -356,4 +451,8 @@ def analyze_optimal_mesocycle_length(
         explicit_rpe_coverage=round(rpe_coverage, 3),
         weekly_profile=weekly_profile,
         summary_message=summary,
+        pathway=pathway,
+        pathway_name=pathway_name,
+        recommended_block_weeks=rec_block_wks,
+        branching_reasons=branching_reasons,
     )

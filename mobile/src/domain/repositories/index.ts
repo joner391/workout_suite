@@ -6,3 +6,4 @@ export * from './IProgramRepository';
 export * from './IUserProfileRepository';
 export * from './IBodyMetricsRepository';
 export * from './IPainReportRepository';
+export * from './IExercisePreferenceRepository';

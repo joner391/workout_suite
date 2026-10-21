@@ -43,10 +43,13 @@ import { IGearRepository } from '../../domain/repositories/IGearRepository';
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
 import { IProgramRepository } from '../../domain/repositories/IProgramRepository';
 import { IPainReportRepository } from '../../domain/repositories/IPainReportRepository';
+import { IExercisePreferenceRepository } from '../../domain/repositories/IExercisePreferenceRepository';
+import { useOptionalRepositories } from '../../context/RepositoryContext';
 import { CalibratedParamService } from '../../services/calibratedParamService';
 import { ActiveSessionService } from '../../services/activeSessionService';
 import { RestTimerService } from '../../services/restTimerService';
 import { ExerciseSubstitutionService } from '../../services/exerciseSubstitutionService';
+import { ExercisePreferenceService } from '../../services/exercisePreferenceService';
 import {
   CrashRecoveryService,
   CrashRecoveryPromptData,
@@ -61,6 +64,11 @@ import { PainReportModal } from './PainReportModal';
 import { CrashRecoveryDialog } from './CrashRecoveryDialog';
 import { SupersetBracketGroup } from './SupersetBracketGroup';
 import { ProgressionProposalBanner } from './ProgressionProposalBanner';
+import { MentalityTransitionBanner } from './MentalityTransitionBanner';
+import {
+  TransitionWaveStep,
+  calculateTransitionWave,
+} from '../../core/generator/transitionWave';
 import { WarmupAssessmentModal } from './WarmupAssessmentModal';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
 import { SessionDetailModal } from '../calendar/SessionDetailModal';
@@ -220,11 +228,14 @@ export interface ActiveLoggerScreenProps {
   userSettingsRepo?: IUserSettingsRepository;
   programRepo?: IProgramRepository;
   painReportRepo?: IPainReportRepository;
+  exercisePreferenceRepo?: IExercisePreferenceRepository;
+  exercisePreferenceService?: ExercisePreferenceService;
   calibratedParamService?: CalibratedParamService;
   activeSessionService?: ActiveSessionService;
   restTimerService?: RestTimerService;
   exerciseSubstitutionService?: ExerciseSubstitutionService;
   crashRecoveryService?: CrashRecoveryService;
+  transitionWave?: TransitionWaveStep | null;
   onFinishSession?: (workout: Workout) => void;
   onDiscardSession?: () => void;
 }
@@ -237,11 +248,14 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   userSettingsRepo,
   programRepo,
   painReportRepo,
+  exercisePreferenceRepo: propExercisePreferenceRepo,
+  exercisePreferenceService: propExercisePreferenceService,
   calibratedParamService,
   activeSessionService: propSessionService,
   restTimerService: propTimerService,
   exerciseSubstitutionService: propSubService,
   crashRecoveryService: propRecoveryService,
+  transitionWave: propTransitionWave,
   onFinishSession,
   onDiscardSession,
 }) => {
@@ -251,6 +265,15 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   } catch {
     // Safe fallback if native module is unavailable
   }
+
+  const optionalRepos = useOptionalRepositories();
+
+  const prefService = useMemo(() => {
+    if (propExercisePreferenceService) return propExercisePreferenceService;
+    const repo = propExercisePreferenceRepo ?? optionalRepos?.exercisePreferenceRepo;
+    if (repo) return new ExercisePreferenceService(repo);
+    return undefined;
+  }, [propExercisePreferenceService, propExercisePreferenceRepo, optionalRepos?.exercisePreferenceRepo]);
 
   // Services instantiation fallback
   const sessionService = useMemo(
@@ -264,8 +287,8 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   );
 
   const subService = useMemo(
-    () => propSubService ?? new ExerciseSubstitutionService(exerciseRepo, workoutRepo, gearRepo),
-    [propSubService, exerciseRepo, workoutRepo, gearRepo]
+    () => propSubService ?? new ExerciseSubstitutionService(exerciseRepo, workoutRepo, gearRepo, prefService),
+    [propSubService, exerciseRepo, workoutRepo, gearRepo, prefService]
   );
 
   const recoveryService = useMemo(
@@ -349,6 +372,19 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   });
 
   const [painAlertBanner, setPainAlertBanner] = useState<string | null>(null);
+
+  // Mentality Transition Wave State (Step 8.4)
+  const [activeTransitionWave, setActiveTransitionWave] = useState<TransitionWaveStep | null>(
+    propTransitionWave ?? null
+  );
+  const [isTransitionDismissed, setIsTransitionDismissed] = useState<boolean>(false);
+
+  // Sync transitionWave if passed via props
+  useEffect(() => {
+    if (propTransitionWave !== undefined) {
+      setActiveTransitionWave(propTransitionWave);
+    }
+  }, [propTransitionWave]);
 
   // Warm-Up Set Autoregulation Assessment State (ADR-082)
   const [warmupAssessmentTarget, setWarmupAssessmentTarget] = useState<{
@@ -643,6 +679,40 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
                 break;
               }
             }
+          }
+        }
+
+        // Detect and stage Mentality Transition Wave if present and not provided via props (Step 8.4)
+        if (!propTransitionWave && templateDetail?.program_id) {
+          try {
+            const prog = await programRepo.findById(templateDetail.program_id);
+            if (prog && prog.notes) {
+              const match = prog.notes.match(/<!--\s*TRANSITION_WAVE:\s*(\{.*?\})\s*-->/);
+              if (match) {
+                const parsed = JSON.parse(match[1]);
+                let currentWeek = 1;
+                const activeBlock = await programRepo.getActiveProgramBlock();
+                if (activeBlock && activeBlock.start_date) {
+                  const start = new Date(activeBlock.start_date);
+                  const now = new Date();
+                  const diffDays = Math.floor(
+                    Math.max(0, now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)
+                  );
+                  currentWeek = Math.max(1, Math.floor(diffDays / 7) + 1);
+                }
+                const wave = calculateTransitionWave(
+                  parsed.from,
+                  parsed.to,
+                  currentWeek,
+                  parsed.totalWeeks ?? 3
+                );
+                if (wave.isTransitionActive) {
+                  setActiveTransitionWave(wave);
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('Failed to detect transition wave metadata:', err);
           }
         }
       } catch (err) {
@@ -1005,10 +1075,24 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         );
 
         if (uncompletedWorkSets.length > 0) {
-          const plannedWeight =
+          let plannedWeight =
             uncompletedWorkSets[0].raw_input_weight > 0
               ? uncompletedWorkSets[0].raw_input_weight
               : uncompletedWorkSets[0].weight;
+
+          // If working set load is 0, check ghost sets to discover target load
+          if (plannedWeight <= 0) {
+            const ghosts = ghostSetsByExercise.get(targetSet.exercise_id) || [];
+            const ghostWorking = ghosts.find(
+              (s) => s.set_type !== 'warmup' && (s.raw_input_weight > 0 || s.weight > 0)
+            );
+            if (ghostWorking) {
+              plannedWeight =
+                ghostWorking.raw_input_weight > 0
+                  ? ghostWorking.raw_input_weight
+                  : ghostWorking.weight;
+            }
+          }
 
           if (plannedWeight > 0) {
             const exerciseObj = exerciseMap.get(targetSet.exercise_id);
@@ -1256,6 +1340,20 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         joint_location: jointLocation ?? null,
         notes,
       });
+    }
+
+    // Correlate pain report with exercise preference engine (ADR-096)
+    if (prefService) {
+      try {
+        await prefService.correlatePainReport(
+          activeWorkout.id,
+          targetExercise.id,
+          jointLocation ?? null,
+          severity
+        );
+      } catch {
+        // Non-blocking preference correlation
+      }
     }
 
     setPainModalTarget({ visible: false, exercise: null });
@@ -1825,8 +1923,18 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
             );
           })}
 
-          {/* Add Set Button */}
+          {/* Add Set & Warmup Buttons */}
           <View style={styles.setActionButtonRow}>
+            {warmupSets.length === 0 && (
+              <TouchableOpacity
+                testID={`add-warmups-button-${exercise.id}`}
+                style={styles.addWarmupButton}
+                onPress={() => handleGenerateWarmupSets(exercise.id)}
+                accessibilityLabel={`Generate warm-up sets for ${exercise.name}`}
+              >
+                <Text style={styles.addWarmupButtonText}>+ WARMUPS</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               testID={`add-set-button-${exercise.id}`}
               style={styles.addSetButton}
@@ -1911,6 +2019,14 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Mentality Transition Wave Banner (Step 8.4) */}
+      {activeTransitionWave && activeTransitionWave.isTransitionActive && !isTransitionDismissed && (
+        <MentalityTransitionBanner
+          transitionWave={activeTransitionWave}
+          onDismiss={() => setIsTransitionDismissed(true)}
+        />
+      )}
 
       {/* Embedded Progression Proposal Banner (Step 4.4) */}
       <ProgressionProposalBanner

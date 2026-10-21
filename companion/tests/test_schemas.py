@@ -9,6 +9,7 @@ from src.ingestion.schemas import (
     CalibratedParameter,
     CalibratedParametersEnvelope,
     Exercise,
+    ExercisePreference,
     GearInventory,
     Program,
     ProgramBlock,
@@ -521,6 +522,7 @@ def test_sample_workout_export_fixture() -> None:
     assert len(payload.exercises) >= 2
     assert len(payload.workouts) >= 1
     assert len(payload.workout_sets) >= 2
+    assert payload.pain_reports[0].joint_location == "shoulder"
 
     # Verify ADR-026 dual-weight persistence in the exported fixture
     bench_set = payload.workout_sets[0]
@@ -537,4 +539,70 @@ def test_sample_workout_export_fixture() -> None:
     # Verify user settings dictionary
     assert payload.user_settings["unit_system"] == "kg"
     assert payload.user_settings["intensity_metric"] == "RPE"
+
+
+def test_pain_report_joint_location_is_optional_and_preserved() -> None:
+    """Accept legacy reports and preserve anatomical locations in current exports."""
+    from src.ingestion.schemas import PainReport
+
+    legacy_report = PainReport.model_validate({
+        "id": "pain-legacy",
+        "workout_id": "workout-1",
+        "exercise_id": "bench-press",
+        "pain_type": "joint",
+        "severity": 4,
+        "created_at": "2026-10-13T17:55:00.000Z",
+    })
+    located_report = PainReport.model_validate({
+        "id": "pain-current",
+        "workout_id": "workout-1",
+        "exercise_id": "bench-press",
+        "pain_type": "joint",
+        "severity": 4,
+        "joint_location": "shoulder",
+        "created_at": "2026-10-13T17:55:00.000Z",
+    })
+
+    assert legacy_report.joint_location is None
+    assert located_report.model_dump(exclude_none=True)["joint_location"] == "shoulder"
+
+
+def test_exercise_preference_validation() -> None:
+    """Verifies validation and defaults for ExercisePreference models."""
+    pref = ExercisePreference(
+        exercise_id="barbell_bench_press",
+        sentiment="liked",
+        swap_in_count=4,
+        swap_out_count=1,
+        affinity_score=25.0,
+        last_pain_reported_at="2026-10-20T12:00:00Z",
+        max_pain_severity=3,
+        pain_joint="shoulder",
+        updated_at="2026-10-20T12:00:00Z",
+    )
+    assert pref.exercise_id == "barbell_bench_press"
+    assert pref.sentiment == "liked"
+    assert pref.affinity_score == 25.0
+    assert pref.max_pain_severity == 3
+    assert pref.pain_joint == "shoulder"
+
+    # Default neutral preference
+    pref_default = ExercisePreference(
+        exercise_id="incline_dumbbell_press",
+        updated_at="2026-10-20T12:00:00Z",
+    )
+    assert pref_default.sentiment == "neutral"
+    assert pref_default.swap_in_count == 0
+    assert pref_default.swap_out_count == 0
+    assert pref_default.affinity_score == 0.0
+    assert pref_default.last_pain_reported_at is None
+
+    # Invalid sentiment fails
+    with pytest.raises(ValidationError):
+        ExercisePreference(
+            exercise_id="lat_pulldown",
+            sentiment="loved",  # type: ignore[arg-type]
+            updated_at="2026-10-20T12:00:00Z",
+        )
+
 

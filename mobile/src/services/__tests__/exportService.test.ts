@@ -238,6 +238,34 @@ describe('ExportService (Step 2.3)', () => {
     { key: 'pure_utility_mode', value: '0' },
   ];
 
+  const mockExercisePreferences = [
+    {
+      exercise_id: 'barbell_bench_press',
+      sentiment: 'liked',
+      swap_in_count: 2,
+      swap_out_count: 0,
+      affinity_score: 25.0,
+      last_pain_reported_at: '2026-10-15T12:00:00.000Z',
+      max_pain_severity: 2,
+      pain_joint: 'shoulder',
+      updated_at: '2026-10-15T12:00:00.000Z',
+    },
+  ];
+
+  const mockPainReports = [
+    {
+      id: 'pain-bench-01',
+      workout_id: 'workout-20261013-01',
+      exercise_id: 'barbell_bench_press',
+      set_id: 'set-bench-w1',
+      pain_type: 'joint',
+      severity: 4,
+      joint_location: 'shoulder',
+      notes: 'Pinch at the bottom of the rep',
+      created_at: '2026-10-13T17:55:00.000Z',
+    },
+  ];
+
   const mockUserProfiles = [
     {
       id: 'profile-primary-user',
@@ -271,6 +299,8 @@ describe('ExportService (Step 2.3)', () => {
     db.mockData.set('FROM user_settings', mockUserSettings);
     db.mockData.set('FROM user_profiles', mockUserProfiles);
     db.mockData.set('FROM calibrated_params', mockCalibratedParams);
+    db.mockData.set('FROM pain_reports', mockPainReports);
+    db.mockData.set('FROM exercise_preferences', mockExercisePreferences);
   }
 
   beforeEach(() => {
@@ -279,7 +309,7 @@ describe('ExportService (Step 2.3)', () => {
   });
 
   describe('buildExportPayload', () => {
-    it('serializes all 12 tables into canonical contract structure', async () => {
+    it('serializes all 15 tables into canonical contract structure', async () => {
       const service = new ExportService(mockDb);
       const payload = await service.buildExportPayload();
 
@@ -369,6 +399,16 @@ describe('ExportService (Step 2.3)', () => {
       expect(payload.calibrated_params[0].calibrated_k).toBe(0.085);
       expect(payload.calibrated_params[0].cov_p00).toBe(0.001);
       expect(payload.calibrated_params[0].cov_p11).toBe(0.001);
+
+      expect(payload.pain_reports).toHaveLength(1);
+      expect(payload.pain_reports?.[0].joint_location).toBe('shoulder');
+
+      // Exercise Preferences (ADR-096)
+      expect(payload.exercise_preferences).toHaveLength(1);
+      expect(payload.exercise_preferences![0].exercise_id).toBe('barbell_bench_press');
+      expect(payload.exercise_preferences![0].sentiment).toBe('liked');
+      expect(payload.exercise_preferences![0].affinity_score).toBe(25.0);
+      expect(payload.exercise_preferences![0].pain_joint).toBe('shoulder');
     });
 
     it('handles empty database tables without failing', async () => {
@@ -391,6 +431,7 @@ describe('ExportService (Step 2.3)', () => {
       expect(payload.user_profiles).toEqual([]);
       expect(payload.calibrated_params).toEqual([]);
       expect(payload.pain_reports).toEqual([]);
+      expect(payload.exercise_preferences).toEqual([]);
     });
 
     it('throws when no database is provided', async () => {

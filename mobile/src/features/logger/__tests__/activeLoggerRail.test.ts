@@ -11,6 +11,7 @@
  * - Pain reporting severity > 6 auto-pruning and auto-advance
  */
 
+import React from 'react';
 import {
   Workout,
   WorkoutSet,
@@ -30,6 +31,8 @@ import {
   resolveNextSupersetExercise,
   formatSessionSetsSummary,
 } from '../ActiveLoggerScreen';
+import { MentalityTransitionBanner } from '../MentalityTransitionBanner';
+import { calculateTransitionWave } from '../../../core/generator/transitionWave';
 
 describe('Horizontal Superset Rail & In-Gym Navigation Suite', () => {
   let workoutRepo: MockWorkoutRepository;
@@ -831,6 +834,32 @@ describe('Horizontal Superset Rail & In-Gym Navigation Suite', () => {
 
     it('returns empty string when sets array is empty', () => {
       expect(formatSessionSetsSummary([], mockBench, 'kg')).toBe('');
+    });
+  });
+
+  describe('9. Mentality Transition Wave Integration (Step 8.4)', () => {
+    it('generates active transition banner for Active Logger presentation', () => {
+      const wave = calculateTransitionWave('precision', 'fury', 1, 3);
+      expect(wave.isTransitionActive).toBe(true);
+      expect(wave.bannerMessage).toContain('Mentality Transition: Week 1 of 3 (Precision → Fury)');
+
+      const bannerElement = MentalityTransitionBanner({
+        transitionWave: wave,
+      }) as React.ReactElement<any>;
+
+      expect(bannerElement).not.toBeNull();
+      expect(bannerElement.props.testID).toBe('mentality-transition-banner');
+      expect(bannerElement.props.accessibilityLabel).toContain('Mentality Transition: Week 1 of 3');
+    });
+
+    it('suppresses transition banner when wave is inactive', () => {
+      const wave = calculateTransitionWave('precision', 'precision', 1, 3);
+      expect(wave.isTransitionActive).toBe(false);
+
+      const bannerElement = MentalityTransitionBanner({
+        transitionWave: wave,
+      });
+      expect(bannerElement).toBeNull();
     });
   });
 });
