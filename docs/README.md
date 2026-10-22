@@ -12,6 +12,7 @@ For current behavior, inspect source and tests using [CODEMAP.md](CODEMAP.md). [
 | [CODEMAP.md](CODEMAP.md) | Current navigation; read the relevant subsystem rows. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Current boundaries and execution flows. |
 | [VALIDATION.md](VALIDATION.md) | Current check selection and commands. |
+| [PROGRAM_GENERATION_GUIDE.md](PROGRAM_GENERATION_GUIDE.md) | Reproduce the six reviewed program examples from live source, inspect dose/time/protocols and retain provenance. Includes an explicitly unimplemented split-choice proposal. |
 | [DECISIONS.md](DECISIONS.md) | Historical rationale; search by topic or ADR number, then read the matching record. [Generated decision index](generated/DECISION_INDEX.md). |
 | [TRAINING_AND_BODY_DATA.md](TRAINING_AND_BODY_DATA.md) | Detailed data/metrics reference and gap analysis; verify claims against source for the affected metric. |
 | [TRAINING_EVOLUTION.md](TRAINING_EVOLUTION.md) | Current automatic evolution, recovery, pain-return and companion evidence policy; includes operational defaults and persistence. |

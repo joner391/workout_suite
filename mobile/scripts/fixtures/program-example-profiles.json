@@ -1,0 +1,8 @@
+[
+  {"id":"original","title":"Strength + size · Fury","gender":"male","goal":"strength","secondary":["hypertrophy"],"mood":"fury","experience":"intermediate","days":4,"minutes":45,"equipment":"commercial_gym"},
+  {"id":"strength","title":"Strength only · Fury","gender":"male","goal":"strength","secondary":[],"mood":"fury","experience":"advanced","days":4,"minutes":45,"equipment":"commercial_gym"},
+  {"id":"precision","title":"Size + strength · Precision","gender":"female","goal":"hypertrophy","secondary":["strength"],"mood":"precision","experience":"intermediate","days":4,"minutes":60,"equipment":"commercial_gym"},
+  {"id":"beginner","title":"Beginner · Hypertrophy","gender":"female","goal":"hypertrophy","secondary":[],"mood":"precision","experience":"beginner","days":3,"minutes":60,"equipment":"commercial_gym"},
+  {"id":"minimal","title":"Dumbbells · Get out","gender":"male","goal":"hypertrophy","secondary":[],"mood":"get_out","experience":"intermediate","days":2,"minutes":30,"equipment":"dumbbells_only"},
+  {"id":"advanced","title":"Five days · Fury","gender":"female","goal":"hypertrophy","secondary":[],"mood":"fury","experience":"advanced","days":5,"minutes":75,"equipment":"commercial_gym"}
+]

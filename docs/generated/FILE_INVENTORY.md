@@ -58,6 +58,7 @@ Excludes Git metadata, dependencies, virtual environments, caches, build outputs
 - `docs/implementation_plans/program_synthesis_and_mesocycle_plan.md`
 - `docs/implementation_plans/Upgrades_for_companion_suite.md`
 - `docs/implementation_plans/UX_FEEDBACK_REPORT.md`
+- `docs/PROGRAM_GENERATION_GUIDE.md`
 - `docs/README.md`
 - `docs/TRAINING_AND_BODY_DATA.md`
 - `docs/TRAINING_EVOLUTION.md`
@@ -97,6 +98,8 @@ Excludes Git metadata, dependencies, virtual environments, caches, build outputs
 - `mobile/package-lock.json`
 - `mobile/package.json`
 - `mobile/README.md`
+- `mobile/scripts/fixtures/program-example-profiles.json`
+- `mobile/scripts/generate-program-examples.cjs`
 - `mobile/src/__tests__/App.test.ts`
 - `mobile/src/context/__tests__/contextAndNavigation.test.ts`
 - `mobile/src/context/index.ts`
