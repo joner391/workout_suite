@@ -44,6 +44,21 @@ describe('CalibratedParamService (Step 6.3)', () => {
   });
 
   describe('importParameters', () => {
+    it('imports evidence with no curves and preserves explicit confidence metadata', async () => {
+      const feedback = { recommended_accumulation_weeks: 6, confidence_score: 75, confidence_tier: 'HIGH' as const,
+        detected_blocks_count: 8, explicit_rpe_coverage: 1, observed_through: '2026-10-20',
+        exported_at: validEnvelope.exported_at, primary_goal: 'strength' };
+      const result = await service.importParameters({ ...validEnvelope, parameters: [], mesocycle_feedback: feedback });
+      expect(result.success).toBe(true);
+      expect(mockDb.executedQueries.some(q => q.params.includes('training_meso_feedback') && q.params.includes(JSON.stringify(feedback)))).toBe(true);
+    });
+    it('does not persist invalid evidence alongside otherwise valid curves', async () => {
+      const result = await service.importParameters({ ...validEnvelope,
+        mesocycle_feedback: { recommended_accumulation_weeks: 99 } as any });
+      expect(result.success).toBe(true);
+      expect(result.errors).toContain('Invalid mesocycle feedback; block length retained.');
+      expect(mockDb.executedQueries.some(q => q.params.includes('training_meso_feedback'))).toBe(false);
+    });
     it('successfully imports a valid parameters envelope', async () => {
       const result = await service.importParameters(validEnvelope);
 

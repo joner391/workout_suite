@@ -30,6 +30,7 @@ import {
   formatRomTier,
   formatAxialLoading,
   formatMuscleBias,
+  uniqueMuscleBiases,
   getRomTierBadgeStyle,
   getAxialLoadingBadgeStyle,
   getSentimentPillStyle,
@@ -192,11 +193,17 @@ describe('Exercise Preference UI & Logger Swap Tracking Hooks (Step 9.4)', () =>
 
     it('formats Regional Muscle Biases correctly', () => {
       expect(formatMuscleBias('upper_clavicular')).toBe('Upper Chest');
-      expect(formatMuscleBias('mid_sternal')).toBe('Mid Sternal');
+      expect(formatMuscleBias('mid_sternal')).toBe('Mid Chest');
       expect(formatMuscleBias('lower_costal')).toBe('Lower Chest');
       expect(formatMuscleBias('long_head')).toBe('Long Head');
       expect(formatMuscleBias('lateral_head')).toBe('Lateral Head');
-      expect(formatMuscleBias('iliac')).toBe('Iliac Lats');
+      expect(formatMuscleBias('iliac')).toBe('Lower Lats');
+      expect(formatMuscleBias('vastii_bulk')).toBe('Quads');
+      expect(formatMuscleBias('rectus_femoris')).toBe('Quads');
+      expect(formatMuscleBias('anterior_delt')).toBe('Front Delts');
+      expect(formatMuscleBias('rhomboids_mid_traps')).toBe('Upper Back');
+      expect(formatMuscleBias('lower_rectus_abdominis')).toBe('Lower Abs');
+      expect(uniqueMuscleBiases(['rectus_femoris', 'vastii_bulk', 'glute_max_thrust'])).toEqual(['rectus_femoris', 'glute_max_thrust']);
       expect(formatMuscleBias('custom_unknown_target')).toBe('Custom Unknown Target');
     });
 

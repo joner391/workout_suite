@@ -12,7 +12,9 @@
 
 import { formatTimeRemaining } from '../RestTimerBanner';
 import { formatElapsedDuration } from '../ActiveLoggerScreen';
-import { formatCompactGhostDisplay } from '../SetRowComponent';
+import { formatCompactGhostDisplay, SetRowComponent, SetRowProps } from '../SetRowComponent';
+import React from 'react';
+import { Alert } from 'react-native';
 import { calculatePlateLoading, DEFAULT_BAR_TARE_KG } from '../../../core/math/plateCalculator';
 import { isLastWarmupSet } from '../../../core/math/warmupEstimator';
 import {
@@ -1396,3 +1398,70 @@ describe('Active Logger Features & UI Logic (Step 1.5)', () => {
   });
 });
 
+
+describe('effort required at set completion', () => {
+  function find(tree: React.ReactNode, testID: string): React.ReactElement<any> | undefined {
+    if (!React.isValidElement<any>(tree)) return undefined;
+    const element = tree as React.ReactElement<any>;
+    if (element.props.testID === testID) return element;
+    return React.Children.toArray(element.props.children).map(child => find(child, testID)).find(Boolean);
+  }
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.clearAllMocks();
+    jest.spyOn(React, 'useState').mockImplementation(((value: any) => [value, jest.fn()]) as any);
+    jest.spyOn(React, 'useRef').mockImplementation((value: any) => ({ current: value }));
+    jest.spyOn(React, 'useCallback').mockImplementation(callback => callback);
+    jest.spyOn(React, 'useEffect').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+  function render(overrides: Partial<SetRowProps> = {}) {
+    const props: SetRowProps = {
+      set: { id: 'set', set_type: 'working', raw_input_weight: 50, reps: 8, rpe: null, rir: null } as WorkoutSet,
+      exercise: { id: 'exercise', load_mode: 'total' } as Exercise,
+      requireEffort: true, onUpdateSet: jest.fn(), onDeleteSet: jest.fn(), onToggleComplete: jest.fn(),
+      ...overrides,
+    };
+    const tree = (SetRowComponent as any).type(props);
+    return { props, checkbox: find(tree, 'complete-set-checkbox')!, input: find(tree, 'intensity-input')! };
+  }
+  test.each(['RPE', 'RIR'] as const)('prompts for missing %s without completing or copying historical effort', metric => {
+    const { props, checkbox } = render({ intensityMetric: metric,
+      ghostSet: { raw_input_weight: 100, reps: 8, rpe: 8, rir: 2 } as WorkoutSet });
+    checkbox.props.onPress();
+    expect(Alert.alert).toHaveBeenCalledWith(`Log ${metric} for this set`, expect.any(String), expect.any(Array));
+    expect(props.onToggleComplete).not.toHaveBeenCalled();
+    expect(props.onUpdateSet).not.toHaveBeenCalled();
+  });
+  test.each([['RPE', '8.5', 'rpe', 8.5], ['RIR', '0', 'rir', 0]] as const)(
+    'accepts freshly typed %s before its debounce saves', (metric, text, field, value) => {
+      const { props, checkbox, input } = render({ intensityMetric: metric });
+      input.props.onChangeText(text);
+      checkbox.props.onPress();
+      expect(Alert.alert).not.toHaveBeenCalled();
+      expect(props.onUpdateSet).toHaveBeenCalledWith({ [field]: value });
+      expect(props.onToggleComplete).toHaveBeenCalledTimes(1);
+    });
+  test.each(['', '11', '0'])( 'rejects missing or invalid RPE %s', text => {
+    const { props, checkbox, input } = render();
+    input.props.onChangeText(text);
+    checkbox.props.onPress();
+    expect(Alert.alert).toHaveBeenCalled();
+    expect(props.onToggleComplete).not.toHaveBeenCalled();
+  });
+  test.each([{ requireEffort: false }, { isCompleted: true }, {
+    set: { id: 'warmup', set_type: 'warmup', rpe: null, rir: null } as WorkoutSet,
+  }])('allows optional effort, warm-ups and undoing completion (%j)', overrides => {
+    const { props, checkbox } = render(overrides);
+    checkbox.props.onPress();
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(props.onToggleComplete).toHaveBeenCalledTimes(1);
+  });
+  test('rerenders when a loaded prescription starts requiring effort', () => {
+    const { props } = render({ requireEffort: false });
+    expect((SetRowComponent as any).compare(props, { ...props, requireEffort: true })).toBe(false);
+  });
+});

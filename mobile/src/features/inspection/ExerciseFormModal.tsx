@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — ExerciseFormModal
  *
@@ -234,9 +236,9 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
             <TouchableOpacity
               testID="close-exercise-form-btn"
               style={styles.closeButton}
-              onPress={onClose}
+              onPress={onClose} accessibilityRole="button" accessibilityLabel="Close"
             >
-              <Text style={styles.closeButtonText}>✕</Text>
+              <AppIcon name="close" size={20} color={uiColors.accentText} />
             </TouchableOpacity>
           </View>
 
@@ -254,7 +256,7 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
                 testID="exercise-name-input"
                 style={styles.textInput}
                 placeholder="e.g. Incline Dumbbell Bench Press"
-                placeholderTextColor="#71717A"
+                placeholderTextColor={uiColors.subtle}
                 value={name}
                 onChangeText={(t) => {
                   setName(t);
@@ -399,8 +401,8 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
                   testID="compound-switch"
                   value={isCompound}
                   onValueChange={setIsCompound}
-                  trackColor={{ false: '#27272A', true: '#00E676' }}
-                  thumbColor={isCompound ? '#000000' : '#A1A1AA'}
+                  trackColor={{ false: uiColors.border, true: uiColors.accent }}
+                  thumbColor={isCompound ? uiColors.background : uiColors.muted}
                 />
               </View>
 
@@ -414,8 +416,8 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
                   testID="unilateral-switch"
                   value={isUnilateral}
                   onValueChange={setIsUnilateral}
-                  trackColor={{ false: '#27272A', true: '#00E676' }}
-                  thumbColor={isUnilateral ? '#000000' : '#A1A1AA'}
+                  trackColor={{ false: uiColors.border, true: uiColors.accent }}
+                  thumbColor={isUnilateral ? uiColors.background : uiColors.muted}
                 />
               </View>
 
@@ -429,8 +431,8 @@ export const ExerciseFormModal: React.FC<ExerciseFormModalProps> = ({
                   testID="bodyweight-switch"
                   value={isBodyweight}
                   onValueChange={setIsBodyweight}
-                  trackColor={{ false: '#27272A', true: '#00E676' }}
-                  thumbColor={isBodyweight ? '#000000' : '#A1A1AA'}
+                  trackColor={{ false: uiColors.border, true: uiColors.accent }}
+                  thumbColor={isBodyweight ? uiColors.background : uiColors.muted}
                 />
               </View>
             </View>
@@ -592,10 +594,10 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxHeight: '90%',
-    backgroundColor: '#09090B',
-    borderRadius: 12,
+    backgroundColor: uiColors.background,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 18,
     display: 'flex',
     flexDirection: 'column',
@@ -607,25 +609,27 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    lineHeight: 28,
+    flexShrink: 1,
+    fontSize: 22,
+    fontWeight: '700',
+    color: uiColors.text,
   },
   modalSubtitle: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
   },
   closeButton: {
+    width: 44,
+    height: 44,
+    flexShrink: 0,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     padding: 6,
-  },
-  closeButtonText: {
-    fontSize: 16,
-    color: '#A1A1AA',
-    fontWeight: '700',
   },
   errorBanner: {
     backgroundColor: '#3F1212',
@@ -648,25 +652,25 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#A1A1AA',
+    fontWeight: '700',
+    color: uiColors.muted,
     letterSpacing: 0.5,
     marginBottom: 6,
   },
   fieldHelpText: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginBottom: 6,
     lineHeight: 15,
   },
   textInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 14,
   },
   chipsScroll: {
@@ -679,10 +683,10 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   chip: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 16,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 12,
     paddingVertical: 6,
     marginRight: 6,
@@ -690,22 +694,22 @@ const styles = StyleSheet.create({
   },
   chipActive: {
     backgroundColor: '#0F291E',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   chipText: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontWeight: '600',
   },
   chipTextActive: {
-    color: '#00E676',
-    fontWeight: '800',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
   pickerSelector: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 12,
     paddingVertical: 10,
     flexDirection: 'row',
@@ -713,22 +717,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pickerPlaceholderText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
   },
   pickerSelectedText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 13,
     fontWeight: '700',
   },
   pickerChevron: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 12,
   },
   pickerDropdown: {
-    backgroundColor: '#141416',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 6,
     marginTop: 4,
     maxHeight: 180,
@@ -737,17 +741,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
+    borderBottomColor: uiColors.border,
   },
   pickerItemActive: {
     backgroundColor: '#0F291E',
   },
   pickerItemText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
   },
   pickerItemTextActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontWeight: '700',
   },
   toggleRow: {
@@ -756,7 +760,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   toggleLabelCol: {
     flex: 1,
@@ -765,16 +769,16 @@ const styles = StyleSheet.create({
   toggleLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   toggleDesc: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
   },
   segmentRow: {
     flexDirection: 'row',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 6,
     padding: 3,
     gap: 4,
@@ -783,19 +787,19 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     alignItems: 'center',
-    borderRadius: 4,
+    borderRadius: uiRadius.control,
   },
   segmentBtnActive: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   segmentBtnText: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     fontWeight: '600',
   },
   segmentBtnTextActive: {
-    color: '#FAFAFA',
-    fontWeight: '700',
+    color: uiColors.text,
+    fontWeight: '600',
   },
   numericRow: {
     flexDirection: 'row',
@@ -803,14 +807,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   numericInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     width: 80,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -820,13 +824,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   quickChip: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 4,
+    borderRadius: uiRadius.control,
   },
   quickChipText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -836,32 +840,32 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
   },
   cancelBtn: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingVertical: 12,
     alignItems: 'center',
   },
   cancelBtnText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     fontWeight: '700',
   },
   saveBtn: {
     flex: 2,
-    backgroundColor: '#00E676',
-    borderRadius: 6,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 12,
     alignItems: 'center',
   },
   saveBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

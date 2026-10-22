@@ -79,20 +79,40 @@ export function getAxialLoadingBadgeStyle(axial?: AxialLoading | null): BadgeSty
 }
 
 /**
- * Formats snake_case muscle bias identifiers to human-readable anatomical chips.
+ * Uses familiar gym terms for regional focus, keeping internal anatomy IDs intact.
  */
 export function formatMuscleBias(bias: string): string {
   const dictionary: Record<string, string> = {
+    vastii_bulk: 'Quads',
+    rectus_femoris: 'Quads',
     upper_clavicular: 'Upper Chest',
-    mid_sternal: 'Mid Sternal',
+    mid_sternal: 'Mid Chest',
     lower_costal: 'Lower Chest',
     long_head: 'Long Head',
     short_head: 'Short Head',
     lateral_head: 'Lateral Head',
     medial_head: 'Medial Head',
-    iliac: 'Iliac Lats',
-    thoracic: 'Thoracic Lats',
-    lumbar: 'Lumbar Lats',
+    iliac: 'Lower Lats',
+    thoracic: 'Upper Lats',
+    lumbar: 'Lower Lats',
+    iliac_lower_lats: 'Lower Lats',
+    thoracic_upper_lats: 'Upper Lats',
+    rhomboids_mid_traps: 'Upper Back',
+    erectors: 'Lower Back',
+    glute_max_thrust: 'Glutes',
+    upper_glute_shelf: 'Upper Glutes',
+    lengthened_hip_hinge: 'Hamstrings',
+    shortened_knee_flexion: 'Hamstrings',
+    anterior_delt: 'Front Delts',
+    lateral_delt: 'Side Delts',
+    posterior_delt: 'Rear Delts',
+    upper_traps: 'Upper Traps',
+    biceps_short_head: 'Biceps',
+    biceps_long_head: 'Biceps',
+    brachialis: 'Upper Arm',
+    gastrocnemius: 'Calves',
+    soleus: 'Calves',
+    lower_rectus_abdominis: 'Lower Abs',
     stretched: 'Deep Stretch',
     shortened: 'Shortened Peak',
   };
@@ -106,6 +126,17 @@ export function formatMuscleBias(bias: string): string {
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
+}
+
+/** Keep one chip when several anatomical regions share the same plain label. */
+export function uniqueMuscleBiases(biases: string[]): string[] {
+  const seen = new Set<string>();
+  return biases.filter(bias => {
+    const label = formatMuscleBias(bias);
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
 }
 
 /**

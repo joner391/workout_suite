@@ -32,7 +32,7 @@ describe('SQLiteUserProfileRepository', () => {
     training_enjoyment: 'minimalist',
     intensity_style: 'volume_accumulation',
     primary_goal: 'strength',
-    secondary_goals: ['powerbuilding'],
+    secondary_goals: ['hypertrophy'],
     preferred_days_per_week: 3,
     preferred_session_duration_mins: 45,
     equipment_access: 'garage_gym',
@@ -54,7 +54,7 @@ describe('SQLiteUserProfileRepository', () => {
     expect(result).not.toBeNull();
     expect(result?.id).toBe('user_1');
     expect(result?.gender).toBe('female');
-    expect(result?.secondary_goals).toEqual(['powerbuilding']);
+    expect(result?.secondary_goals).toEqual(['hypertrophy']);
     expect(result?.height_cm).toBe(168);
   });
 
@@ -73,6 +73,16 @@ describe('SQLiteUserProfileRepository', () => {
     expect(result).toBeNull();
   });
 
+  it('reads a legacy primary goal as ordered goals while preserving mood and saved programs', async () => {
+    mockDb.mockData.set('FROM user_profiles ORDER BY updated_at DESC LIMIT 1;', [{
+      ...sampleProfileRow, primary_goal: 'powerbuilding', secondary_goals: null,
+    }]);
+    const result = await repo.getProfile();
+    expect(result).toMatchObject({ primary_goal: 'strength', secondary_goals: ['hypertrophy'],
+      training_mentality: 'get_out' });
+    expect(mockDb.executedQueries.some(q => /UPDATE|INSERT|DELETE/.test(q.sql))).toBe(false);
+  });
+
   it('saves profile with JSON serialized secondary_goals', async () => {
     await repo.saveProfile(sampleProfile);
 
@@ -82,7 +92,7 @@ describe('SQLiteUserProfileRepository', () => {
     expect(insertQuery).toBeDefined();
     expect(insertQuery?.params[0]).toBe('user_1');
     expect(insertQuery?.params[1]).toBe('female');
-    expect(insertQuery?.params[6]).toBe(JSON.stringify(['powerbuilding']));
+    expect(insertQuery?.params[6]).toBe(JSON.stringify(['hypertrophy']));
     expect(insertQuery?.params[11]).toBe(0); // pending_meso_mood
     expect(insertQuery?.params[12]).toBe(0); // has_axial_fatigue_sensitivity
     expect(insertQuery?.params[13]).toBe(0); // is_caloric_deficit

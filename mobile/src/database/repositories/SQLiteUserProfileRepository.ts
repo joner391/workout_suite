@@ -10,6 +10,7 @@ import {
   ExperienceLevel,
 } from '../../core/types';
 import { ISQLiteDatabase } from '../schema';
+import { normalizeTrainingGoals } from '../../core/rules/trainingGoals';
 
 interface UserProfileRow {
   id: string;
@@ -19,7 +20,7 @@ interface UserProfileRow {
   training_mentality?: TrainingMentality;
   training_enjoyment?: TrainingEnjoyment;
   intensity_style?: IntensityStyle;
-  primary_goal: PrimaryGoal;
+  primary_goal: PrimaryGoal | 'powerbuilding';
   secondary_goals: string | null;
   preferred_days_per_week: number;
   preferred_session_duration_mins: number;
@@ -57,8 +58,7 @@ function mapRowToUserProfile(row: UserProfileRow): UserProfile {
     training_mentality: mentality,
     training_enjoyment: row.training_enjoyment ?? (mentality === 'get_out' ? 'minimalist' : mentality === 'fury' ? 'enthusiast' : 'neutral'),
     intensity_style: row.intensity_style ?? (mentality === 'fury' ? 'high_intensity_low_volume' : mentality === 'precision' ? 'volume_accumulation' : 'balanced'),
-    primary_goal: row.primary_goal ?? 'hypertrophy',
-    secondary_goals: secondaryGoals,
+    ...normalizeTrainingGoals(row.primary_goal ?? 'hypertrophy', secondaryGoals),
     preferred_days_per_week: Number(row.preferred_days_per_week ?? 4),
     preferred_session_duration_mins: Number(row.preferred_session_duration_mins ?? 60),
     equipment_access: row.equipment_access ?? 'commercial_gym',
@@ -93,6 +93,7 @@ export class SQLiteUserProfileRepository implements IUserProfileRepository {
   }
 
   async saveProfile(profile: UserProfile): Promise<UserProfile> {
+    profile = { ...profile, ...normalizeTrainingGoals(profile.primary_goal, profile.secondary_goals) };
     const serializedSecondaryGoals = profile.secondary_goals
       ? JSON.stringify(profile.secondary_goals)
       : null;

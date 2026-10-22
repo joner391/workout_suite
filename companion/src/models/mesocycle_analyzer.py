@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 import math
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -43,7 +43,7 @@ class MesocycleRecommendation:
     ci_upper_weeks: float
     deficit_adjusted_weeks: float
     confidence_score: float          # 0.0 to 100.0%
-    confidence_tier: str             # "LOW" | "MODERATE" | "HIGH"
+    confidence_tier: Literal["LOW", "MODERATE", "HIGH"]
     detected_blocks_count: int
     explicit_rpe_coverage: float     # 0.0 to 1.0
     weekly_profile: List[WeeklyBlockMetrics]
@@ -181,22 +181,25 @@ def analyze_optimal_mesocycle_length(
     energy_balance: Optional[str] = None,
     prior_mu: float = 3.5,
     prior_sigma: float = 1.5,
+    block_boundaries: Optional[Sequence[Tuple[date, date]]] = None,
 ) -> MesocycleRecommendation:
     """Computes Bayesian optimal mesocycle length from e1RM velocity and RPE drift,
 
     and performs greedy branching between Short ('HIT Agile Sprints', 3-4 weeks)
     and Long ('Progressive Accumulation Waves', 6-8 weeks) mesocycles.
     """
-    blocks = detect_mesocycle_boundaries(banister_series)
+    blocks = list(block_boundaries) if block_boundaries is not None else detect_mesocycle_boundaries(banister_series)
 
-    # Calculate explicit RPE/RIR logging coverage across working sets
+    # One rated final working set per exercise exposure meets the logging contract.
     working_sets = [
         s for s in workout_sets if getattr(s, "set_type", "working") != "warmup" and s.reps > 0
     ]
     rated_sets = [
         s for s in working_sets if s.rir is not None or s.rpe is not None
     ]
-    rpe_coverage = len(rated_sets) / max(1, len(working_sets))
+    rated_exposures = {(s.workout_id, s.exercise_id) for s in rated_sets}
+    working_exposures = {(s.workout_id, s.exercise_id) for s in working_sets}
+    rpe_coverage = len(rated_exposures) / max(1, len(working_exposures))
 
     # Map workout_id -> date
     w_date_map = {w.id: _parse_dt(w.date) for w in workouts}
@@ -329,6 +332,7 @@ def analyze_optimal_mesocycle_length(
     precision_factor = max(0.0, min(1.0, (1.5 - post_std) / 1.1))
     confidence_score = round(100.0 * (0.45 * block_factor + 0.30 * rpe_factor + 0.25 * precision_factor), 1)
 
+    tier: Literal["LOW", "MODERATE", "HIGH"]
     if confidence_score >= 75.0 and n_blocks >= 8:
         tier = "HIGH"
     elif confidence_score >= 45.0 and n_blocks >= 4:

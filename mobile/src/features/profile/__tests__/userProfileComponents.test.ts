@@ -15,6 +15,10 @@ import { MockProgramRepository } from '../../../database/mocks/MockProgramReposi
 import { ProgramBlockService } from '../../../services/programBlockService';
 import { synthesizeProgram } from '../../../core/generator/programSynthesizer';
 import { UserProfile } from '../../../core/types';
+import React from 'react';
+import { PersonalRecordsScreen } from '../PersonalRecordsScreen';
+import { ExerciseDetailScreen } from '../../inspection/ExerciseDetailScreen';
+import { MockWorkoutRepository, MockExerciseRepository } from '../../../database/mocks';
 
 describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
   let profileRepo: MockUserProfileRepository;
@@ -148,7 +152,7 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
     expect(active?.block.start_date).toBe('2026-10-15');
   });
 
-  test('handles 15-minute time-crunched profile with 2 antagonist pairs and 8 total sets', async () => {
+  test('keeps time-crunched strength-only mains unpaired while pairing accessories', async () => {
     const timeCrunchedProfile: UserProfile = {
       id: 'profile-15m',
       gender: 'female',
@@ -164,27 +168,8 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
       updated_at: new Date().toISOString(),
     };
 
-    const synthesized = synthesizeProgram(timeCrunchedProfile);
-    expect(synthesized.summary.daysPerWeek).toBe(3);
-    expect(synthesized.summary.splitType).toBe('upper_lower');
-    expect(synthesized.summary.hasSupersets).toBe(true);
-    expect(synthesized.summary.estimatedSessionDurationMins).toBe(15);
-    expect(synthesized.templates.length).toBe(3);
-
-    // Verify 15-minute routine properties on Day 1
-    const day1Exercises = synthesized.templateExercises.filter(
-      (te) => te.template_id === synthesized.templates[0].id
-    );
-    expect(day1Exercises.length).toBe(4);
-    day1Exercises.forEach((ex) => {
-      expect(ex.target_sets).toBe(2);
-      expect(ex.exercise_group_id).not.toBeNull();
-    });
-
-    await programRepo.saveSynthesizedProgram(synthesized);
-    const details = await programRepo.getProgramWithDetails(synthesized.program.id);
-    expect(details).not.toBeNull();
-    expect(details?.templates.length).toBe(3);
+    expect(() => synthesizeProgram(timeCrunchedProfile)).toThrow('Cannot fit Get Out');
+    expect(await blockService.getActiveProgram()).toBeNull();
   });
 
   test('integrates gearRepo for equipment and gym inventory in profile', async () => {
@@ -397,5 +382,51 @@ describe('Athlete Profile Questionnaire & Program Synthesis (Step 4.4)', () => {
       isBetaPhase: false,
     });
     expect(elementDevMode).toBeDefined();
+  });
+});
+
+describe('Profile Exercises navigation', () => {
+  afterEach(() => jest.restoreAllMocks());
+  function find(tree: React.ReactNode, testID: string): React.ReactElement<any> | undefined {
+    if (!React.isValidElement(tree)) return undefined;
+    const element = tree as React.ReactElement<any>;
+    if (element.props.testID === testID) return element;
+    return React.Children.toArray(element.props.children).map(child => find(child, testID)).find(Boolean);
+  }
+  test('opens exercise details directly from the list and returns to the list on Back', () => {
+    let selected: string | null = null;
+    let stateIndex = 0;
+    const setSelected = jest.fn(value => { selected = value; });
+    jest.spyOn(React, 'useContext').mockReturnValue(null);
+    jest.spyOn(React, 'useEffect').mockImplementation(() => {});
+    jest.spyOn(React, 'useState').mockImplementation(((initial: any) => {
+      const index = stateIndex++;
+      if (index === 0) return [[{ exercise: { id: 'squat', name: 'Squat' }, date: '2026-10-21', liked: false }], jest.fn()];
+      if (index === 1) return [selected, setSelected];
+      return [initial, jest.fn()];
+    }) as any);
+    const props = { workoutRepo: new MockWorkoutRepository(), exerciseRepo: new MockExerciseRepository(), onClose: jest.fn() };
+    const list = PersonalRecordsScreen(props);
+    expect(JSON.stringify(list)).toContain('Exercises');
+    find(list, 'records-exercise-squat')!.props.onPress();
+    stateIndex = 0;
+    const details = PersonalRecordsScreen(props) as React.ReactElement<any>;
+    expect(details.type).toBe(ExerciseDetailScreen);
+    expect(details.props.exerciseId).toBe('squat');
+    expect(find(details, 'pr-board-table')).toBeUndefined();
+    details.props.onClose();
+    expect(setSelected).toHaveBeenLastCalledWith(null);
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+  test('a Home record shortcut also opens exercise details directly', () => {
+    jest.spyOn(React, 'useContext').mockReturnValue(null);
+    jest.spyOn(React, 'useEffect').mockImplementation(() => {});
+    jest.spyOn(React, 'useState').mockImplementation(((initial: any) => [initial, jest.fn()]) as any);
+    const onClose = jest.fn();
+    const details = PersonalRecordsScreen({ workoutRepo: new MockWorkoutRepository(), exerciseRepo: new MockExerciseRepository(),
+      initialExerciseId: 'squat', onClose }) as React.ReactElement<any>;
+    expect(details.type).toBe(ExerciseDetailScreen);
+    details.props.onClose();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

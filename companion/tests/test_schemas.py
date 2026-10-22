@@ -279,6 +279,39 @@ def test_extra_field_forbidden(valid_program_dict: Dict[str, Any]) -> None:
     assert "extra_forbidden" in str(exc_info.value)
 
 
+@pytest.mark.parametrize("mood", ["fury", "precision", "get_out"])
+def test_legacy_powerbuilding_goals_preserve_mood(
+    valid_user_profile_dict: Dict[str, Any], mood: str
+) -> None:
+    original = {**valid_user_profile_dict, "primary_goal": "powerbuilding",
+                "secondary_goals": ["endurance"], "training_mentality": mood}
+    profile = UserProfile.model_validate(original)
+    assert profile.primary_goal == "strength"
+    assert profile.secondary_goals == ["endurance", "hypertrophy"]
+    assert profile.training_mentality == mood
+    assert original["primary_goal"] == "powerbuilding"
+
+
+def test_legacy_secondary_powerbuilding_expands_goals(valid_user_profile_dict: Dict[str, Any]) -> None:
+    profile = UserProfile.model_validate({**valid_user_profile_dict,
+        "primary_goal": "hypertrophy", "secondary_goals": ["powerbuilding", "strength"]})
+    assert profile.secondary_goals == ["strength"]
+
+
+def test_prescribed_rest_round_trip_and_legacy_default(valid_template_exercise_dict: Dict[str, Any]) -> None:
+    assert TemplateExercise.model_validate(valid_template_exercise_dict).rest_seconds is None
+    prescribed = TemplateExercise.model_validate({**valid_template_exercise_dict, "rest_seconds": 45})
+    assert prescribed.model_dump()["rest_seconds"] == 45
+    cluster = TemplateExercise.model_validate({**valid_template_exercise_dict, "rest_pause": {
+        "mini_sets": 3, "mini_reps_min": 3, "mini_reps_max": 5, "rest_seconds": 15}})
+    assert cluster.model_dump()["rest_pause"]["mini_sets"] == 3
+    with pytest.raises(ValidationError):
+        TemplateExercise.model_validate({**valid_template_exercise_dict, "rest_pause": {
+            "mini_sets": 3, "mini_reps_min": 5, "mini_reps_max": 3, "rest_seconds": 15}})
+    with pytest.raises(ValidationError):
+        TemplateExercise.model_validate({**valid_template_exercise_dict, "rest_seconds": -1})
+
+
 def test_workout_set_validation_boundaries(valid_workout_set_dict: Dict[str, Any]) -> None:
     """Ensures out-of-range constraints are enforced."""
     # Negative weight forbidden
@@ -534,7 +567,7 @@ def test_sample_workout_export_fixture() -> None:
     user_prof = payload.user_profiles[0]
     assert user_prof.gender == "male"
     assert user_prof.equipment_access == "commercial_gym"
-    assert user_prof.secondary_goals == ["strength", "powerbuilding"]
+    assert user_prof.secondary_goals == ["strength"]
 
     # Verify user settings dictionary
     assert payload.user_settings["unit_system"] == "kg"

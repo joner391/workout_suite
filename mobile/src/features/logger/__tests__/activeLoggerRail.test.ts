@@ -261,6 +261,14 @@ describe('Horizontal Superset Rail & In-Gym Navigation Suite', () => {
       expect(nextAfterRow2).toBe(mockBench.id);
     });
 
+    test('stays on the current exercise when the paired exercise has no remaining work', () => {
+      const exercises = [
+        { exercise: { id: 'a' }, sets: [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }] },
+        { exercise: { id: 'b' }, sets: [{ id: 'b1' }] },
+      ];
+      expect(resolveNextSupersetExercise('a', exercises, new Set(['a1', 'a2', 'b1']))).toBeNull();
+    });
+
     test('resolveNextSupersetExercise cycles circularly through 3 exercises in a giant set', () => {
       const giantSetExercises = [
         { exercise: { id: 'ex-1' }, sets: [{ id: 's1' }] },
@@ -272,8 +280,8 @@ describe('Horizontal Superset Rail & In-Gym Navigation Suite', () => {
       expect(resolveNextSupersetExercise('ex-1', giantSetExercises, new Set(['s1']))).toBe('ex-2');
       // Finish ex-2 -> ex-3
       expect(resolveNextSupersetExercise('ex-2', giantSetExercises, new Set(['s1', 's2']))).toBe('ex-3');
-      // Finish ex-3 -> ex-1 (fallback circular)
-      expect(resolveNextSupersetExercise('ex-3', giantSetExercises, new Set(['s1', 's2', 's3']))).toBe('ex-1');
+      // No remaining work: do not scroll back to a completed exercise.
+      expect(resolveNextSupersetExercise('ex-3', giantSetExercises, new Set(['s1', 's2', 's3']))).toBeNull();
     });
   });
 

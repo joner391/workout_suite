@@ -5,9 +5,18 @@ import {
   calculateBackoffLoad,
   calculateHelmsRpeOvershootAdjustment,
   isLastWarmupSet,
+  shouldGenerateWarmups,
 } from '../warmupEstimator';
 
 describe('warmupEstimator', () => {
+  test('automatic warmup eligibility follows the same setting for every entry point', () => {
+    expect(shouldGenerateWarmups('smart_compounds', { is_compound: true })).toBe(true);
+    expect(shouldGenerateWarmups('smart_compounds', { is_compound: false })).toBe(false);
+    for (const is_compound of [true, false]) {
+      expect(shouldGenerateWarmups('all_exercises', { is_compound })).toBe(true);
+      expect(shouldGenerateWarmups('off', { is_compound })).toBe(false);
+    }
+  });
   describe('quantizeLoad', () => {
     it('quantizes to default 2.5kg step properly', () => {
       expect(quantizeLoad(81.2)).toBe(80);
@@ -76,6 +85,30 @@ describe('warmupEstimator', () => {
   });
 
   describe('calculateWarmupAutoregulation', () => {
+    it('preserves a 14 kg plan when maintaining or when rounding exceeds limits', () => {
+      for (const rating of ['normal', 'light', 'heavy'] as const) {
+        const result = calculateWarmupAutoregulation(14, rating);
+        expect(result.adjustedLoadKg).toBe(14);
+        expect(result.percentageAdjustment).toBe(0);
+      }
+      expect(calculateWarmupAutoregulation(14, 'light').recommendation).toContain('no load step');
+    });
+
+    it('reports the actual rounded change, with valid direction and bounds', () => {
+      const result = calculateWarmupAutoregulation(14, 'light', 0.5);
+      expect(result.adjustedLoadKg).toBe(14.5);
+      expect(result.percentageAdjustment).toBeCloseTo(0.5 / 14);
+      expect(calculateWarmupAutoregulation(101, 'light').adjustedLoadKg).toBe(105);
+      for (const load of [5, 14, 15, 24, 42, 63, 101]) {
+        for (const rating of ['normal', 'light', 'heavy'] as const) {
+          const adjustment = calculateWarmupAutoregulation(load, rating);
+          expect(adjustment.percentageAdjustment).toBeGreaterThanOrEqual(-0.1);
+          expect(adjustment.percentageAdjustment).toBeLessThanOrEqual(0.05);
+          expect(adjustment.adjustedLoadKg).toBeCloseTo(load * (1 + adjustment.percentageAdjustment));
+        }
+      }
+    });
+
     it('applies +5% increase for light warm-up rating when no fatigue flagged', () => {
       const result = calculateWarmupAutoregulation(100, 'light', 2.5, false);
       expect(result.adjustedLoadKg).toBe(105);

@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — CrashRecoveryDialog
  *
@@ -9,7 +11,7 @@
  * Displays:
  * - Session name, date, elapsed duration, and set progress
  * - "Resume Workout" (loads session back into active logger)
- * - "Discard Workout" (marks workout as discarded)
+ * - "Discard Workout" (permanently deletes the session and its sets)
  * - "Later" (dismisses dialog without altering session state)
  */
 
@@ -82,7 +84,7 @@ export const CrashRecoveryDialog: React.FC<CrashRecoveryDialogProps> = ({
           {/* Top Alert Accent Banner */}
           <View style={styles.alertHeader}>
             <View style={styles.warningIconWrapper}>
-              <Text style={styles.warningIconText}>⚡</Text>
+              <AppIcon name="warning" size={32} color={uiColors.accentText} />
             </View>
             <View style={styles.titleWrapper}>
               <Text style={styles.dialogTitle}>Interrupted Workout Detected</Text>
@@ -134,7 +136,7 @@ export const CrashRecoveryDialog: React.FC<CrashRecoveryDialogProps> = ({
               disabled={loadingAction !== null}
             >
               {loadingAction === 'resume' ? (
-                <ActivityIndicator size="small" color="#000000" />
+                <ActivityIndicator size="small" color={uiColors.background} />
               ) : (
                 <Text style={styles.resumeButtonText}>Resume Workout</Text>
               )}
@@ -180,10 +182,10 @@ const styles = StyleSheet.create({
   },
   dialogCard: {
     width: '100%',
-    backgroundColor: '#09090B',
-    borderRadius: 16,
+    backgroundColor: uiColors.background,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 20,
   },
   alertHeader: {
@@ -200,24 +202,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  warningIconText: {
-    fontSize: 18,
-  },
   titleWrapper: {
     flex: 1,
   },
   dialogTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   dialogSubtitle: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
   },
   summaryContainer: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#1E1E24',
@@ -227,11 +226,11 @@ const styles = StyleSheet.create({
   workoutName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   workoutDate: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
     marginBottom: 12,
   },
@@ -242,44 +241,44 @@ const styles = StyleSheet.create({
   },
   statBox: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 8,
     padding: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   statLabel: {
     fontSize: 9,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   statValue: {
     fontSize: 14,
-    fontWeight: '800',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
   },
   actionsContainer: {
     gap: 10,
   },
   resumeButton: {
-    backgroundColor: '#00E676',
-    borderRadius: 8,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 12,
     alignItems: 'center',
   },
   resumeButtonText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   discardButton: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
     borderColor: '#7F1D1D',
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     paddingVertical: 10,
     alignItems: 'center',
   },
@@ -293,7 +292,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dismissButtonText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     fontWeight: '600',
   },

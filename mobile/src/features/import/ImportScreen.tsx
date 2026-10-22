@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — ImportScreen Wizard
  *
@@ -272,9 +274,9 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
           testID="import-close-btn"
           style={styles.closeBtn}
           onPress={onClose}
-          activeOpacity={0.7}
+          activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Close"
         >
-          <Text style={styles.closeBtnText}>✕</Text>
+          <AppIcon name="close" size={20} color={uiColors.accentText} />
         </TouchableOpacity>
       </View>
 
@@ -291,7 +293,7 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
           {/* Quick Expo Go Evaluation Section (__DEV__ only) */}
           {(__DEV__ || process.env.NODE_ENV !== 'production') && (
             <View style={styles.evaluationCard}>
-              <Text style={styles.evaluationBadge}>⚡ DEMO SANDBOX (DEV ONLY)</Text>
+              <Text style={styles.evaluationBadge}>DEMO SANDBOX (DEV ONLY)</Text>
               <Text style={styles.evaluationTitle}>Load Demo Sandbox Data</Text>
               <Text style={styles.cardDescription}>
                 Load sample Liftosaur and StrengthLog historical sessions into your database for testing charts and auto-regulation without manually transferring CSV files:
@@ -303,7 +305,7 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
                   onPress={() => handleLoadEvaluationPreset('last_3_months')}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.evalPresetBtnTitle}>⚡ Quick Eval: Last 3 Months</Text>
+                  <Text style={styles.evalPresetBtnTitle}>Quick Eval: Last 3 Months</Text>
                   <Text style={styles.evalPresetBtnSubtitle}>
                     ~35 Liftosaur sessions + 10 body composition logs (July – Oct 2026)
                   </Text>
@@ -419,7 +421,7 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
                 onPress={handleAnalyzePasted}
                 activeOpacity={0.8}
               >
-                <Text style={styles.primaryActionBtnText}>🔍 Analyze Pasted CSV</Text>
+                <Text style={styles.primaryActionBtnText}>Analyze Pasted CSV</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -438,7 +440,7 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
       {/* Step 2: Analyzing State */}
       {step === 'analyzing' && (
         <View style={styles.centeredContainer}>
-          <ActivityIndicator size="large" color="#00E676" />
+          <ActivityIndicator size="large" color={uiColors.accent} />
           <Text style={styles.centeredText}>Analyzing CSV structure...</Text>
           <Text style={styles.centeredSubtext}>Matching exercise names against library</Text>
         </View>
@@ -521,8 +523,8 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
               testID="skip-duplicates-switch"
               value={skipDuplicates}
               onValueChange={setSkipDuplicates}
-              trackColor={{ false: '#27272A', true: '#00E676' }}
-              thumbColor={skipDuplicates ? '#000000' : '#A1A1AA'}
+              trackColor={{ false: uiColors.border, true: uiColors.accent }}
+              thumbColor={skipDuplicates ? uiColors.background : uiColors.muted}
             />
           </View>
 
@@ -592,7 +594,7 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
       {/* Step 4: Importing in Progress */}
       {step === 'importing' && (
         <View style={styles.centeredContainer}>
-          <ActivityIndicator size="large" color="#00E676" />
+          <ActivityIndicator size="large" color={uiColors.accent} />
           <Text style={styles.centeredText}>Importing sessions into SQLite...</Text>
           <Text style={styles.centeredSubtext}>Writing workouts, sets, and custom movements</Text>
         </View>
@@ -661,7 +663,7 @@ export const ImportScreen: React.FC<ImportScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: uiColors.background,
   },
   header: {
     flexDirection: 'row',
@@ -671,32 +673,30 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   headerTitle: {
+    lineHeight: 28,
+    flexShrink: 1,
     fontSize: 22,
-    fontWeight: '900',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
     letterSpacing: 0.3,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontWeight: '600',
     marginTop: 2,
   },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#18181B',
+    flexShrink: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  closeBtnText: {
-    color: '#FAFAFA',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
   errorBanner: {
     backgroundColor: '#3F1212',
@@ -721,8 +721,8 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.8,
     marginTop: 14,
     marginBottom: 8,
@@ -734,56 +734,56 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   formatChip: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
   },
   formatChipActive: {
-    backgroundColor: '#27272A',
-    borderColor: '#00E676',
+    backgroundColor: uiColors.border,
+    borderColor: uiColors.accent,
   },
   formatChipText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   formatChipTextActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   actionCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 18,
     marginBottom: 14,
   },
   cardHeading: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 6,
   },
   cardDescription: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 16,
   },
   primaryActionBtn: {
-    backgroundColor: '#00E676',
-    borderRadius: 8,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryActionBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
   secondaryActionBtn: {
@@ -792,31 +792,31 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   secondaryActionBtnText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 13,
     fontWeight: '700',
   },
   pasteCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 16,
     marginBottom: 14,
   },
   pasteCardLabel: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 8,
   },
   pasteInput: {
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     padding: 12,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 12,
     fontFamily: 'monospace',
     height: 120,
@@ -824,21 +824,21 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   infoCard: {
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderWidth: 1,
-    borderColor: '#18181B',
-    borderRadius: 10,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginTop: 8,
   },
   infoTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 6,
   },
   infoText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 12,
     lineHeight: 18,
   },
@@ -849,13 +849,13 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   centeredText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 16,
     fontWeight: '700',
     marginTop: 16,
   },
   centeredSubtext: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     marginTop: 6,
   },
@@ -866,22 +866,22 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     flex: 1,
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 10,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 14,
     alignItems: 'center',
   },
   metricVal: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 22,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   metricLabel: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     marginTop: 4,
   },
   warningBanner: {
@@ -895,11 +895,11 @@ const styles = StyleSheet.create({
   warningTitle: {
     color: '#FACC15',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 4,
   },
   warningText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
     lineHeight: 16,
   },
@@ -907,10 +907,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 10,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginBottom: 14,
   },
@@ -919,20 +919,20 @@ const styles = StyleSheet.create({
     paddingRight: 12,
   },
   toggleLabel: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 14,
     fontWeight: '700',
   },
   toggleSubtext: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 12,
     marginTop: 2,
   },
   exerciseListCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 10,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     paddingHorizontal: 14,
     paddingVertical: 6,
     marginBottom: 20,
@@ -943,7 +943,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   exerciseRowLast: {
     borderBottomWidth: 0,
@@ -953,19 +953,21 @@ const styles = StyleSheet.create({
     paddingRight: 10,
   },
   exerciseRawName: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   exerciseTargetName: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     marginTop: 2,
   },
   matchBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
     borderWidth: 1,
   },
   matchBadgeSuccess: {
@@ -977,11 +979,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(234, 179, 8, 0.3)',
   },
   matchBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
   },
   matchBadgeTextSuccess: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   matchBadgeTextCustom: {
     color: '#FACC15',
@@ -992,29 +995,29 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
   },
   cancelBtnText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     fontWeight: '700',
   },
   confirmBtn: {
     flex: 2,
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
   },
   confirmBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   completedContainer: {
     flex: 1,
@@ -1025,27 +1028,27 @@ const styles = StyleSheet.create({
   successIconBadge: {
     width: 64,
     height: 64,
-    borderRadius: 32,
+    borderRadius: uiRadius.badge,
     backgroundColor: 'rgba(0, 230, 118, 0.15)',
     borderWidth: 2,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   successIconText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 32,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   successTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 22,
-    fontWeight: '900',
+    fontWeight: '700',
     marginBottom: 6,
   },
   successSubtitle: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 24,
@@ -1053,10 +1056,10 @@ const styles = StyleSheet.create({
   },
   resultCard: {
     width: '100%',
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     paddingHorizontal: 16,
     paddingVertical: 4,
     marginBottom: 24,
@@ -1066,18 +1069,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   resultRowLast: {
     borderBottomWidth: 0,
   },
   resultLabel: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     fontWeight: '600',
   },
   resultVal: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1088,42 +1091,42 @@ const styles = StyleSheet.create({
   },
   doneBtn: {
     width: '100%',
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 15,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
   },
   doneBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   sectionSubtitleText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 1,
     marginBottom: 8,
   },
   evaluationCard: {
     backgroundColor: '#0F1710',
     borderWidth: 1,
-    borderColor: '#00E676',
-    borderRadius: 12,
+    borderColor: uiColors.accent,
+    borderRadius: uiRadius.card,
     padding: 16,
     marginBottom: 20,
   },
   evaluationBadge: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 10,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 1,
     marginBottom: 6,
   },
   evaluationTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 6,
   },
   evalButtonRow: {
@@ -1132,33 +1135,33 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   evalPresetBtn: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 12,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     alignItems: 'flex-start',
   },
   evalPresetBtnOutline: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
     borderColor: '#3F3F46',
   },
   evalPresetBtnTitle: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 2,
   },
   evalPresetBtnTitleOutline: {
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   evalPresetBtnSubtitle: {
-    color: '#18181B',
+    color: uiColors.raised,
     fontSize: 11,
     fontWeight: '600',
   },
   evalPresetBtnSubtitleOutline: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   filterSegmentRow: {
     flexDirection: 'row',
@@ -1167,23 +1170,23 @@ const styles = StyleSheet.create({
   },
   filterSegmentChip: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingVertical: 8,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
   },
   filterSegmentChipActive: {
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     backgroundColor: '#00331A',
   },
   filterSegmentChipText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   filterSegmentChipTextActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
 });

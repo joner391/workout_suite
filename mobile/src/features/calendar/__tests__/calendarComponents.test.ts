@@ -19,6 +19,7 @@ import {
   toIsoDate,
   parseIsoDate,
   formatFriendlyDate,
+  openCalendarWorkout,
 } from '../CalendarScreen';
 import {
   formatDuration,
@@ -37,6 +38,43 @@ import {
   MockExerciseRepository,
 } from '../../../database/mocks';
 import { calculateHeuristic1RM } from '../../../core/math/heuristic1rm';
+
+describe('Calendar session navigation', () => {
+  const workout: Workout = { id: 'calendar-workout', status: 'completed', name: 'Training', template_id: null, date: '2026-10-21', started_at: '2026-10-21T10:00:00Z', completed_at: null, notes: null, duration_seconds: null, imported_from: null };
+
+  test('a completed workout opens history without entering the logger', async () => {
+    const repo = new MockWorkoutRepository([workout]);
+    const inspect = jest.fn(), resume = jest.fn();
+    expect(await openCalendarWorkout(repo, workout.id, inspect, resume)).toBe(true);
+    expect(inspect).toHaveBeenCalledWith(workout.id);
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  test('only an in-progress workout invokes the resume callback', async () => {
+    const repo = new MockWorkoutRepository([{ ...workout, status: 'in_progress' }]);
+    const inspect = jest.fn(), resume = jest.fn();
+    await openCalendarWorkout(repo, workout.id, inspect, resume);
+    expect(resume).toHaveBeenCalledWith(workout.id);
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  test('discarded and deleted sessions cannot be opened, including from stale cards', async () => {
+    const repo = new MockWorkoutRepository([{ ...workout, status: 'discarded' }]);
+    const inspect = jest.fn(), resume = jest.fn();
+    expect(await openCalendarWorkout(repo, workout.id, inspect, resume)).toBe(false);
+    await repo.delete(workout.id);
+    expect(await openCalendarWorkout(repo, workout.id, inspect, resume)).toBe(false);
+    expect(inspect).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  test('an embedded calendar can inspect an active workout when no resume route is supplied', async () => {
+    const repo = new MockWorkoutRepository([{ ...workout, status: 'in_progress' }]);
+    const inspect = jest.fn();
+    await openCalendarWorkout(repo, workout.id, inspect);
+    expect(inspect).toHaveBeenCalledWith(workout.id);
+  });
+});
 
 describe('Calendar Features & Grid Generation Logic (Step 1.6)', () => {
   let workoutRepo: MockWorkoutRepository;
@@ -568,4 +606,10 @@ describe('Calendar Features & Grid Generation Logic (Step 1.6)', () => {
       expect(element.props.onStartWorkout).toBeUndefined();
     });
   });
+});
+
+test('history does not label multiple sets of a single movement as a superset', () => {
+  const sets = [1, 2, 3].map(n => ({ id: `set-${n}`, exercise_id: 'alone', exercise_group_id: 'orphan' } as WorkoutSet));
+  expect(computeSupersetInfo(sets).exerciseMap.size).toBe(0);
+  expect(computeSupersetInfo(sets).setMap.size).toBe(0);
 });

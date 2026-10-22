@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "exported_at": "2026-10-21T09:51:11.496Z",
+  "exported_at": "2026-10-22T07:51:18.310Z",
   "programs": [
     {
       "id": "prog-hypertrophy-01",
@@ -41,7 +41,14 @@
       "target_rir": 1.5,
       "order_index": 0,
       "exercise_group_id": null,
-      "set_type": "working"
+      "set_type": "working",
+      "rest_seconds": 180,
+      "rest_pause": {
+        "mini_sets": 3,
+        "mini_reps_min": 3,
+        "mini_reps_max": 5,
+        "rest_seconds": 15
+      }
     }
   ],
   "progression_rules": [
@@ -224,8 +231,7 @@
       "training_mentality": "precision",
       "primary_goal": "hypertrophy",
       "secondary_goals": [
-        "strength",
-        "powerbuilding"
+        "strength"
       ],
       "preferred_days_per_week": 4,
       "preferred_session_duration_mins": 75,

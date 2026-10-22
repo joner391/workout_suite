@@ -1,3 +1,5 @@
+import { ScreenHeader } from '../../ui/ScreenHeader';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — CalendarScreen
  *
@@ -17,6 +19,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  ScrollView,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
@@ -39,6 +42,20 @@ import {
 
 export type CalendarViewMode = 'month' | 'week';
 
+/** Re-read the session so stale calendar cards cannot reopen deleted/discarded work. */
+export async function openCalendarWorkout(
+  repo: IWorkoutRepository,
+  workoutId: string,
+  onInspect: (id: string) => void,
+  onResume?: (id: string) => void,
+): Promise<boolean> {
+  const workout = await repo.findById(workoutId);
+  if (!workout || (workout.status !== 'completed' && workout.status !== 'in_progress')) return false;
+  if (workout.status === 'in_progress' && onResume) onResume(workout.id);
+  else onInspect(workout.id);
+  return true;
+}
+
 export interface CalendarScreenProps {
   workoutRepo: IWorkoutRepository;
   exerciseRepo: IExerciseRepository;
@@ -48,6 +65,7 @@ export interface CalendarScreenProps {
   onStartWorkout?: (dateIso?: string) => void;
   onSelectWorkout?: (workoutId: string) => void;
   initialExpanded?: boolean;
+  onClose?: () => void;
 }
 
 export interface CalendarDayItem {
@@ -247,6 +265,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   onStartWorkout,
   onSelectWorkout,
   initialExpanded = false,
+  onClose,
 }) => {
   const todayIso = useMemo(() => getTodayIso(), []);
   const initialParsed = useMemo(() => parseIsoDate(todayIso), [todayIso]);
@@ -284,7 +303,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
     try {
       setLoading(true);
       const allWorkouts = await workoutRepo.findAll();
-      setWorkouts(allWorkouts);
+      setWorkouts(allWorkouts.filter(w => w.status === 'completed' || w.status === 'in_progress'));
     } catch {
       // Fallback empty
     } finally {
@@ -409,358 +428,329 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
     setCurrentMonth(next.getMonth());
   };
 
-  const handleWorkoutPress = (workoutId: string) => {
-    if (onSelectWorkout) {
-      onSelectWorkout(workoutId);
-    }
-    setInspectWorkoutId(workoutId);
+  const handleWorkoutPress = async (workoutId: string) => {
+    const opened = await openCalendarWorkout(workoutRepo, workoutId, setInspectWorkoutId, onSelectWorkout);
+    if (!opened) await loadWorkouts();
   };
 
   return (
     <View style={styles.container}>
       {/* Top Header Bar */}
-      <View style={styles.topHeader}>
-        <View>
-          <Text style={styles.screenTitle}>Workout Calendar</Text>
-          <Text style={styles.screenSubtitle}>
-            {MONTH_NAMES[currentMonth]} {currentYear}
-          </Text>
-        </View>
-
-        {/* View Mode / Accordion Toggle */}
-        <View style={styles.viewModeToggle}>
-          <TouchableOpacity
-            style={[
-              styles.modeButton,
-              !isExpanded && styles.modeButtonActive,
-            ]}
-            onPress={() => setIsExpanded(false)}
-            accessibilityLabel="Week View Mode"
+      <ScreenHeader
+        title="Training calendar"
+        subtitle={`${MONTH_NAMES[currentMonth]} ${currentYear}`}
+        onClose={onClose}
+        closeTestID="subscreen-back-btn"
+        actions={<View style={styles.viewModeToggle}>
+          {(['week', 'month'] as const).map(mode => <TouchableOpacity
+            key={mode}
+            accessibilityRole="button"
+            accessibilityLabel={mode === 'week' ? 'Week View Mode' : 'Month View Mode'}
+            accessibilityState={{ selected: viewMode === mode }}
+            style={[styles.modeButton, viewMode === mode && styles.modeButtonActive]}
+            onPress={() => setIsExpanded(mode === 'month')}
           >
-            <Text
-              style={[
-                styles.modeButtonText,
-                !isExpanded && styles.modeButtonTextActive,
-              ]}
-            >
-              Week
-            </Text>
+            <Text style={[styles.modeButtonText, viewMode === mode && styles.modeButtonTextActive]}>{mode === 'week' ? 'Week' : 'Month'}</Text>
+          </TouchableOpacity>)}
+        </View>}
+      />
+
+      <ScrollView testID="calendar-scroll-view" style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Navigation Controls Bar */}
+        <View style={styles.navBar}>
+          <TouchableOpacity
+            style={styles.navArrowButton}
+            onPress={viewMode === 'month' ? handlePrevMonth : handlePrevWeek}
+            accessibilityLabel="Previous Period"
+          >
+            <Text style={styles.navArrowText}>‹</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.modeButton,
-              isExpanded && styles.modeButtonActive,
-            ]}
-            onPress={() => setIsExpanded(true)}
-            accessibilityLabel="Month View Mode"
+            style={styles.todayButton}
+            onPress={handleJumpToToday}
+            accessibilityLabel="Jump to Today"
           >
-            <Text
-              style={[
-                styles.modeButtonText,
-                isExpanded && styles.modeButtonTextActive,
-              ]}
-            >
-              Month
-            </Text>
+            <Text style={styles.todayButtonText}>Today</Text>
           </TouchableOpacity>
-        </View>
-      </View>
 
-      {/* Navigation Controls Bar */}
-      <View style={styles.navBar}>
-        <TouchableOpacity
-          style={styles.navArrowButton}
-          onPress={viewMode === 'month' ? handlePrevMonth : handlePrevWeek}
-          accessibilityLabel="Previous Period"
-        >
-          <Text style={styles.navArrowText}>‹</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.todayButton}
-          onPress={handleJumpToToday}
-          accessibilityLabel="Jump to Today"
-        >
-          <Text style={styles.todayButtonText}>Today</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navArrowButton}
-          onPress={viewMode === 'month' ? handleNextMonth : handleNextWeek}
-          accessibilityLabel="Next Period"
-        >
-          <Text style={styles.navArrowText}>›</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Weekday Column Headers */}
-      <View style={styles.weekdaysHeader}>
-        {WEEKDAY_LABELS.map((label) => (
-          <Text key={label} style={styles.weekdayLabel}>
-            {label}
-          </Text>
-        ))}
-      </View>
-
-      {/* Calendar Grid / Week View */}
-      {viewMode === 'month' ? (
-        <View style={styles.monthGrid}>
-          {monthDays.map((item) => {
-            const isSelected = item.dateIso === selectedDate;
-
-            return (
-              <TouchableOpacity
-                key={item.dateIso}
-                style={[
-                  styles.dayCell,
-                  !item.isCurrentMonth && styles.dayCellDimmed,
-                  isSelected && styles.dayCellSelected,
-                  item.isToday && !isSelected && styles.dayCellToday,
-                ]}
-                onPress={() => setSelectedDate(item.dateIso)}
-                activeOpacity={0.7}
-                accessibilityLabel={`Date ${item.dateIso}`}
-              >
-                <Text
-                  style={[
-                    styles.dayNumberText,
-                    !item.isCurrentMonth && styles.dayNumberDimmed,
-                    isSelected && styles.dayNumberSelected,
-                    item.isToday && !isSelected && styles.dayNumberToday,
-                  ]}
-                >
-                  {item.dayNumber}
-                </Text>
-
-                {/* Workout Badge Indicator */}
-                <View style={styles.badgeIndicatorContainer}>
-                  {item.hasCompletedWorkout ? (
-                    <View style={styles.badgeDotCompleted} />
-                  ) : item.hasInProgressWorkout ? (
-                    <View style={styles.badgeDotInProgress} />
-                  ) : (
-                    <View style={styles.badgeDotPlaceholder} />
-                  )}
-                  {item.programSwap && (
-                    <View
-                      testID={`program-swap-badge-${item.dateIso}`}
-                      style={[
-                        styles.programSwapDot,
-                        { backgroundColor: item.programSwap.color_hex },
-                      ]}
-                    />
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      ) : (
-        /* Week View Bar */
-        <View style={styles.weekContainer}>
-          {weekDays.map((item, idx) => {
-            const isSelected = item.dateIso === selectedDate;
-            const weekdayName = WEEKDAY_LABELS[idx];
-
-            return (
-              <TouchableOpacity
-                key={item.dateIso}
-                style={[
-                  styles.weekDayPill,
-                  isSelected && styles.weekDayPillSelected,
-                  item.isToday && !isSelected && styles.weekDayPillToday,
-                ]}
-                onPress={() => setSelectedDate(item.dateIso)}
-                activeOpacity={0.7}
-                accessibilityLabel={`Date ${item.dateIso}`}
-              >
-                <Text
-                  style={[
-                    styles.weekDayPillLabel,
-                    isSelected && styles.weekDayPillTextSelected,
-                  ]}
-                >
-                  {weekdayName}
-                </Text>
-                <Text
-                  style={[
-                    styles.weekDayPillNumber,
-                    isSelected && styles.weekDayPillTextSelected,
-                    item.isToday && !isSelected && styles.dayNumberToday,
-                  ]}
-                >
-                  {item.dayNumber}
-                </Text>
-
-                <View style={styles.badgeIndicatorContainer}>
-                  {item.hasCompletedWorkout ? (
-                    <View style={styles.badgeDotCompleted} />
-                  ) : item.hasInProgressWorkout ? (
-                    <View style={styles.badgeDotInProgress} />
-                  ) : (
-                    <View style={styles.badgeDotPlaceholder} />
-                  )}
-                  {item.programSwap && (
-                    <View
-                      testID={`program-swap-badge-${item.dateIso}`}
-                      style={[
-                        styles.programSwapDot,
-                        { backgroundColor: item.programSwap.color_hex },
-                      ]}
-                    />
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-
-      {/* Accordion Expand / Collapse Handle */}
-      <TouchableOpacity
-        testID="calendar-accordion-handle"
-        style={styles.accordionHandleBar}
-        onPress={() => setIsExpanded((prev) => !prev)}
-        activeOpacity={0.7}
-        accessibilityLabel={isExpanded ? 'Collapse to Week View' : 'Expand to Month View'}
-      >
-        <View style={styles.accordionHandleIndicator} />
-        <Text style={styles.accordionHandleText}>
-          {isExpanded ? '▲ Collapse to Week' : '▼ Expand to Month'}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Meso-Cycle / Program Swap Banner for Selected Date */}
-      {selectedDateProgramBlock && (
-        <View
-          testID="calendar-program-swap-banner"
-          style={[
-            styles.agendaProgramCard,
-            { borderLeftColor: selectedDateProgramBlock.color_hex },
-          ]}
-        >
-          <View style={styles.agendaProgramHeader}>
-            <View
-              style={[
-                styles.agendaProgramPill,
-                { backgroundColor: selectedDateProgramBlock.color_hex },
-              ]}
-            >
-              <Text style={styles.agendaProgramPillText}>
-                {selectedDateProgramBlock.start_date === selectedDate
-                  ? '🔄 MESO-CYCLE SWAP'
-                  : 'ACTIVE PROGRAM'}
-              </Text>
-            </View>
-            <Text style={styles.agendaProgramName} numberOfLines={1}>
-              {selectedDateProgramBlock.program_name}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Selected Date Agenda Header */}
-      <View style={styles.agendaHeaderRow}>
-        <View>
-          <Text style={styles.agendaDateTitle}>
-            {formatFriendlyDate(selectedDate)}
-          </Text>
-          <Text style={styles.agendaDateSubtitle}>
-            {selectedDateWorkouts.length === 0
-              ? 'No workouts logged'
-              : `${selectedDateWorkouts.length} workout${
-                  selectedDateWorkouts.length > 1 ? 's' : ''
-                } recorded`}
-          </Text>
-        </View>
-
-        {onStartWorkout && (
           <TouchableOpacity
-            style={styles.addWorkoutButton}
-            onPress={() => onStartWorkout(selectedDate)}
-            accessibilityLabel="Start Workout for Date"
+            style={styles.navArrowButton}
+            onPress={viewMode === 'month' ? handleNextMonth : handleNextWeek}
+            accessibilityLabel="Next Period"
           >
-            <Text style={styles.addWorkoutButtonText}>+ New Session</Text>
+            <Text style={styles.navArrowText}>›</Text>
           </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Workouts List for Selected Date */}
-      {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator color="#00E676" size="small" />
         </View>
-      ) : selectedDateWorkouts.length === 0 ? (
-        <View testID="calendar-empty-day-card" style={styles.emptyDayCard}>
-          <Text style={styles.emptyDayTitle}>Rest / Recovery Day 🌿</Text>
-          <Text style={styles.emptyDaySubtitle}>
-            No training logged for this day. Rest is when muscle and connective tissue adapt.
-          </Text>
-          {onStartWorkout && (
-            <TouchableOpacity
-              testID="calendar-start-empty-day-workout-btn"
-              style={styles.startEmptyDayWorkoutBtn}
-              onPress={() => onStartWorkout(selectedDate)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.startEmptyDayWorkoutBtnText}>+ Log Workout</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : (
-        <View style={styles.workoutsListContent}>
-          {selectedDateWorkouts.map((w) => (
-            <TouchableOpacity
-              key={w.id}
-              style={styles.workoutCard}
-              onPress={() => handleWorkoutPress(w.id)}
-              activeOpacity={0.75}
-              accessibilityLabel={`Workout ${w.name}`}
-            >
-              <View style={styles.workoutCardHeader}>
-                <View style={styles.workoutCardTitleGroup}>
-                  <Text style={styles.workoutCardTitle}>{w.name}</Text>
-                  <Text style={styles.workoutCardTime}>
-                    {w.started_at ? w.started_at.slice(11, 16) : ''} •{' '}
-                    {formatDuration(w.duration_seconds)}
-                  </Text>
-                </View>
 
-                <View
+        {/* Weekday Column Headers */}
+        <View style={styles.weekdaysHeader}>
+          {WEEKDAY_LABELS.map((label) => (
+            <Text key={label} style={styles.weekdayLabel}>
+              {label}
+            </Text>
+          ))}
+        </View>
+
+        {/* Calendar Grid / Week View */}
+        {viewMode === 'month' ? (
+          <View style={styles.monthGrid}>
+            {monthDays.map((item) => {
+              const isSelected = item.dateIso === selectedDate;
+
+              return (
+                <TouchableOpacity
+                  key={item.dateIso}
                   style={[
-                    styles.statusPill,
-                    w.status === 'completed'
-                      ? styles.statusPillCompleted
-                      : styles.statusPillInProgress,
+                    styles.dayCell,
+                    !item.isCurrentMonth && styles.dayCellDimmed,
+                    isSelected && styles.dayCellSelected,
+                    item.isToday && !isSelected && styles.dayCellToday,
                   ]}
+                  onPress={() => setSelectedDate(item.dateIso)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`Date ${item.dateIso}`}
                 >
                   <Text
                     style={[
-                      styles.statusPillText,
-                      w.status === 'completed'
-                        ? styles.statusPillTextCompleted
-                        : styles.statusPillTextInProgress,
+                      styles.dayNumberText,
+                      !item.isCurrentMonth && styles.dayNumberDimmed,
+                      isSelected && styles.dayNumberSelected,
+                      item.isToday && !isSelected && styles.dayNumberToday,
                     ]}
                   >
-                    {w.status.toUpperCase()}
+                    {item.dayNumber}
                   </Text>
-                </View>
-              </View>
 
-              {w.notes ? (
-                <Text style={styles.workoutCardNotes} numberOfLines={2}>
-                  {w.notes}
+                  {/* Workout Badge Indicator */}
+                  <View style={styles.badgeIndicatorContainer}>
+                    {item.hasCompletedWorkout ? (
+                      <View style={styles.badgeDotCompleted} />
+                    ) : item.hasInProgressWorkout ? (
+                      <View style={styles.badgeDotInProgress} />
+                    ) : (
+                      <View style={styles.badgeDotPlaceholder} />
+                    )}
+                    {item.programSwap && (
+                      <View
+                        testID={`program-swap-badge-${item.dateIso}`}
+                        style={[
+                          styles.programSwapDot,
+                          { backgroundColor: item.programSwap.color_hex },
+                        ]}
+                      />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : (
+          /* Week View Bar */
+          <View style={styles.weekContainer}>
+            {weekDays.map((item, idx) => {
+              const isSelected = item.dateIso === selectedDate;
+              const weekdayName = WEEKDAY_LABELS[idx];
+
+              return (
+                <TouchableOpacity
+                  key={item.dateIso}
+                  style={[
+                    styles.weekDayPill,
+                    isSelected && styles.weekDayPillSelected,
+                    item.isToday && !isSelected && styles.weekDayPillToday,
+                  ]}
+                  onPress={() => setSelectedDate(item.dateIso)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`Date ${item.dateIso}`}
+                >
+                  <Text
+                    style={[
+                      styles.weekDayPillLabel,
+                      isSelected && styles.weekDayPillTextSelected,
+                    ]}
+                  >
+                    {weekdayName}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.weekDayPillNumber,
+                      isSelected && styles.weekDayPillTextSelected,
+                      item.isToday && !isSelected && styles.dayNumberToday,
+                    ]}
+                  >
+                    {item.dayNumber}
+                  </Text>
+
+                  <View style={styles.badgeIndicatorContainer}>
+                    {item.hasCompletedWorkout ? (
+                      <View style={styles.badgeDotCompleted} />
+                    ) : item.hasInProgressWorkout ? (
+                      <View style={styles.badgeDotInProgress} />
+                    ) : (
+                      <View style={styles.badgeDotPlaceholder} />
+                    )}
+                    {item.programSwap && (
+                      <View
+                        testID={`program-swap-badge-${item.dateIso}`}
+                        style={[
+                          styles.programSwapDot,
+                          { backgroundColor: item.programSwap.color_hex },
+                        ]}
+                      />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Accordion Expand / Collapse Handle */}
+        <TouchableOpacity
+          testID="calendar-accordion-handle"
+          style={styles.accordionHandleBar}
+          onPress={() => setIsExpanded((prev) => !prev)}
+          activeOpacity={0.7}
+          accessibilityLabel={isExpanded ? 'Collapse to Week View' : 'Expand to Month View'}
+        >
+          <View style={styles.accordionHandleIndicator} />
+          <Text style={styles.accordionHandleText}>
+            {isExpanded ? '▲ Collapse to Week' : '▼ Expand to Month'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Meso-Cycle / Program Swap Banner for Selected Date */}
+        {selectedDateProgramBlock && (
+          <View
+            testID="calendar-program-swap-banner"
+            style={[
+              styles.agendaProgramCard,
+              { borderLeftColor: selectedDateProgramBlock.color_hex },
+            ]}
+          >
+            <View style={styles.agendaProgramHeader}>
+              <View
+                style={[
+                  styles.agendaProgramPill,
+                  { backgroundColor: selectedDateProgramBlock.color_hex },
+                ]}
+              >
+                <Text style={styles.agendaProgramPillText}>
+                  {selectedDateProgramBlock.start_date === selectedDate
+                    ? '🔄 MESO-CYCLE SWAP'
+                    : 'ACTIVE PROGRAM'}
                 </Text>
-              ) : null}
-
-              <View style={styles.workoutCardFooter}>
-                <Text style={styles.tapToInspectText}>Tap for set breakdown ›</Text>
               </View>
+              <Text style={styles.agendaProgramName} numberOfLines={1}>
+                {selectedDateProgramBlock.program_name}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Selected Date Agenda Header */}
+        <View style={styles.agendaHeaderRow}>
+          <View>
+            <Text style={styles.agendaDateTitle}>
+              {formatFriendlyDate(selectedDate)}
+            </Text>
+            <Text style={styles.agendaDateSubtitle}>
+              {selectedDateWorkouts.length === 0
+                ? 'No workouts logged'
+                : `${selectedDateWorkouts.length} workout${selectedDateWorkouts.length > 1 ? 's' : ''
+                } recorded`}
+            </Text>
+          </View>
+
+          {onStartWorkout && (
+            <TouchableOpacity
+              style={styles.addWorkoutButton}
+              onPress={() => onStartWorkout(selectedDate)}
+              accessibilityLabel="Start Workout for Date"
+            >
+              <Text style={styles.addWorkoutButtonText}>+ New Session</Text>
             </TouchableOpacity>
-          ))}
+          )}
         </View>
-      )}
+
+        {/* Workouts List for Selected Date */}
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator color={uiColors.accent} size="small" />
+          </View>
+        ) : selectedDateWorkouts.length === 0 ? (
+          <View testID="calendar-empty-day-card" style={styles.emptyDayCard}>
+            <Text style={styles.emptyDayTitle}>Rest / Recovery Day </Text>
+            <Text style={styles.emptyDaySubtitle}>
+              No training logged for this day. Rest is when muscle and connective tissue adapt.
+            </Text>
+            {onStartWorkout && (
+              <TouchableOpacity
+                testID="calendar-start-empty-day-workout-btn"
+                style={styles.startEmptyDayWorkoutBtn}
+                onPress={() => onStartWorkout(selectedDate)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.startEmptyDayWorkoutBtnText}>+ Log Workout</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <View style={styles.workoutsListContent}>
+            {selectedDateWorkouts.map((w) => (
+              <TouchableOpacity
+                key={w.id}
+                style={styles.workoutCard}
+                onPress={() => handleWorkoutPress(w.id)}
+                activeOpacity={0.75}
+                accessibilityLabel={`Workout ${w.name}`}
+              >
+                <View style={styles.workoutCardHeader}>
+                  <View style={styles.workoutCardTitleGroup}>
+                    <Text style={styles.workoutCardTitle}>{w.name}</Text>
+                    <Text style={styles.workoutCardTime}>
+                      {w.started_at ? w.started_at.slice(11, 16) : ''} •{' '}
+                      {formatDuration(w.duration_seconds)}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.statusPill,
+                      w.status === 'completed'
+                        ? styles.statusPillCompleted
+                        : styles.statusPillInProgress,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.statusPillText,
+                        w.status === 'completed'
+                          ? styles.statusPillTextCompleted
+                          : styles.statusPillTextInProgress,
+                      ]}
+                    >
+                      {w.status.toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+
+                {w.notes ? (
+                  <Text style={styles.workoutCardNotes} numberOfLines={2}>
+                    {w.notes}
+                  </Text>
+                ) : null}
+
+                <View style={styles.workoutCardFooter}>
+                  <Text style={styles.tapToInspectText}>{w.status === 'in_progress' ? 'Resume workout ›' : 'View session details ›'}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+      </ScrollView>
 
       {/* Drill-down Inspection Modal */}
       <SessionDetailModal
@@ -782,53 +772,38 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
+  scrollView: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingBottom: 24 },
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: uiColors.background,
     paddingTop: 8,
-  },
-  topHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  screenTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#FAFAFA',
-    letterSpacing: 0.3,
-  },
-  screenSubtitle: {
-    fontSize: 13,
-    color: '#A1A1AA',
-    fontWeight: '600',
-    marginTop: 2,
   },
   viewModeToggle: {
     flexDirection: 'row',
-    backgroundColor: '#18181B',
-    borderRadius: 8,
+    backgroundColor: uiColors.raised,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 2,
   },
   modeButton: {
-    paddingHorizontal: 12,
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   modeButtonActive: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   modeButtonText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   modeButtonTextActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   navBar: {
     flexDirection: 'row',
@@ -838,31 +813,33 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   navArrowButton: {
-    width: 38,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: '#121215',
+    width: 44,
+    height: 44,
+    borderRadius: uiRadius.control,
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
   navArrowText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 20,
     fontWeight: '700',
     lineHeight: 22,
   },
   todayButton: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#18181B',
+    borderRadius: uiRadius.control,
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   todayButtonText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -871,14 +848,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   weekdayLabel: {
     flex: 1,
     textAlign: 'center',
     fontSize: 11,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 0.5,
   },
   monthGrid: {
@@ -888,6 +865,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   dayCell: {
+    borderWidth: 1.5,
+    borderColor: 'transparent',
     width: `${100 / 7}%`,
     height: 48,
     justifyContent: 'center',
@@ -903,31 +882,31 @@ const styles = StyleSheet.create({
     borderColor: '#3F3F46',
   },
   dayCellSelected: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1.5,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   dayNumberText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
   },
   dayNumberDimmed: {
     color: '#52525B',
   },
   dayNumberToday: {
-    color: '#00E676',
-    fontWeight: '900',
+    color: uiColors.accentText,
+    fontWeight: '700',
   },
   dayNumberSelected: {
-    color: '#FAFAFA',
-    fontWeight: '900',
+    color: uiColors.text,
+    fontWeight: '700',
   },
   badgeDotCompleted: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     marginTop: 3,
   },
   badgeDotInProgress: {
@@ -953,65 +932,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     marginHorizontal: 3,
-    borderRadius: 10,
-    backgroundColor: '#121215',
-    borderWidth: 1,
-    borderColor: '#27272A',
+    borderRadius: uiRadius.badge,
+    backgroundColor: uiColors.surface,
+    borderWidth: 1.5,
+    borderColor: uiColors.border,
   },
   weekDayPillToday: {
     borderColor: '#3F3F46',
   },
   weekDayPillSelected: {
-    backgroundColor: '#18181B',
-    borderColor: '#00E676',
+    backgroundColor: uiColors.raised,
+    borderColor: uiColors.accent,
     borderWidth: 1.5,
   },
   weekDayPillLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     marginBottom: 4,
   },
   weekDayPillNumber: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#D4D4D8',
+    fontWeight: '700',
+    color: uiColors.secondaryText,
   },
   weekDayPillTextSelected: {
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   agendaHeaderRow: {
+    flexWrap: 'wrap',
+    gap: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-    backgroundColor: '#09090B',
+    borderBottomColor: uiColors.border,
+    backgroundColor: uiColors.background,
   },
   agendaDateTitle: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   agendaDateSubtitle: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
   },
   addWorkoutButton: {
     backgroundColor: 'rgba(0, 230, 118, 0.15)',
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
   },
   addWorkoutButtonText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -1020,54 +1001,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  emptyAgendaContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 30,
-  },
-  emptyAgendaIcon: {
-    fontSize: 32,
-    marginBottom: 10,
-  },
-  emptyAgendaTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FAFAFA',
-    marginBottom: 4,
-  },
-  emptyAgendaSubtitle: {
-    fontSize: 13,
-    color: '#71717A',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  startSessionOutlineButton: {
-    borderWidth: 1,
-    borderColor: '#3F3F46',
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 8,
-    backgroundColor: '#121215',
-  },
-  startSessionOutlineButtonText: {
-    color: '#D4D4D8',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  workoutsList: {
-    flex: 1,
-  },
   workoutsListContent: {
     padding: 16,
     gap: 10,
   },
   workoutCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 14,
   },
   workoutCardHeader: {
@@ -1080,24 +1022,27 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   workoutCardTitle: {
+    lineHeight: 22,
     fontSize: 16,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '600',
+    color: uiColors.text,
   },
   workoutCardTime: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
   },
   statusPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   statusPillCompleted: {
     backgroundColor: 'rgba(0, 230, 118, 0.15)',
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   statusPillInProgress: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
@@ -1105,19 +1050,20 @@ const styles = StyleSheet.create({
     borderColor: '#F59E0B',
   },
   statusPillText: {
-    fontSize: 10,
-    fontWeight: '800',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
     letterSpacing: 0.5,
   },
   statusPillTextCompleted: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   statusPillTextInProgress: {
     color: '#F59E0B',
   },
   workoutCardNotes: {
     fontSize: 13,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 8,
     lineHeight: 18,
   },
@@ -1125,12 +1071,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
     alignItems: 'flex-end',
   },
   tapToInspectText: {
     fontSize: 11,
-    color: '#00E676',
+    color: uiColors.accentText,
     fontWeight: '700',
   },
   badgeIndicatorContainer: {
@@ -1145,11 +1091,11 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   agendaProgramCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderLeftWidth: 4,
-    borderRadius: 8,
+    borderRadius: uiRadius.card,
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginHorizontal: 16,
@@ -1162,18 +1108,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   agendaProgramPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    minHeight: 26,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   agendaProgramPillText: {
-    color: '#0A0A0A',
-    fontSize: 9,
-    fontWeight: '900',
+    lineHeight: 16,
+    color: uiColors.background,
+    fontSize: 11,
+    fontWeight: '600',
     letterSpacing: 0.5,
   },
   agendaProgramName: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
     flex: 1,
@@ -1187,9 +1136,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 8,
     borderRadius: 8,
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     gap: 8,
   },
   accordionHandleIndicator: {
@@ -1199,29 +1148,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#3F3F46',
   },
   accordionHandleText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   emptyDayCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#1E1E22',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 16,
     marginHorizontal: 16,
     marginVertical: 10,
     alignItems: 'center',
   },
   emptyDayTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 4,
   },
   emptyDaySubtitle: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 12,
     textAlign: 'center',
     marginBottom: 12,
@@ -1229,15 +1178,15 @@ const styles = StyleSheet.create({
   },
   startEmptyDayWorkoutBtn: {
     backgroundColor: '#14291B',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     borderWidth: 1,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   startEmptyDayWorkoutBtnText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

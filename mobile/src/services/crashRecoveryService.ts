@@ -1,3 +1,4 @@
+import { discardWorkoutRecord } from './workoutDiscardService';
 /**
  * Workout Suite — Crash Recovery Service
  *
@@ -7,7 +8,7 @@
  * Provides frictionless options to:
  * 1. Inspect recovery metadata (elapsed duration, completed sets, exercises)
  * 2. Resume the in-progress session exactly where the lifter left off
- * 3. Discard the interrupted session (mark status = 'discarded' or delete)
+ * 3. Discard the interrupted session and permanently delete its sets
  */
 
 import { Workout, WorkoutSet, WorkoutWithSets } from '../core/types';
@@ -146,21 +147,10 @@ export class CrashRecoveryService {
   }
 
   /**
-   * Discards an interrupted session by setting its status to 'discarded' and timestamping completion.
+   * Permanently discards an interrupted session; the return value is a receipt only.
    */
   public async discardSession(workoutId: string): Promise<Workout> {
-    const workout = await this.workoutRepo.findById(workoutId);
-    if (!workout) {
-      throw new Error(`Workout with ID '${workoutId}' not found to discard.`);
-    }
-
-    const updated: Workout = {
-      ...workout,
-      status: 'discarded',
-      completed_at: new Date().toISOString(),
-    };
-
-    return this.workoutRepo.update(updated);
+    return discardWorkoutRecord(this.workoutRepo, workoutId, this.userSettingsRepo);
   }
 
   /**

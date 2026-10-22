@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — WarmupAssessmentModal
  *
@@ -129,9 +131,9 @@ export const WarmupAssessmentModal: React.FC<WarmupAssessmentModalProps> = ({
               testID="close-warmup-assessment-modal"
               style={styles.closeButton}
               onPress={onDismiss}
-              accessibilityLabel="Close warm-up assessment modal"
+              accessibilityLabel="Close warm-up assessment modal" accessibilityRole="button"
             >
-              <Text style={styles.closeButtonText}>✕</Text>
+              <AppIcon name="close" size={20} color={uiColors.accentText} />
             </TouchableOpacity>
           </View>
 
@@ -165,7 +167,7 @@ export const WarmupAssessmentModal: React.FC<WarmupAssessmentModalProps> = ({
               </View>
             )}
 
-            <Text style={styles.promptText}>How did that last warm-up single move?</Text>
+            <Text style={styles.promptText}>How did that last warm-up set feel?</Text>
 
             {/* Assessment Option Cards: Light, Normal, Heavy */}
             <View style={styles.optionsContainer}>
@@ -181,7 +183,7 @@ export const WarmupAssessmentModal: React.FC<WarmupAssessmentModalProps> = ({
                 accessibilityLabel="Report warm-up felt light and crisp"
               >
                 <View style={styles.cardHeader}>
-                  <Text style={styles.cardIcon}>⚡</Text>
+                  <AppIcon name="bolt" size={20} color={uiColors.accentText} />
                   <View style={styles.cardTitleBox}>
                     <Text style={styles.cardTitle}>Light / Crisp</Text>
                     <Text style={styles.cardSubtitle}>Moved fast with low perceived effort</Text>
@@ -209,7 +211,7 @@ export const WarmupAssessmentModal: React.FC<WarmupAssessmentModalProps> = ({
                 accessibilityLabel="Report warm-up felt normal on target"
               >
                 <View style={styles.cardHeader}>
-                  <Text style={styles.cardIcon}>🎯</Text>
+                  <AppIcon name="bolt" size={20} color={uiColors.accentText} />
                   <View style={styles.cardTitleBox}>
                     <Text style={styles.cardTitle}>Normal / On Target</Text>
                     <Text style={styles.cardSubtitle}>Standard speed and readiness</Text>
@@ -324,6 +326,8 @@ export const WarmupAssessmentModal: React.FC<WarmupAssessmentModalProps> = ({
               <Text style={styles.applyButtonText}>
                 {!selectedRating
                   ? 'Select an Assessment'
+                  : currentAdjustment?.adjustedLoadKg === plannedWorkingWeightKg
+                  ? `Maintain ${plannedWorkLoadDisplay}`
                   : selectedRating === 'light'
                   ? `Apply ${formatWeight(lightAdj.adjustedLoadKg, unitSystem)} (+${Math.round(lightAdj.percentageAdjustment * 1000) / 10}%)`
                   : selectedRating === 'normal'
@@ -350,10 +354,10 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 480,
     maxHeight: '90%',
-    backgroundColor: '#121214',
-    borderRadius: 16,
+    backgroundColor: uiColors.surface,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     overflow: 'hidden',
   },
   headerRow: {
@@ -364,7 +368,7 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
+    borderBottomColor: uiColors.border,
   },
   headerTitleGroup: {
     flex: 1,
@@ -372,33 +376,31 @@ const styles = StyleSheet.create({
   },
   headerBadge: {
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#3B82F6',
     letterSpacing: 1.2,
     marginBottom: 2,
   },
   headerTitle: {
-    fontSize: 18,
+    lineHeight: 28,
+    flexShrink: 1,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   exerciseSubtitle: {
     fontSize: 13,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#27272A',
+    flexShrink: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  closeButtonText: {
-    fontSize: 15,
-    color: '#A1A1AA',
-    fontWeight: 'bold',
   },
   scrollContent: {
     flexGrow: 0,
@@ -408,12 +410,12 @@ const styles = StyleSheet.create({
   },
   contextStrip: {
     flexDirection: 'row',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     marginBottom: 16,
     alignItems: 'center',
   },
@@ -424,19 +426,19 @@ const styles = StyleSheet.create({
   contextDivider: {
     width: 1,
     height: 24,
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   contextLabel: {
     fontSize: 9,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 0.8,
     marginBottom: 2,
   },
   contextValue: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   fatigueBanner: {
     backgroundColor: '#78350F22',
@@ -463,10 +465,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   ratingCard: {
-    backgroundColor: '#18181B',
-    borderRadius: 12,
+    backgroundColor: uiColors.raised,
+    borderRadius: uiRadius.card,
     borderWidth: 1.5,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 14,
   },
   ratingCardActiveLight: {
@@ -496,24 +498,26 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   cardSubtitle: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 1,
   },
   previewPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   previewPillLight: {
     backgroundColor: '#064E3B',
   },
   previewPillTextLight: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#6EE7B7',
   },
   previewPillNormal: {
@@ -521,7 +525,7 @@ const styles = StyleSheet.create({
   },
   previewPillTextNormal: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#93C5FD',
   },
   previewPillHeavy: {
@@ -529,17 +533,17 @@ const styles = StyleSheet.create({
   },
   previewPillTextHeavy: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FCA5A5',
   },
   cardLoadPreview: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     marginLeft: 30,
   },
   recommendationContainer: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 10,
     borderLeftWidth: 3,
     borderLeftColor: '#3B82F6',
@@ -555,10 +559,10 @@ const styles = StyleSheet.create({
   },
   recommendationDetail: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   recommendationHighlight: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontWeight: '700',
   },
   grooveCheckContainer: {
@@ -577,7 +581,7 @@ const styles = StyleSheet.create({
   },
   grooveCheckDescription: {
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     lineHeight: 16,
     marginBottom: 10,
   },
@@ -585,7 +589,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#78350F44',
     borderColor: '#D97706',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     paddingVertical: 9,
     paddingHorizontal: 12,
     alignItems: 'center',
@@ -600,13 +604,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderTopWidth: 1,
-    borderTopColor: '#27272A',
+    borderTopColor: uiColors.border,
     gap: 12,
   },
   dismissButton: {
     paddingVertical: 12,
     paddingHorizontal: 18,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
     borderColor: '#3F3F46',
     alignItems: 'center',
@@ -615,14 +619,14 @@ const styles = StyleSheet.create({
   dismissButtonText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   applyButton: {
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#27272A',
+    borderRadius: uiRadius.control,
+    backgroundColor: uiColors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -641,6 +645,6 @@ const styles = StyleSheet.create({
   applyButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
 });

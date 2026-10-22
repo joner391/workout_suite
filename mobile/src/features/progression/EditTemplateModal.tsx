@@ -1,3 +1,4 @@
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — Edit Template Modal
  *
@@ -47,7 +48,12 @@ export const EditTemplateModal: React.FC<EditTemplateModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.overlay}
@@ -62,7 +68,7 @@ export const EditTemplateModal: React.FC<EditTemplateModalProps> = ({
             value={name}
             onChangeText={setName}
             placeholder="e.g. Day 1 — Upper Push"
-            placeholderTextColor="#71717A"
+            placeholderTextColor={uiColors.subtle}
           />
 
           <Text style={[styles.inputLabel, { marginTop: 12 }]}>Day Notes / Instructions</Text>
@@ -73,7 +79,7 @@ export const EditTemplateModal: React.FC<EditTemplateModalProps> = ({
             value={notes}
             onChangeText={setNotes}
             placeholder="Warmup notes, movement focus, rest cues..."
-            placeholderTextColor="#71717A"
+            placeholderTextColor={uiColors.subtle}
           />
 
           <View style={styles.actionRow}>
@@ -106,30 +112,32 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   content: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderRadius: 12,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   title: {
-    color: '#FAFAFA',
-    fontSize: 16,
-    fontWeight: '800',
+    lineHeight: 28,
+    flexShrink: 1,
+    color: uiColors.text,
+    fontSize: 22,
+    fontWeight: '700',
     marginBottom: 14,
   },
   inputLabel: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 6,
   },
   textInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
+    color: uiColors.text,
     fontSize: 13,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -145,19 +153,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   cancelBtnText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     fontWeight: '600',
   },
   saveBtn: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   saveBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

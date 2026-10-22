@@ -18,6 +18,8 @@
 import { ISQLiteDatabase } from '../database/schema';
 import { CalibratedParam, MuscleLandmarkPayload, ProgramAuditPayload, SFRTier } from '../core/types';
 import { calculateEffectiveReps, calculateLombardi1RM, IntensityInput } from '../core/math/heuristic1rm';
+import type { MesocycleFeedback } from './programEvolutionService';
+import { CURVES_KEY, MESO_FEEDBACK_KEY } from './trainingAdaptationService';
 
 export interface CalibratedParameterItem {
   exercise_id: string;
@@ -40,6 +42,7 @@ export interface CalibratedParametersEnvelope {
   parameters: CalibratedParameterItem[];
   muscle_landmarks?: Record<string, MuscleLandmarkPayload> | null;
   program_audits?: ProgramAuditPayload[] | null;
+  mesocycle_feedback?: MesocycleFeedback | null;
 }
 
 export interface ImportResult {
@@ -122,7 +125,17 @@ export class CalibratedParamService {
       });
     }
 
-    if (validParams.length === 0) {
+    const feedback = envelope.mesocycle_feedback;
+    const validFeedback = feedback && Number.isInteger(feedback.recommended_accumulation_weeks) &&
+      feedback.recommended_accumulation_weeks >= 3 && feedback.recommended_accumulation_weeks <= 12 &&
+      Number.isFinite(feedback.confidence_score) && feedback.confidence_score >= 0 && feedback.confidence_score <= 100 &&
+      ['LOW', 'MODERATE', 'HIGH'].includes(feedback.confidence_tier) &&
+      Number.isInteger(feedback.detected_blocks_count) && feedback.detected_blocks_count >= 0 &&
+      Number.isFinite(feedback.explicit_rpe_coverage) && feedback.explicit_rpe_coverage >= 0 && feedback.explicit_rpe_coverage <= 1 &&
+      typeof feedback.primary_goal === 'string' && Number.isFinite(Date.parse(feedback.exported_at)) &&
+      (feedback.observed_through === '' || Number.isFinite(Date.parse(feedback.observed_through)));
+    if (feedback && !validFeedback) errors.push('Invalid mesocycle feedback; block length retained.');
+    if (validParams.length === 0 && !validFeedback) {
       return {
         success: false,
         importedCount: 0,
@@ -169,6 +182,21 @@ export class CalibratedParamService {
       }
 
       // Persist muscle landmarks if present
+      if (validParams.length) {
+        const existing = await this.db.getFirstAsync<{ value: string }>('SELECT value FROM user_settings WHERE key = ?;', CURVES_KEY);
+        let curves = {};
+        try { curves = JSON.parse(existing?.value ?? '{}'); } catch { /* Replace malformed legacy cache. */ }
+        await this.db.runAsync(
+          `INSERT INTO user_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+          CURVES_KEY, JSON.stringify({ ...curves, ...Object.fromEntries(validParams.map(p => [p.exercise_id, p])) })
+        );
+      }
+      if (validFeedback) {
+        await this.db.runAsync(
+          `INSERT INTO user_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+          MESO_FEEDBACK_KEY, JSON.stringify(feedback)
+        );
+      }
       if (envelope.muscle_landmarks && typeof envelope.muscle_landmarks === 'object') {
         await this.db.runAsync(
           `INSERT INTO user_settings (key, value) VALUES ('calibrated_muscle_landmarks', ?)
@@ -317,5 +345,6 @@ export class CalibratedParamService {
    */
   async clearAll(): Promise<void> {
     await this.db.runAsync('DELETE FROM calibrated_params;');
+    await this.db.runAsync('DELETE FROM user_settings WHERE key IN (?, ?);', CURVES_KEY, MESO_FEEDBACK_KEY);
   }
 }

@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
@@ -179,9 +181,9 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
               testID="pain-report-modal-close"
               onPress={onDismiss}
               style={styles.closeBtn}
-              accessibilityLabel="Close pain report dialog"
+              accessibilityLabel="Close pain report dialog" accessibilityRole="button"
             >
-              <Text style={styles.closeBtnText}>✕</Text>
+              <AppIcon name="close" size={20} color={uiColors.accentText} />
             </TouchableOpacity>
           </View>
 
@@ -294,7 +296,7 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
                 ]}
                 onPress={() => setPainType('muscle')}
               >
-                <Text style={styles.typeIcon}>💪</Text>
+                <AppIcon name="warning" size={20} color={uiColors.accentText} />
                 <Text
                   style={[
                     styles.typeTitle,
@@ -335,7 +337,7 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
                       styles.severityBtn,
                       isSelected && {
                         backgroundColor: activeBg,
-                        borderColor: '#FFFFFF',
+                        borderColor: uiColors.text,
                       },
                     ]}
                     onPress={() => setSeverity(num)}
@@ -375,7 +377,7 @@ export const PainReportModal: React.FC<PainReportModalProps> = ({
               testID="pain-notes-input"
               style={styles.notesInput}
               placeholder="e.g., Sharp pinch at bottom stretch, hurts when locking out..."
-              placeholderTextColor="#71717A"
+              placeholderTextColor={uiColors.subtle}
               value={notes}
               onChangeText={setNotes}
               multiline
@@ -438,10 +440,10 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   modalContent: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 14,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 18,
     width: '100%',
     maxHeight: '90%',
@@ -451,17 +453,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
+    borderBottomColor: uiColors.border,
     paddingBottom: 12,
     marginBottom: 12,
   },
   headerTitleCol: {
+    minWidth: 0,
     flex: 1,
   },
   modalTitle: {
-    color: '#FAFAFA',
-    fontSize: 17,
-    fontWeight: '800',
+    lineHeight: 28,
+    flexShrink: 1,
+    color: uiColors.text,
+    fontSize: 22,
+    fontWeight: '700',
   },
   exerciseSubtitle: {
     color: '#38BDF8',
@@ -470,13 +475,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   closeBtn: {
+    width: 44,
+    height: 44,
+    flexShrink: 0,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     padding: 6,
     marginLeft: 8,
-  },
-  closeBtnText: {
-    color: '#A1A1AA',
-    fontSize: 16,
-    fontWeight: '700',
   },
   bodyScroll: {
     maxHeight: 460,
@@ -513,41 +518,41 @@ const styles = StyleSheet.create({
     marginTop: 6,
     paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: '#27272A',
+    borderTopColor: uiColors.border,
   },
   jointChip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    backgroundColor: '#18181B',
-    borderRadius: 8,
+    backgroundColor: uiColors.raised,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
     borderColor: '#3F3F46',
   },
   secondaryJointChip: {
-    backgroundColor: '#121215',
-    borderColor: '#27272A',
+    backgroundColor: uiColors.surface,
+    borderColor: uiColors.border,
   },
   jointChipSelected: {
     backgroundColor: 'rgba(56, 189, 248, 0.15)',
     borderColor: '#38BDF8',
   },
   jointChipText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
     fontWeight: '600',
   },
   jointChipTextSelected: {
     color: '#38BDF8',
-    fontWeight: '700',
+    fontWeight: '600',
   },
   allJointsToggleBtn: {
     paddingVertical: 6,
     paddingHorizontal: 10,
-    backgroundColor: '#27272A',
-    borderRadius: 8,
+    backgroundColor: uiColors.border,
+    borderRadius: uiRadius.control,
   },
   allJointsToggleText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -562,10 +567,10 @@ const styles = StyleSheet.create({
   },
   typeCard: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1.5,
-    borderColor: '#27272A',
-    borderRadius: 10,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 12,
     alignItems: 'center',
   },
@@ -582,17 +587,17 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   typeTitle: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 4,
   },
   typeTitleSelected: {
-    color: '#FFFFFF',
-    fontWeight: '800',
+    color: uiColors.text,
+    fontWeight: '700',
   },
   typeDescription: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 10,
     textAlign: 'center',
     lineHeight: 14,
@@ -607,10 +612,10 @@ const styles = StyleSheet.create({
   severityBtn: {
     width: '18%',
     aspectRatio: 1.1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
     borderColor: '#3F3F46',
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -620,8 +625,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   severityBtnTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '900',
+    color: uiColors.text,
+    fontWeight: '700',
   },
   severeWarningBox: {
     flexDirection: 'row',
@@ -644,7 +649,7 @@ const styles = StyleSheet.create({
   severeWarningTitle: {
     color: '#FCA5A5',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   severeWarningBody: {
     color: '#FEE2E2',
@@ -653,12 +658,12 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   notesInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     padding: 10,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 12,
     textAlignVertical: 'top',
     minHeight: 52,
@@ -685,7 +690,7 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   disclaimerBold: {
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#FBBF24',
   },
   footerRow: {
@@ -694,25 +699,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     borderTopWidth: 1,
-    borderTopColor: '#27272A',
+    borderTopColor: uiColors.border,
     paddingTop: 12,
     marginTop: 8,
   },
   cancelBtn: {
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#18181B',
+    borderRadius: uiRadius.control,
+    backgroundColor: uiColors.raised,
   },
   cancelBtnText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     fontWeight: '600',
   },
   submitBtn: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     backgroundColor: '#2563EB',
   },
   submitBtnSevere: {
@@ -722,8 +727,8 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitBtnText: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

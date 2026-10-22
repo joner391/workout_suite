@@ -52,6 +52,8 @@ describe('ExportService (Step 2.3)', () => {
   const mockTemplateExercises = [
     {
       id: 'te-bench-01',
+      rest_seconds: 180,
+      rest_pause_json: JSON.stringify({ mini_sets: 3, mini_reps_min: 3, mini_reps_max: 5, rest_seconds: 15 }),
       template_id: 'template-upper-a',
       exercise_id: 'barbell_bench_press',
       gear_id: 'gear-olympic-bar',
@@ -332,6 +334,8 @@ describe('ExportService (Step 2.3)', () => {
       expect(payload.template_exercises).toHaveLength(1);
       expect(payload.template_exercises[0].target_sets).toBe(4);
       expect(payload.template_exercises[0].target_rpe).toBe(8.5);
+      expect(payload.template_exercises[0].rest_seconds).toBe(180);
+      expect(payload.template_exercises[0].rest_pause?.mini_sets).toBe(3);
 
       // Progression Rules (JSON string parse verification)
       expect(payload.progression_rules).toHaveLength(1);
@@ -391,7 +395,7 @@ describe('ExportService (Step 2.3)', () => {
       const prof = payload.user_profiles[0];
       expect(prof.gender).toBe('male');
       expect(prof.equipment_access).toBe('commercial_gym');
-      expect(prof.secondary_goals).toEqual(['strength', 'powerbuilding']);
+      expect(prof.secondary_goals).toEqual(['strength']);
 
       // Calibrated Parameters
       expect(payload.calibrated_params).toHaveLength(1);

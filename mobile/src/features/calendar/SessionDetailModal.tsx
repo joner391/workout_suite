@@ -1,3 +1,6 @@
+import { Badge } from '../../ui/Badge';
+import { ScreenHeader } from '../../ui/ScreenHeader';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — SessionDetailModal
  *
@@ -34,6 +37,9 @@ import { IExerciseRepository } from '../../domain/repositories/IExerciseReposito
 import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
 import { calculateHeuristic1RM } from '../../core/math/heuristic1rm';
 import { formatWeight, kgToLbs } from '../../core/math/unitConversion';
+import { normalizeExerciseGroups } from '../../core/exerciseGroups';
+import { WorkoutProgressionSummary } from '../../services/workoutPreviewService';
+import { readTrainingJson } from '../../services/trainingAdaptationService';
 
 export interface SessionDetailModalProps {
   visible: boolean;
@@ -65,6 +71,7 @@ export function computeSupersetInfo(sets: WorkoutSet[]): {
   exerciseMap: Map<string, SupersetInfo>;
   setMap: Map<string, SupersetInfo>;
 } {
+  sets = normalizeExerciseGroups(sets);
   const groupOrder: string[] = [];
   const groupExercises = new Map<string, string[]>();
 
@@ -186,6 +193,7 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
   const [workoutData, setWorkoutData] = useState<WorkoutWithSets | null>(null);
+  const [progressionSummary, setProgressionSummary] = useState<WorkoutProgressionSummary[]>([]);
   const [exerciseMap, setExerciseMap] = useState<Record<string, Exercise>>({});
   const [unitSystem, setUnitSystem] = useState<WeightUnit>(propUnitSystem ?? 'kg');
   const [intensityMetric, setIntensityMetric] = useState<IntensityMetric>(propIntensityMetric ?? 'RPE');
@@ -231,10 +239,13 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
 
     let isMounted = true;
     setLoading(true);
+    setProgressionSummary([]);
 
     (async () => {
       try {
         const fullWorkout = await workoutRepo.getWorkoutWithSets(workoutId);
+        const progression = await readTrainingJson<WorkoutProgressionSummary[]>(userSettingsRepo,
+          `training_progression_summary_${workoutId}`, []);
         if (!isMounted) return;
 
         if (!fullWorkout) {
@@ -244,6 +255,7 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
         }
 
         setWorkoutData(fullWorkout);
+        setProgressionSummary(progression);
 
         // Fetch distinct exercise definitions
         const distinctExIds = Array.from(
@@ -272,7 +284,7 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [visible, workoutId, workoutRepo, exerciseRepo]);
+  }, [visible, workoutId, workoutRepo, exerciseRepo, userSettingsRepo]);
 
   // Group sets by exercise
   const groupedExercises: ExerciseGroupedSets[] = useMemo(() => {
@@ -384,35 +396,16 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
       <View style={styles.modalBackdrop}>
         <View style={styles.modalContainer}>
           {/* Header */}
-          <View style={styles.headerRow}>
-            <View style={styles.titleContainer}>
-              {isImmediateSummary && (
-                <View testID="immediate-summary-banner" style={styles.completionBanner}>
-                  <Text style={styles.completionBannerText}>WORKOUT COMPLETED! 🎉</Text>
-                </View>
-              )}
-              <Text style={styles.modalTitle} numberOfLines={1}>
-                {workoutData ? workoutData.workout.name : 'Workout Details'}
-              </Text>
-              {workoutData && (
-                <Text style={styles.modalSubtitle}>
-                  {formatDateTime(workoutData.workout.date)} •{' '}
-                  {formatDuration(workoutData.workout.duration_seconds)}
-                </Text>
-              )}
-            </View>
-            <TouchableOpacity
-              onPress={onClose}
-              style={styles.closeButton}
-              accessibilityLabel="Close Details Modal"
-            >
-              <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
-          </View>
+          <ScreenHeader
+            title={workoutData?.workout.name ?? 'Workout details'}
+            subtitle={workoutData ? `${formatDateTime(workoutData.workout.date)} · ${formatDuration(workoutData.workout.duration_seconds)}` : undefined}
+            onClose={onClose}
+            actions={isImmediateSummary && <Badge testID="immediate-summary-banner" label="Workout completed" tone="accent" />}
+          />
 
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#00E676" />
+              <ActivityIndicator size="large" color={uiColors.accent} />
               <Text style={styles.loadingText}>Loading session details...</Text>
             </View>
           ) : !workoutData ? (
@@ -460,6 +453,14 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
                   ) : null}
                 </View>
               </View>
+
+              {progressionSummary.length > 0 && <View testID="workout-progression-summary" style={styles.notesCard}>
+                <Text style={styles.notesLabel}>LOAD INCREASES FOR NEXT WORKOUT</Text>
+                {progressionSummary.map((row, index) => <View key={index}>
+                  <Text style={styles.notesText}>{row.name}: {row.summary}</Text>
+                  {!!row.explanation && <Text style={styles.notesText}>{row.explanation}</Text>}
+                </View>)}
+              </View>}
 
               {/* Session Notes if any */}
               {workoutData.workout.notes ? (
@@ -560,52 +561,30 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
                             rir: s.rir,
                             rpe: s.rpe,
                           });
-                      const setSuperset =
-                        supersetInfo.setMap.get(s.id) ??
-                        (s.exercise_group_id ? groupSuperset : undefined);
-
                       return (
-                        <View key={s.id} style={styles.tableDataRow}>
+                        <View
+                          key={s.id}
+                          style={[
+                            styles.tableDataRow,
+                            s.set_type === 'warmup' && styles.typeWarmup,
+                            s.set_type === 'drop' && styles.typeDrop,
+                            s.set_type === 'dc' && styles.typeDc,
+                            s.set_type === 'myorep' && styles.typeMyorep,
+                            s.set_type === 'amrap' && styles.typeAmrap,
+                          ]}
+                        >
                           <Text style={[styles.tdCell, styles.cellSetNum]}>
                             {s.set_number}
                           </Text>
 
-                          <View style={styles.cellType}>
-                            {setSuperset && (
-                              <View
-                                testID={`superset-set-badge-${s.id}`}
-                                style={styles.supersetSetBadge}
-                              >
-                                <Text style={styles.supersetSetBadgeText}>
-                                  {setSuperset.badgeLabel}
-                                </Text>
-                              </View>
-                            )}
-                            {s.set_type !== 'working' && (
-                              <View
-                                style={[
-                                  styles.setTypeBadge,
-                                  s.set_type === 'warmup' && styles.typeWarmup,
-                                  s.set_type === 'drop' && styles.typeDrop,
-                                  s.set_type === 'dc' && styles.typeDc,
-                                  s.set_type === 'myorep' && styles.typeMyorep,
-                                  s.set_type === 'amrap' && styles.typeAmrap,
-                                ]}
-                              >
-                                <Text style={styles.setTypeBadgeText}>
-                                  {s.set_type === 'dc'
-                                    ? 'DC'
-                                    : s.set_type === 'myorep'
-                                    ? 'Myo'
-                                    : s.set_type === 'drop'
-                                    ? 'Drop'
-                                    : s.set_type === 'amrap'
-                                    ? 'AMRAP'
-                                    : 'Warm'}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
+                          <Text style={[styles.setTypeText, styles.cellType]}>
+                            {s.set_type === 'working' ? '—'
+                              : s.set_type === 'dc' ? 'DC'
+                              : s.set_type === 'myorep' ? 'Myo'
+                              : s.set_type === 'drop' ? 'Drop'
+                              : s.set_type === 'amrap' ? 'AMRAP'
+                              : 'Warm'}
+                          </Text>
 
                           <Text style={[styles.tdCell, styles.cellLoad, styles.boldCell]}>
                             {formatWeight(s.weight, unitSystem, { showUnit: false })}
@@ -672,67 +651,12 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     height: '92%',
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingTop: 16,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-  },
-  titleContainer: {
-    flex: 1,
-    marginRight: 12,
-  },
-  completionBanner: {
-    backgroundColor: 'rgba(0, 230, 118, 0.15)',
-    borderWidth: 1,
-    borderColor: '#00E676',
-    borderRadius: 6,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    marginBottom: 6,
-    alignSelf: 'flex-start',
-  },
-  completionBannerText: {
-    color: '#00E676',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FAFAFA',
-    letterSpacing: 0.3,
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    color: '#A1A1AA',
-    marginTop: 3,
-  },
-  closeButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeButtonText: {
-    color: '#FAFAFA',
-    fontSize: 14,
-    fontWeight: '700',
   },
   loadingContainer: {
     flex: 1,
@@ -740,7 +664,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 14,
     marginTop: 12,
   },
@@ -751,7 +675,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   emptyText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 15,
   },
   scrollContent: {
@@ -770,48 +694,48 @@ const styles = StyleSheet.create({
   summaryCard: {
     flex: 1,
     minWidth: '47%',
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 10,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 12,
   },
   summaryCardLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 0.6,
     marginBottom: 4,
   },
   summaryCardValue: {
     fontSize: 18,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   summaryCardSubtext: {
     fontSize: 11,
-    color: '#00E676',
+    color: uiColors.accentText,
     marginTop: 2,
     fontWeight: '600',
   },
   notesCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 10,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 12,
     marginBottom: 14,
   },
   notesLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 0.6,
     marginBottom: 4,
   },
   notesText: {
     fontSize: 14,
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     lineHeight: 20,
   },
   statusRow: {
@@ -821,14 +745,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   statusBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: uiRadius.badge,
   },
   statusCompleted: {
     backgroundColor: 'rgba(0, 230, 118, 0.15)',
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   statusInProgress: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
@@ -836,36 +762,41 @@ const styles = StyleSheet.create({
     borderColor: '#F59E0B',
   },
   statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#00E676',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
+    color: uiColors.accentText,
     letterSpacing: 0.5,
   },
   importBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
-    backgroundColor: '#18181B',
+    borderRadius: uiRadius.badge,
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   importBadgeText: {
+    lineHeight: 16,
+    fontWeight: '600',
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   sectionHeading: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#A1A1AA',
+    fontWeight: '700',
+    color: uiColors.muted,
     letterSpacing: 0.8,
     marginBottom: 10,
     marginTop: 4,
   },
   exerciseCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginBottom: 12,
   },
@@ -875,7 +806,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
     paddingBottom: 10,
   },
   exerciseInfoLeft: {
@@ -886,8 +817,8 @@ const styles = StyleSheet.create({
   },
   exerciseIndex: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
   },
   exerciseNameContainer: {
     flex: 1,
@@ -899,27 +830,30 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   supersetHeaderBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    minHeight: 26,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
     backgroundColor: 'rgba(6, 182, 212, 0.18)',
     borderWidth: 1,
     borderColor: '#06B6D4',
   },
   supersetHeaderBadgeText: {
+    lineHeight: 16,
     color: '#22D3EE',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '600',
     letterSpacing: 0.5,
   },
   exerciseNameText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   exerciseMetaText: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
   },
   exerciseSummaryRight: {
@@ -928,11 +862,11 @@ const styles = StyleSheet.create({
   exerciseTonnageText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
   },
   exerciseBestE1rmText: {
     fontSize: 11,
-    color: '#00E676',
+    color: uiColors.accentText,
     marginTop: 2,
     fontWeight: '600',
   },
@@ -941,13 +875,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
     marginBottom: 4,
   },
   thCell: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 0.5,
   },
   tableDataRow: {
@@ -959,42 +893,24 @@ const styles = StyleSheet.create({
   },
   tdCell: {
     fontSize: 13,
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
   },
   boldCell: {
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   accentCell: {
     fontWeight: '700',
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   cellSetNum: {
     width: 32,
     textAlign: 'center',
   },
   cellType: {
-    minWidth: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  supersetSetBadge: {
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: 'rgba(6, 182, 212, 0.15)',
-    borderWidth: 1,
-    borderColor: '#06B6D4',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  supersetSetBadgeText: {
-    color: '#22D3EE',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    width: 54,
+    flexShrink: 0,
+    textAlign: 'center',
   },
   cellLoad: {
     flex: 1.2,
@@ -1015,36 +931,26 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     paddingRight: 4,
   },
-  setTypeBadge: {
-    minWidth: 28,
-    height: 18,
-    paddingHorizontal: 3,
-    borderRadius: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   typeWarmup: {
-    backgroundColor: '#F59E0B',
-  },
-  typeWorking: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
   },
   typeDrop: {
-    backgroundColor: '#EC4899',
+    backgroundColor: 'rgba(236, 72, 153, 0.08)',
   },
   typeDc: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: 'rgba(59, 130, 246, 0.10)',
   },
   typeMyorep: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: 'rgba(139, 92, 246, 0.10)',
   },
   typeAmrap: {
-    backgroundColor: '#7F1D1D',
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
   },
-  setTypeBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
+  setTypeText: {
+    lineHeight: 16,
+    color: uiColors.secondaryText,
+    fontSize: 11,
+    fontWeight: '600',
   },
   footerActions: {
     marginTop: 16,
@@ -1053,21 +959,21 @@ const styles = StyleSheet.create({
   doneSummaryButton: {
     width: '100%',
     paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: '#00E676',
+    borderRadius: uiRadius.control,
+    backgroundColor: uiColors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   doneSummaryButtonText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.3,
   },
   deleteButton: {
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.4)',
     backgroundColor: 'rgba(239, 68, 68, 0.1)',

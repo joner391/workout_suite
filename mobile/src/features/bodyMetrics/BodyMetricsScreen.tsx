@@ -1,3 +1,6 @@
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
+import { ScreenHeader } from '../../ui/ScreenHeader';
+import { commonStyles } from '../../ui/theme';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -316,34 +319,13 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
     >
       <View testID="body-metrics-screen" style={styles.container}>
       {/* Header Row */}
-      <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.headerSubtitle}>ANTHROPOMETRY & PHYSIQUE</Text>
-          <Text style={styles.headerTitle}>Body Composition</Text>
-        </View>
-
-        <View style={styles.headerActions}>
-          {onOpenPlots && (
-            <TouchableOpacity
-              testID="view-charts-btn"
-              style={styles.actionBtn}
-              onPress={onOpenPlots}
-            >
-              <Text style={styles.actionBtnText}>Charts 📈</Text>
-            </TouchableOpacity>
-          )}
-
-          {onClose && (
-            <TouchableOpacity
-              testID="body-metrics-close-btn"
-              style={styles.closeBtn}
-              onPress={onClose}
-            >
-              <Text style={styles.closeBtnText}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+        <ScreenHeader
+          title="Body measurements"
+          subtitle="Bodyweight, body composition and measurements"
+          onClose={onClose}
+          closeTestID="body-metrics-close-btn"
+          actions={onOpenPlots && <TouchableOpacity testID="view-charts-btn" style={commonStyles.button} onPress={onOpenPlots}><Text style={commonStyles.buttonText}>View charts</Text></TouchableOpacity>}
+        />
 
       <ScrollView
         style={styles.scrollView}
@@ -390,7 +372,7 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
             <View style={styles.rollingDivider} />
             <View style={styles.rollingItem}>
               <Text style={styles.rollingLabel}>TREND STATUS</Text>
-              <Text style={[styles.rollingValue, { color: '#00E676' }]}>
+                <Text style={[styles.rollingValue, { color: uiColors.accentText }]}>
                 Smooth Curve
               </Text>
             </View>
@@ -632,7 +614,7 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
           </Text>
 
           {loading ? (
-            <ActivityIndicator size="small" color="#00E676" />
+              <ActivityIndicator size="small" color={uiColors.accent} />
           ) : metricsHistory.length === 0 ? (
             <View style={styles.emptyCard} testID="history-empty-card">
               <Text style={styles.emptyCardText}>
@@ -749,58 +731,9 @@ export const BodyMetricsScreen: React.FC<BodyMetricsScreenProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
     flex: 1,
-    paddingTop: 12,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 8,
-  },
-  headerSubtitle: {
-    color: '#00E676',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  actionBtn: {
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  actionBtnText: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  closeBtn: {
-    backgroundColor: '#1C1C1E',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeBtnText: {
-    color: '#AAAAAA',
-    fontSize: 16,
-    fontWeight: 'bold',
+    paddingTop: 0,
   },
   scrollView: {
     flex: 1,
@@ -811,7 +744,7 @@ const styles = StyleSheet.create({
   },
   statusToast: {
     backgroundColor: '#14291B',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     borderWidth: 1,
     borderRadius: 8,
     padding: 10,
@@ -819,14 +752,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statusToastText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 12,
     fontWeight: '700',
   },
   rollingBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#141414',
+    backgroundColor: uiColors.surface,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#262626',
@@ -844,34 +777,34 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   rollingLabel: {
-    color: '#777777',
+    color: uiColors.subtle,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   rollingValue: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   card: {
-    backgroundColor: '#141414',
-    borderRadius: 12,
+    backgroundColor: uiColors.surface,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
     borderColor: '#262626',
     padding: 14,
     marginBottom: 16,
   },
   cardHeaderTitle: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 10,
   },
   subSectionTitle: {
-    color: '#888888',
+    color: uiColors.muted,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.5,
@@ -895,21 +828,21 @@ const styles = StyleSheet.create({
   },
   textInput: {
     backgroundColor: '#1A1A1A',
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
     borderColor: '#333333',
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   primaryInput: {
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     fontWeight: '700',
   },
   navyEstimateCard: {
     backgroundColor: '#0F1E14',
-    borderRadius: 8,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
     borderColor: '#194A27',
     padding: 10,
@@ -921,9 +854,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   navyEstimateTitle: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   navyEstimateStatsRow: {
@@ -948,14 +881,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
   },
   navyEstimateValue: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   navyEstimateElbmValue: {
     color: '#10B981',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   navyEstimateSubtext: {
     color: '#88B896',
@@ -964,37 +897,37 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   saveBtn: {
-    backgroundColor: '#00E676',
-    borderRadius: 8,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 12,
     alignItems: 'center',
     marginTop: 12,
   },
   saveBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   historySection: {
     marginTop: 4,
   },
   sectionTitle: {
-    color: '#777777',
+    color: uiColors.subtle,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
     marginBottom: 8,
   },
   emptyCard: {
-    backgroundColor: '#141414',
-    borderRadius: 10,
+    backgroundColor: uiColors.surface,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#242424',
+    borderColor: uiColors.border,
     padding: 20,
     alignItems: 'center',
   },
   emptyCardText: {
-    color: '#777777',
+    color: uiColors.subtle,
     fontSize: 12,
     textAlign: 'center',
   },
@@ -1002,8 +935,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#141414',
-    borderRadius: 10,
+    backgroundColor: uiColors.surface,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
     borderColor: '#222222',
     padding: 12,
@@ -1013,14 +946,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   historyDate: {
-    color: '#888888',
+    color: uiColors.muted,
     fontSize: 11,
     fontWeight: '600',
   },
   historyWeight: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginVertical: 2,
   },
   historyPillRow: {
@@ -1033,34 +966,41 @@ const styles = StyleSheet.create({
     backgroundColor: '#14291B',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: uiRadius.badge,
   },
   historyNavyPillText: {
-    color: '#00E676',
-    fontSize: 10,
-    fontWeight: '700',
+    lineHeight: 16,
+    color: uiColors.accentText,
+    fontSize: 11,
+    fontWeight: '600',
   },
   historyElbmPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: '#064E3B',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   historyElbmPillText: {
+    lineHeight: 16,
     color: '#34D399',
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '600',
   },
   historyManualPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: '#1E293B',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   historyManualPillText: {
+    lineHeight: 16,
     color: '#38BDF8',
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '600',
   },
   historyTapeSubtext: {
     color: '#666666',

@@ -1,3 +1,8 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
+import { Badge } from '../../ui/Badge';
+import { ScreenHeader } from '../../ui/ScreenHeader';
+import { commonStyles } from '../../ui/theme';
 /**
  * Workout Suite — ExerciseLibraryScreen
  *
@@ -50,6 +55,7 @@ import {
   formatAxialLoading,
   getAxialLoadingBadgeStyle,
   formatMuscleBias,
+  uniqueMuscleBiases,
   getSentimentPillStyle,
 } from './biomechanicalFormatters';
 import { ExerciseFormModal } from './ExerciseFormModal';
@@ -354,15 +360,7 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
           {/* Header Row */}
           <View style={styles.cardHeaderRow}>
             <View style={styles.cardTitleCol}>
-              <View style={styles.titleRow}>
-                {isChild && <Text style={styles.childIndicator}>↳ </Text>}
-                <Text style={styles.exerciseNameText}>{item.name}</Text>
-                {item.is_custom && (
-                  <View style={styles.customBadge}>
-                    <Text style={styles.customBadgeText}>CUSTOM</Text>
-                  </View>
-                )}
-              </View>
+              <View style={styles.titleRow}><Text style={styles.exerciseNameText} numberOfLines={2} accessibilityLabel={item.name}>{isChild ? '↳ ' : ''}{item.name}</Text></View>
 
               {parentName && !isChild && (
                 <Text style={styles.parentSubtitle}>
@@ -388,6 +386,7 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
 
           {/* Badges Row */}
           <View style={styles.badgesRow}>
+            {item.is_custom && <Badge label="Custom" tone="accent" />}
             {/* Muscle Group */}
             <View style={styles.tagBadge}>
               <Text style={styles.tagBadgeText}>{item.muscle_group}</Text>
@@ -459,7 +458,7 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
           {/* Regional Bias Chips */}
           {item.muscle_biases && item.muscle_biases.length > 0 && (
             <View style={styles.cardBiasesRow}>
-              {item.muscle_biases.map((bias) => (
+              {uniqueMuscleBiases(item.muscle_biases).map((bias) => (
                 <View
                   key={bias}
                   testID={`chip-bias-${item.id}-${bias}`}
@@ -618,34 +617,15 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
   return (
     <View style={styles.container}>
       {/* Top Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Exercise Library</Text>
-          <Text style={styles.headerSubtitle}>
-            {exercises.length} exercises • {rootExercises.length} root movements
-          </Text>
-        </View>
-
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            testID="add-new-exercise-btn"
-            style={styles.addBtn}
-            onPress={handleOpenCreateModal}
-          >
-            <Text style={styles.addBtnText}>+ New</Text>
-          </TouchableOpacity>
-
-          {onClose && (
-            <TouchableOpacity
-              testID="close-library-btn"
-              style={styles.closeHeaderBtn}
-              onPress={onClose}
-            >
-              <Text style={styles.closeHeaderBtnText}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <ScreenHeader
+        title="Exercise library"
+        subtitle={`${exercises.length} exercises · ${rootExercises.length} root movements`}
+        onClose={onClose}
+        closeTestID="close-library-btn"
+        actions={<TouchableOpacity testID="add-new-exercise-btn" style={commonStyles.button} onPress={handleOpenCreateModal}>
+          <Text style={commonStyles.buttonText}>New exercise</Text>
+        </TouchableOpacity>}
+      />
 
       {/* Search Bar */}
       <View style={styles.searchSection}>
@@ -653,16 +633,16 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
           testID="search-library-input"
           style={styles.searchInput}
           placeholder="Search by exercise name or muscle..."
-          placeholderTextColor="#71717A"
+          placeholderTextColor={uiColors.subtle}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity
             style={styles.clearSearchBtn}
-            onPress={() => setSearchQuery('')}
+            onPress={() => setSearchQuery('')} accessibilityRole="button" accessibilityLabel="Clear search"
           >
-            <Text style={styles.clearSearchBtnText}>✕</Text>
+            <AppIcon name="close" size={20} color={uiColors.accentText} />
           </TouchableOpacity>
         )}
       </View>
@@ -754,7 +734,7 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
       {/* Main List */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#00E676" />
+          <ActivityIndicator size="large" color={uiColors.accent} />
           <Text style={styles.loadingText}>Loading catalog...</Text>
         </View>
       ) : viewMode === 'flat' ? (
@@ -838,55 +818,7 @@ export const ExerciseLibraryScreen: React.FC<ExerciseLibraryScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-  },
-  headerLeft: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#FAFAFA',
-    letterSpacing: 0.3,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#A1A1AA',
-    marginTop: 2,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  addBtn: {
-    backgroundColor: '#00E676',
-    borderRadius: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  addBtnText: {
-    color: '#000000',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  closeHeaderBtn: {
-    padding: 8,
-  },
-  closeHeaderBtnText: {
-    color: '#A1A1AA',
-    fontSize: 16,
-    fontWeight: '700',
+    backgroundColor: uiColors.background,
   },
   searchSection: {
     paddingHorizontal: 16,
@@ -895,13 +827,13 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   searchInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
   },
   clearSearchBtn: {
@@ -910,14 +842,10 @@ const styles = StyleSheet.create({
     top: 18,
     padding: 4,
   },
-  clearSearchBtnText: {
-    color: '#71717A',
-    fontSize: 14,
-  },
   filterControlsContainer: {
     paddingBottom: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   viewModeRow: {
     flexDirection: 'row',
@@ -928,73 +856,73 @@ const styles = StyleSheet.create({
   },
   viewModeToggle: {
     flexDirection: 'row',
-    backgroundColor: '#18181B',
-    borderRadius: 6,
+    backgroundColor: uiColors.raised,
+    borderRadius: uiRadius.control,
     padding: 2,
   },
   modeBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 4,
+    borderRadius: uiRadius.control,
   },
   modeBtnActive: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   modeBtnText: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     fontWeight: '600',
   },
   modeBtnTextActive: {
-    color: '#FAFAFA',
-    fontWeight: '700',
+    color: uiColors.text,
+    fontWeight: '600',
   },
   customToggleBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#18181B',
+    borderRadius: uiRadius.control,
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   customToggleBtnActive: {
     backgroundColor: '#0F291E',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   customToggleBtnText: {
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontWeight: '600',
   },
   customToggleBtnTextActive: {
-    color: '#00E676',
-    fontWeight: '800',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
   chipsFilterList: {
     paddingHorizontal: 16,
     paddingVertical: 4,
   },
   filterChip: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 14,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 10,
     paddingVertical: 5,
     marginRight: 6,
   },
   filterChipActive: {
     backgroundColor: '#0F291E',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   filterChipText: {
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontWeight: '600',
   },
   filterChipTextActive: {
-    color: '#00E676',
-    fontWeight: '800',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
   listContent: {
     padding: 16,
@@ -1007,7 +935,7 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   loadingText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     marginTop: 10,
   },
@@ -1017,27 +945,27 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   emptySubtitle: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 4,
   },
   exerciseCard: {
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 12,
     marginBottom: 8,
   },
   exerciseCardChild: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     marginLeft: 14,
     borderLeftWidth: 3,
-    borderLeftColor: '#00E676',
+    borderLeftColor: uiColors.accent,
     marginTop: 6,
   },
   exerciseCardCustom: {
@@ -1047,57 +975,49 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardHeaderRow: {
-    flexDirection: 'row',
+    gap: 8,
+    flexDirection: 'column',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
   },
   cardTitleCol: {
-    flex: 1,
+    width: '100%',
+    minWidth: 0,
+    flex: 0,
   },
   titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  childIndicator: {
-    color: '#00E676',
-    fontSize: 14,
-    fontWeight: '900',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    flexWrap: 'nowrap',
+    gap: 8,
   },
   exerciseNameText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FAFAFA',
-  },
-  customBadge: {
-    backgroundColor: '#27272A',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  customBadgeText: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#00E676',
-    letterSpacing: 0.5,
+    minHeight: 44,
+    lineHeight: 22,
+    width: '100%',
+    fontSize: 16,
+    fontWeight: '600',
+    color: uiColors.text,
   },
   parentSubtitle: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 3,
   },
   treeExpandBtn: {
-    backgroundColor: '#18181B',
+    alignSelf: 'flex-start',
+    minHeight: 36,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   treeExpandBtnText: {
     fontSize: 10,
-    color: '#00E676',
+    color: uiColors.accentText,
     fontWeight: '700',
   },
   badgesRow: {
@@ -1107,15 +1027,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   tagBadge: {
-    backgroundColor: '#18181B',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
+    minHeight: 26,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
+    borderRadius: uiRadius.badge,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   tagBadgeText: {
-    fontSize: 10,
-    color: '#A1A1AA',
-    fontWeight: '700',
+    lineHeight: 16,
+    fontSize: 11,
+    color: uiColors.muted,
+    fontWeight: '600',
   },
   tagBadgeAccent: {
     backgroundColor: '#1A2E20',
@@ -1125,18 +1048,18 @@ const styles = StyleSheet.create({
   },
   tagBadgeAccentText: {
     fontSize: 10,
-    color: '#00E676',
+    color: uiColors.accentText,
     fontWeight: '700',
   },
   tagBadgeMuted: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 3,
   },
   tagBadgeMutedText: {
     fontSize: 10,
-    color: '#71717A',
+    color: uiColors.subtle,
   },
   cardActionsRow: {
     flexDirection: 'row',
@@ -1145,7 +1068,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
   },
   cardActionBtn: {
     paddingVertical: 4,
@@ -1153,7 +1076,7 @@ const styles = StyleSheet.create({
   },
   cardActionBtnText: {
     fontSize: 12,
-    color: '#00E676',
+    color: uiColors.accentText,
     fontWeight: '700',
   },
   cardDeleteBtn: {
@@ -1168,7 +1091,7 @@ const styles = StyleSheet.create({
   cardInspectBtn: {
     paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
     backgroundColor: 'rgba(0, 230, 118, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(0, 230, 118, 0.3)',
@@ -1177,7 +1100,7 @@ const styles = StyleSheet.create({
   cardInspectBtnText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   treeChildrenContainer: {
     marginTop: 4,
@@ -1191,15 +1114,15 @@ const styles = StyleSheet.create({
   cardBiasChip: {
     paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 5,
+    borderRadius: uiRadius.control,
     backgroundColor: '#181820',
     borderWidth: 1,
     borderColor: '#2D2D38',
   },
   cardBiasChipText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#D4D4D8',
+    fontWeight: '600',
+    color: uiColors.secondaryText,
   },
   cardSentimentRow: {
     flexDirection: 'row',
@@ -1207,18 +1130,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
   },
   cardSentimentPill: {
+    minHeight: 36,
     flex: 1,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: uiRadius.badge,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cardSentimentPillText: {
-    fontSize: 10,
-    fontWeight: '800',
+    lineHeight: 16,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

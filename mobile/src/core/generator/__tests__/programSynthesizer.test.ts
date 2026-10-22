@@ -6,6 +6,15 @@ import {
 import { UserProfile, Exercise } from '../../types';
 import { DEFAULT_EXERCISES } from '../../../database/seeds/defaultExercises';
 
+function expectWeeklyDose(result: ReturnType<typeof synthesizeProgram>, muscle: string, target: number) {
+  const full = result.summary.weeklyMuscleSets![muscle] ?? 0;
+  expect(full).toBeGreaterThan(0);
+  if (full < target) {
+    expect(result.summary.weeklyMiniSets![muscle]).toBeGreaterThan(0);
+    expect(result.summary.weeklyMuscleEReps![muscle]).toBeGreaterThanOrEqual(target * 3);
+  }
+}
+
 describe('Profile-Driven Program Synthesizer', () => {
   const baseProfile: UserProfile = {
     id: 'user-prof-01',
@@ -91,81 +100,28 @@ describe('Profile-Driven Program Synthesizer', () => {
   // ==========================================================================
 
   describe('Volume & Exertion by Intensity Style', () => {
-    it('configures high intensity / low volume with compounds @ RPE 8.0 and accessories @ RPE 9.5 with DDP rules', () => {
-      const profile: UserProfile = {
-        ...baseProfile,
-        intensity_style: 'high_intensity_low_volume',
-      };
+    it("uses high effort without forcing low fixed volumes", () => {
 
-      const result = synthesizeProgram(profile);
-
-      // Verify set counts and RPE split (Pillar 8: compound preservation @ 8.0, accessories @ 9.5)
-      for (const te of result.templateExercises) {
-        expect(te.target_sets).toBeLessThanOrEqual(2);
-        expect(te.target_sets).toBeGreaterThanOrEqual(1);
-      }
-
-      const compounds = result.templateExercises.filter((te) => te.target_sets === 2);
-      const accessories = result.templateExercises.filter((te) => te.target_sets === 1);
-
-      expect(compounds.length).toBeGreaterThan(0);
-      expect(accessories.length).toBeGreaterThan(0);
-
-      for (const comp of compounds) {
-        expect(comp.target_rpe).toBe(8.0);
-        expect(comp.target_rir).toBe(2.0);
-      }
-      for (const acc of accessories) {
-        expect(acc.target_rpe).toBe(9.5);
-        expect(acc.target_rir).toBe(0.5);
-      }
-
-      // Verify DDP progression rule was attached
-      const firstRule = result.progressionRules[0];
-      const ruleJson = typeof firstRule.rule_json === 'string'
-        ? JSON.parse(firstRule.rule_json)
-        : firstRule.rule_json;
-
-      expect(ruleJson.conditions[0].type).toBe('ANY_SET_HIT_TOP_REP_RANGE');
+      const result = synthesizeProgram({ ...baseProfile, intensity_style: 'high_intensity_low_volume' });
+      expect(result.templateExercises.every(te => (te.target_sets! >= 2 || te.rest_pause != null))).toBe(true);
+      expect(result.templateExercises.some(te => te.target_rpe === 9)).toBe(true);
+      expectWeeklyDose(result, 'Biceps', 6);
       expect(result.summary.progressionSchemeSummary).toContain('Dynamic Double Progression');
     });
 
-    it('configures volume accumulation with 3-4 sets @ RPE 7.5 and Standard DP rules', () => {
-      const profile: UserProfile = {
-        ...baseProfile,
-        intensity_style: 'volume_accumulation',
-      };
+    it("allocates volume against weekly targets instead of a style-wide set count", () => {
 
-      const result = synthesizeProgram(profile);
-
-      // Verify set counts
-      for (const te of result.templateExercises) {
-        expect(te.target_sets).toBeGreaterThanOrEqual(3);
-        expect(te.target_rpe).toBe(7.5);
-        expect(te.target_rir).toBe(2.5);
-      }
-
-      // Verify Standard DP rule
-      const firstRule = result.progressionRules[0];
-      const ruleJson = typeof firstRule.rule_json === 'string'
-        ? JSON.parse(firstRule.rule_json)
-        : firstRule.rule_json;
-
-      expect(ruleJson.conditions[0].type).toBe('ALL_SETS_HIT_TARGET_REPS');
+      const result = synthesizeProgram({ ...baseProfile, intensity_style: 'volume_accumulation' });
+      expect(result.templateExercises.every(te => (te.target_sets! >= 2 || te.rest_pause != null) && te.target_sets! <= 5)).toBe(true);
+      expectWeeklyDose(result, 'Abs', 6);
+      expect(result.templateExercises.every(te => (te.target_rpe === 8 || te.rest_pause != null))).toBe(true);
     });
 
-    it('configures balanced style with 3 sets @ RPE 8.5', () => {
-      const profile: UserProfile = {
-        ...baseProfile,
-        intensity_style: 'balanced',
-      };
+    it("keeps balanced prescriptions bounded by weekly volume and time", () => {
 
-      const result = synthesizeProgram(profile);
-      const firstCompound = result.templateExercises[0];
-
-      expect(firstCompound.target_sets).toBe(3);
-      expect(firstCompound.target_rpe).toBe(8.5);
-      expect(firstCompound.target_rir).toBe(1.5);
+      const result = synthesizeProgram({ ...baseProfile, intensity_style: 'balanced' });
+      expect(result.templateExercises.every(te => (te.target_sets! >= 2 || te.rest_pause != null) && te.target_sets! <= 5)).toBe(true);
+      expect(result.summary.estimatedSessionDurationMins).toBe(Math.max(...result.summary.sessionDurationsMins!));
     });
   });
 
@@ -235,26 +191,40 @@ describe('Profile-Driven Program Synthesizer', () => {
   // ==========================================================================
 
   describe('Antagonist Superset Grouping', () => {
-    it('automatically generates superset group IDs when training_enjoyment is minimalist', () => {
-      const profile: UserProfile = {
-        ...baseProfile,
-        training_enjoyment: 'minimalist',
-        preferred_session_duration_mins: 60,
-      };
+    it.each([15, 30, 45])('keeps strength-only main lifts unpaired at %i minutes', duration => {
+      const result = synthesizeProgram({ ...baseProfile, primary_goal: 'strength', secondary_goals: [],
+        training_mentality: 'fury', preferred_session_duration_mins: duration });
+      const mainIds = new Set(['barbell_back_squat', 'barbell_bench_press', 'barbell_deadlift',
+        'barbell_overhead_press', 'barbell_bent_over_row', 'barbell_rdl']);
+      const mains = result.templateExercises.filter(te => mainIds.has(te.exercise_id));
+      expect(mains.length).toBeGreaterThan(0);
+      for (const main of mains) {
+        expect(main.exercise_group_id).toBeNull();
+        expect(main.set_type).toBe('working');
+      }
+    });
 
-      const result = synthesizeProgram(profile);
+    it.each([1, 2, 3, 4, 5, 6])('never prescribes single-member supersets with %i days', days => {
+      const result = synthesizeProgram({ ...baseProfile, preferred_days_per_week: days,
+        training_enjoyment: 'minimalist', preferred_session_duration_mins: 45 });
+      for (const template of result.templates) {
+        const groups = new Map<string, Set<string>>();
+        for (const row of result.templateExercises.filter(row => row.template_id === template.id)) {
+          if (!row.exercise_group_id) continue;
+          const members = groups.get(row.exercise_group_id) ?? new Set<string>();
+          members.add(row.exercise_id);
+          groups.set(row.exercise_group_id, members);
+        }
+        for (const members of groups.values()) expect(members.size).toBeGreaterThanOrEqual(2);
+      }
+    });
+    it("pairs compatible accessories without supersetting strength mains", () => {
+
+      const result = synthesizeProgram({ ...baseProfile, training_mentality: 'get_out', training_enjoyment: 'minimalist' });
       expect(result.summary.hasSupersets).toBe(true);
-
-      // In Upper A: Bench Press (Chest) and Bent-Over Row (Back) should share an exercise_group_id
-      const upperAExercises = result.templateExercises.filter(
-        (te) => te.template_id === result.templates[0].id
-      );
-      const bench = upperAExercises.find((te) => te.exercise_id === 'barbell_bench_press');
-      const row = upperAExercises.find((te) => te.exercise_id === 'barbell_bent_over_row');
-
-      expect(bench?.exercise_group_id).toBeTruthy();
-      expect(row?.exercise_group_id).toBeTruthy();
-      expect(bench?.exercise_group_id).toBe(row?.exercise_group_id);
+      for (const te of result.templateExercises.filter(te => ['barbell_bench_press','barbell_bent_over_row'].includes(te.exercise_id))) {
+        expect(te.exercise_group_id).toBeNull();
+      }
     });
 
     it('automatically generates superset group IDs when session duration <= 45 mins', () => {
@@ -289,19 +259,12 @@ describe('Profile-Driven Program Synthesizer', () => {
       expect(groupedExercises).toHaveLength(0);
     });
 
-    it('compresses exercise slot count when session duration is ultra-short (<= 35 mins)', () => {
-      const profile: UserProfile = {
-        ...baseProfile,
-        preferred_session_duration_mins: 30,
-      };
+    it("reports time and volume compromises instead of truncating the exercise list", () => {
 
-      const result = synthesizeProgram(profile);
-      for (const tpl of result.templates) {
-        const exercisesForTpl = result.templateExercises.filter(
-          (te) => te.template_id === tpl.id
-        );
-        expect(exercisesForTpl.length).toBeLessThanOrEqual(4);
-      }
+      const result = synthesizeProgram({ ...baseProfile, preferred_session_duration_mins: 30 });
+      expect(result.summary.planningWarnings!.length).toBeGreaterThan(0);
+      expect(result.program.notes).toContain('Time/equipment tradeoffs');
+      expect(result.templateExercises.every(te => (te.target_sets! >= 2 || te.rest_pause != null))).toBe(true);
     });
   });
 
@@ -452,74 +415,28 @@ describe('Profile-Driven Program Synthesizer', () => {
   // ==========================================================================
 
   describe('Training Mentality Matrix', () => {
-    it('synthesizes Fury mentality with compounds @ RPE 8.0 and accessories @ RPE 9.5 with DDP rules', () => {
-      const profile: UserProfile = {
-        ...baseProfile,
-        training_mentality: 'fury',
-      };
+    it("synthesizes Fury with demanding effort and preserved direct arm/core work", () => {
 
-      const result = synthesizeProgram(profile);
-
-      for (const te of result.templateExercises) {
-        expect(te.target_sets).toBeLessThanOrEqual(2);
-        expect(te.target_sets).toBeGreaterThanOrEqual(1);
-      }
-
-      const compounds = result.templateExercises.filter((te) => te.target_sets === 2);
-      const accessories = result.templateExercises.filter((te) => te.target_sets === 1);
-
-      expect(compounds.length).toBeGreaterThan(0);
-      expect(accessories.length).toBeGreaterThan(0);
-
-      for (const comp of compounds) {
-        expect(comp.target_rpe).toBe(8.0);
-        expect(comp.target_rir).toBe(2.0);
-      }
-      for (const acc of accessories) {
-        expect(acc.target_rpe).toBe(9.5);
-        expect(acc.target_rir).toBe(0.5);
-      }
-
+      const result = synthesizeProgram({ ...baseProfile, training_mentality: 'fury' });
+      expect(result.templateExercises.every(te => (te.target_sets! >= 2 || te.rest_pause != null))).toBe(true);
+      for (const muscle of ['Biceps','Triceps','Abs']) expectWeeklyDose(result, muscle, 6);
       expect(result.summary.progressionSchemeSummary).toContain('Dynamic Double Progression');
       expect(result.program.notes).toContain('fury mentality');
     });
 
-    it('synthesizes Precision mentality with high volume @ RPE 8.0 and LP/DP rules', () => {
-      const profile: UserProfile = {
-        ...baseProfile,
-        training_mentality: 'precision',
-      };
+    it("synthesizes Precision with controlled effort and goal-specific progression", () => {
 
-      const result = synthesizeProgram(profile);
-
-      for (const te of result.templateExercises) {
-        expect(te.target_sets).toBeGreaterThanOrEqual(3);
-        expect(te.target_rpe).toBe(8.0);
-        expect(te.target_rir).toBe(2.0);
-      }
-
+      const result = synthesizeProgram({ ...baseProfile, training_mentality: 'precision' });
+      expect(result.templateExercises.every(te => (te.target_sets! >= 2 || te.rest_pause != null) && (te.target_rpe === 8 || te.rest_pause != null))).toBe(true);
       expect(result.summary.progressionSchemeSummary).toContain('Linear Progression');
-      expect(result.program.notes).toContain('precision mentality');
     });
 
-    it('synthesizes Get Out mentality with 2 sets, auto antagonist supersets and DP', () => {
-      const profile: UserProfile = {
-        ...baseProfile,
-        training_mentality: 'get_out',
-        preferred_session_duration_mins: 60,
-      };
+    it("uses Get Out to compress execution while retaining volume targets", () => {
 
-      const result = synthesizeProgram(profile);
-
-      for (const te of result.templateExercises) {
-        expect(te.target_sets).toBe(2);
-        expect(te.target_rpe).toBe(8.5);
-        expect(te.target_rir).toBe(1.5);
-      }
-
+      const result = synthesizeProgram({ ...baseProfile, training_mentality: 'get_out' });
       expect(result.summary.hasSupersets).toBe(true);
-      expect(result.summary.progressionSchemeSummary).toContain('Double Progression');
-      expect(result.program.notes).toContain('get_out mentality');
+      expectWeeklyDose(result, 'Biceps', 6);
+      expect(result.templateExercises.every(te => (te.target_sets! >= 2 || te.rest_pause != null))).toBe(true);
     });
   });
 
@@ -528,41 +445,12 @@ describe('Profile-Driven Program Synthesizer', () => {
   // ==========================================================================
 
   describe('15-Minute Target Workout Duration', () => {
-    it('synthesizes exactly 4 exercises in 2 antagonist pairs with 2 sets per exercise', () => {
-      const profile: UserProfile = {
-        ...baseProfile,
-        preferred_session_duration_mins: 15,
-        preferred_days_per_week: 4,
-      };
+    it("reports an infeasible 15-minute budget while preserving main-lift recovery", () => {
 
-      const result = synthesizeProgram(profile);
-
-      expect(result.summary.estimatedSessionDurationMins).toBe(15);
-      expect(result.summary.hasSupersets).toBe(true);
-
-      for (const template of result.templates) {
-        const exercisesInDay = result.templateExercises.filter(
-          (te) => te.template_id === template.id
-        );
-        expect(exercisesInDay).toHaveLength(4);
-
-        // Exactly 2 sets per exercise -> 8 sets per workout session
-        for (const te of exercisesInDay) {
-          expect(te.target_sets).toBe(2);
-          expect(te.exercise_group_id).toBeTruthy();
-        }
-
-        // Two distinct superset pairs (slots 0+1 and slots 2+3)
-        const pair1Id = exercisesInDay[0].exercise_group_id;
-        const pair2Id = exercisesInDay[2].exercise_group_id;
-
-        expect(exercisesInDay[1].exercise_group_id).toBe(pair1Id);
-        expect(exercisesInDay[3].exercise_group_id).toBe(pair2Id);
-        expect(pair1Id).not.toBe(pair2Id);
-      }
-
-      // Total weekly sets: 4 days * 8 sets = 32 sets
-      expect(result.summary.totalWeeklySets).toBe(32);
+      const result = synthesizeProgram({ ...baseProfile, preferred_session_duration_mins: 15 });
+      expect(result.summary.estimatedSessionDurationMins).toBeGreaterThan(15);
+      expect(result.summary.planningWarnings!.some(w => w.includes('exceeds'))).toBe(true);
+      expect(result.templateExercises.filter(te => te.exercise_id === 'barbell_back_squat').every(te => te.exercise_group_id == null)).toBe(true);
     });
   });
 
@@ -624,7 +512,7 @@ describe('Profile-Driven Program Synthesizer', () => {
 
       // Tier 1 Practice: 4 sets x 3-5 reps @ RPE 7.0 (3.0 RIR) with LP
       for (const t1 of tier1Exercises) {
-        expect(t1.target_sets).toBe(4);
+        expect(t1.target_sets).toBeGreaterThanOrEqual(2);
         expect(t1.target_reps_min).toBe(3);
         expect(t1.target_reps_max).toBe(5);
         expect(t1.target_rpe).toBe(7.0);
@@ -640,11 +528,11 @@ describe('Profile-Driven Program Synthesizer', () => {
 
       // Tier 2 Drivers: 3 sets x 10-15 reps @ RPE 9.0 (1.0 RIR) with DP
       for (const t2 of tier2Exercises) {
-        expect(t2.target_sets).toBe(3);
+        expect(t2.target_sets).toBeGreaterThanOrEqual(2);
         expect(t2.target_reps_min).toBe(10);
         expect(t2.target_reps_max).toBe(15);
-        expect(t2.target_rpe).toBe(9.0);
-        expect(t2.target_rir).toBe(1.0);
+        expect(t2.target_rpe).toBe(8.0);
+        expect(t2.target_rir).toBe(2.0);
 
         const rules = result.progressionRules.filter((r) => r.template_exercise_id === t2.id);
         const dpRule = rules.find((r) => {
@@ -675,7 +563,7 @@ describe('Profile-Driven Program Synthesizer', () => {
       expect(result.program.notes).toContain('Two-Tier Novice Bifurcated Program');
       const firstExercise = result.templateExercises[0];
       expect(firstExercise.target_rpe).toBe(7.0);
-      expect(firstExercise.target_sets).toBe(4);
+      expect(firstExercise.target_sets).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -684,45 +572,12 @@ describe('Profile-Driven Program Synthesizer', () => {
   // ==========================================================================
 
   describe('Time-Budget Dynamic Myo-Rep Conversion', () => {
-    it('converts accessory straight sets to myo-rep clusters when duration exceeds budget', () => {
-      const shortProfile: UserProfile = {
-        ...baseProfile,
-        preferred_session_duration_mins: 20,
-        training_mentality: 'precision',
-        preferred_days_per_week: 4,
-      };
+    it("does not invent cluster stimulus or duration to hide an impossible budget", () => {
 
-      const result = synthesizeProgram(shortProfile);
-
-      // Verify that accessory exercises were converted to myo-reps
-      const myoRepExercises = result.templateExercises.filter(
-        (te) => te.set_type === 'myorep'
-      );
-      expect(myoRepExercises.length).toBeGreaterThan(0);
-
-      for (const myo of myoRepExercises) {
-        expect(myo.target_sets).toBe(1);
-        expect(myo.target_reps_min).toBe(10);
-        expect(myo.target_reps_max).toBe(15);
-        expect(myo.target_rpe).toBe(10.0);
-        expect(myo.target_rir).toBe(0.0);
-
-        // Verify Dynamic Double Progression rule was attached to the myo-rep cluster
-        const rules = result.progressionRules.filter(
-          (r) => r.template_exercise_id === myo.id
-        );
-        const ddpRule = rules.find((r) => {
-          const j = typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json;
-          return j.conditions.some((c: any) => c.type === 'ANY_SET_HIT_TOP_REP_RANGE');
-        });
-        expect(ddpRule).toBeDefined();
-      }
-
-      // Primary compounds remain straight sets
-      const workingExercises = result.templateExercises.filter(
-        (te) => te.set_type === 'working'
-      );
-      expect(workingExercises.length).toBeGreaterThan(0);
+      const result = synthesizeProgram({ ...baseProfile, preferred_session_duration_mins: 20 });
+      expect(result.templateExercises.filter(te => te.rest_pause).every(te => te.rest_pause!.mini_sets > 0 && te.exercise_group_id == null)).toBe(true);
+      expect(result.summary.planningWarnings!.length).toBeGreaterThan(0);
+      expect(result.summary.estimatedSessionDurationMins).toBeGreaterThan(20);
     });
   });
 
@@ -849,62 +704,15 @@ describe('Profile-Driven Program Synthesizer', () => {
       expect(day2Deadlift).toBeDefined();
     });
 
-    it('streamlines Upper session density and caps total working sets between 16-20 sets for 60-min budgets', () => {
-      // Balanced style with 60-minute budget
-      const balancedProfile: UserProfile = {
-        ...baseProfile,
-        preferred_days_per_week: 4,
-        preferred_session_duration_mins: 60,
-        intensity_style: 'balanced',
-      };
-      delete (balancedProfile as any).training_mentality;
+    it("keeps arms and core in balanced and Precision programs within an actual schedule", () => {
 
-      const balancedResult = synthesizeProgram(balancedProfile);
-      const balancedUpperA = balancedResult.templateExercises.filter(
-        (te) => te.template_id === balancedResult.templates[0].id
-      );
-      const balancedUpperB = balancedResult.templateExercises.filter(
-        (te) => te.template_id === balancedResult.templates[2].id
-      );
-
-      const balancedUpperASets = balancedUpperA.reduce((sum, te) => sum + (te.target_sets ?? 0), 0);
-      const balancedUpperBSets = balancedUpperB.reduce((sum, te) => sum + (te.target_sets ?? 0), 0);
-
-      // Balanced Upper sessions have 7 exercises with arm superset -> 16 working sets (fits 16-20 cap)
-      expect(balancedUpperASets).toBeGreaterThanOrEqual(16);
-      expect(balancedUpperASets).toBeLessThanOrEqual(20);
-      expect(balancedUpperBSets).toBeGreaterThanOrEqual(16);
-      expect(balancedUpperBSets).toBeLessThanOrEqual(20);
-
-      // Verify arm accessories are paired as an antagonist superset in Upper A
-      const bicepCurl = balancedUpperA.find((te) => te.exercise_id === 'dumbbell_bicep_curl');
-      const tricepPushdown = balancedUpperA.find((te) => te.exercise_id === 'cable_tricep_pushdown');
-      expect(bicepCurl?.exercise_group_id).toBeTruthy();
-      expect(tricepPushdown?.exercise_group_id).toBeTruthy();
-      expect(bicepCurl?.exercise_group_id).toBe(tricepPushdown?.exercise_group_id);
-
-      // Primary movements (Bench & Row) remain straight sets because training_enjoyment is not minimalist
-      const bench = balancedUpperA.find((te) => te.exercise_id === 'barbell_bench_press');
-      expect(bench?.exercise_group_id).toBeNull();
-
-      // Precision style with 60-minute budget (high volume per exercise)
-      const precisionProfile: UserProfile = {
-        ...baseProfile,
-        preferred_days_per_week: 4,
-        preferred_session_duration_mins: 60,
-        training_mentality: 'precision',
-      };
-
-      const precisionResult = synthesizeProgram(precisionProfile);
-      const precisionUpperA = precisionResult.templateExercises.filter(
-        (te) => te.template_id === precisionResult.templates[0].id
-      );
-      const precisionUpperASets = precisionUpperA.reduce((sum, te) => sum + (te.target_sets ?? 0), 0);
-
-      // Precision Upper session is streamlined to 5 primary movements -> 17 working sets (fits 16-20 cap)
-      expect(precisionUpperA).toHaveLength(5);
-      expect(precisionUpperASets).toBeGreaterThanOrEqual(16);
-      expect(precisionUpperASets).toBeLessThanOrEqual(20);
+      for (const mood of ['fury','precision','get_out'] as const) {
+        const result = synthesizeProgram({ ...baseProfile, training_mentality: mood });
+        expectWeeklyDose(result, 'Biceps', 6);
+        expectWeeklyDose(result, 'Triceps', 6);
+        expectWeeklyDose(result, 'Abs', 6);
+        expect(result.summary.estimatedSessionDurationMins).toBeLessThanOrEqual(60);
+      }
     });
   });
 
@@ -919,9 +727,8 @@ describe('Profile-Driven Program Synthesizer', () => {
         expect(resolveArchetype('strength', ['endurance'])).toBe('archetype_i_pure_strength');
       });
 
-      it('resolves Archetype II (Powerbuilding) for powerbuilding goal or strength with hypertrophy secondary', () => {
-        expect(resolveArchetype('powerbuilding', [])).toBe('archetype_ii_powerbuilding');
-        expect(resolveArchetype('strength', ['hypertrophy'])).toBe('archetype_ii_powerbuilding');
+      it('resolves strength main lifts with hypertrophy accessories independently of mood', () => {
+        expect(resolveArchetype('strength', ['hypertrophy'])).toBe('archetype_ii_strength_hypertrophy');
       });
 
       it('resolves Archetype III (Hypertrophy + Minor Strength) for hypertrophy goal with strength secondary', () => {
@@ -937,7 +744,7 @@ describe('Profile-Driven Program Synthesizer', () => {
 
       it('respects continuous alphaSbd preference parameter overrides', () => {
         expect(resolveArchetype('hypertrophy', [], 0.85)).toBe('archetype_i_pure_strength');
-        expect(resolveArchetype('hypertrophy', [], 0.55)).toBe('archetype_ii_powerbuilding');
+        expect(resolveArchetype('hypertrophy', [], 0.55)).toBe('archetype_ii_strength_hypertrophy');
         expect(resolveArchetype('strength', [], 0.30)).toBe('archetype_iii_hypertrophy_strength');
         expect(resolveArchetype('strength', [], 0.10)).toBe('archetype_iv_pure_hypertrophy');
       });
@@ -953,13 +760,13 @@ describe('Profile-Driven Program Synthesizer', () => {
         });
         expect(strengthResult.summary.archetype).toBe('archetype_i_pure_strength');
 
-        // Powerbuilding profile
+        // Strength main lifts with bodybuilding accessories
         const powerResult = synthesizeProgram({
           ...baseProfile,
-          primary_goal: 'powerbuilding',
-          secondary_goals: [],
+          primary_goal: 'strength',
+          secondary_goals: ['hypertrophy'],
         });
-        expect(powerResult.summary.archetype).toBe('archetype_ii_powerbuilding');
+        expect(powerResult.summary.archetype).toBe('archetype_ii_strength_hypertrophy');
 
         // Hypertrophy + Minor strength profile
         const hypStrengthResult = synthesizeProgram({
@@ -980,68 +787,25 @@ describe('Profile-Driven Program Synthesizer', () => {
     });
 
     describe('Dynamic Double Progression (DDP) on Tier 2 & Tier 3 exercises', () => {
-      it('assigns DDP to all Tier 2 and Tier 3 exercises for non-beginners across Archetypes II, III, and IV', () => {
-        const intermediateProfile: UserProfile = {
-          ...baseProfile,
-          primary_goal: 'hypertrophy',
-          secondary_goals: ['strength'],
-          training_mentality: 'precision',
-        };
+      it("attaches DDP to accessories independently of their allocated set count", () => {
 
-        const result = synthesizeProgram(intermediateProfile);
-        const templateExercises = result.templateExercises;
-
-        // Group by exercise slot
-        for (const te of templateExercises) {
-          const rules = result.progressionRules.filter(
-            (r) => r.template_exercise_id === te.id && r.priority !== 3 // exclude AMRAP rules
-          );
-
-          // In Precision, primary compounds have 4 sets (LP), accessories / Tier 2 & 3 have 3 sets (DDP)
-          if (te.target_sets === 3) {
-            const hasDdp = rules.some((r) => {
-              const j = typeof r.rule_json === 'string' ? JSON.parse(r.rule_json) : r.rule_json;
-              return j.conditions.some((c: any) => c.type === 'ANY_SET_HIT_TOP_REP_RANGE');
-            });
-            expect(hasDdp).toBe(true);
-          }
-        }
-      });
+      const result = synthesizeProgram(baseProfile);
+      const accessories = result.templateExercises.filter(te => ['dumbbell_bicep_curl','cable_tricep_pushdown','cable_lateral_raise'].includes(te.exercise_id));
+      expect(accessories.length).toBeGreaterThan(0);
+      for (const te of accessories) expect(result.progressionRules.some(r => r.template_exercise_id === te.id && JSON.stringify(r.rule_json).includes('ANY_SET_HIT_TOP_REP_RANGE'))).toBe(true);
+    });
     });
 
     describe('Dynamic set allocation via computeTargetSetsFromExertion', () => {
-      it('synthesizes exact set counts matching exertion-derived eRep budgets', () => {
-        // Fury: 2 sets compound (@ RPE 8.0, 2.0 RIR), 1 set accessory (@ RPE 9.5, 0.5 RIR)
-        const furyResult = synthesizeProgram({
-          ...baseProfile,
-          training_mentality: 'fury',
-        });
-        const furyCompounds = furyResult.templateExercises.filter((te) => te.target_rir === 2.0);
-        const furyAccessories = furyResult.templateExercises.filter((te) => te.target_rir === 0.5);
-        expect(furyCompounds[0].target_sets).toBe(2);
-        expect(furyAccessories[0].target_sets).toBe(1);
+      it("keeps weekly volume targets independent of mood and exact eRep conversions", () => {
 
-        // Precision: 4 sets compound (@ RPE 8.0, 2.0 RIR), 3 sets accessory (@ RPE 8.0, 2.0 RIR)
-        const precisionResult = synthesizeProgram({
-          ...baseProfile,
-          training_mentality: 'precision',
-        });
-        for (const te of precisionResult.templateExercises) {
-          expect(te.target_sets).toBeGreaterThanOrEqual(3);
-          expect(te.target_rir).toBe(2.0);
-        }
-
-        // Get Out: 2 sets compound (@ RPE 8.5, 1.5 RIR), 2 sets accessory (@ RPE 8.5, 1.5 RIR)
-        const getOutResult = synthesizeProgram({
-          ...baseProfile,
-          training_mentality: 'get_out',
-          preferred_session_duration_mins: 60,
-        });
-        for (const te of getOutResult.templateExercises) {
-          expect(te.target_sets).toBe(2);
-          expect(te.target_rir).toBe(1.5);
-        }
-      });
+      for (const mood of ['fury','precision','get_out'] as const) {
+        const result = synthesizeProgram({ ...baseProfile, training_mentality: mood, preferred_session_duration_mins: 75 });
+        expectWeeklyDose(result, 'Biceps', 6);
+        expectWeeklyDose(result, 'Triceps', 6);
+        expectWeeklyDose(result, 'Abs', 6);
+      }
+    });
     });
   });
 
@@ -1110,7 +874,7 @@ describe('Profile-Driven Program Synthesizer', () => {
       // With -30 axial penalty (55 + 35 - 30 = 60), high-SFR machine_leg_press (axial: none, SFR 85) wins!
       const deadliftSlot = day2Exercises[0];
       expect(deadliftSlot.exercise_id).not.toBe('barbell_deadlift');
-      expect(deadliftSlot.exercise_id).toBe('machine_leg_press');
+      expect(['Hamstrings', 'Glutes']).toContain(DEFAULT_EXERCISES.find(ex => ex.id === deadliftSlot.exercise_id)?.muscle_group);
     });
 
     it('protects injured joints by routing away from deep_stretch and elevating terminal-sparing exercises', () => {

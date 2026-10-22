@@ -234,6 +234,23 @@
       "required": ["id", "template_id", "exercise_id", "order_index"],
       "additionalProperties": false,
       "properties": {
+        "rest_pause": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["mini_sets", "mini_reps_min", "mini_reps_max", "rest_seconds"],
+          "properties": {
+            "mini_sets": { "type": "integer", "minimum": 1, "maximum": 5 },
+            "mini_reps_min": { "type": "integer", "minimum": 1, "maximum": 10 },
+            "mini_reps_max": { "type": "integer", "minimum": 1, "maximum": 10 },
+            "rest_seconds": { "type": "integer", "minimum": 10, "maximum": 60 }
+          },
+          "description": "Mini-sets following each activation set; represented separately in logging and volume summaries."
+        },
+        "rest_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Prescribed rest between sets or superset rounds. Null uses exercise defaults."
+        },
         "id": {
           "type": "string",
           "description": "Unique identifier for the template exercise prescription."
@@ -764,14 +781,14 @@
             "endurance",
             "longevity"
           ],
-          "description": "Primary training objective."
+          "description": "Primary training objective. Legacy powerbuilding inputs remain accepted for old exports; readers normalize them to strength primary with hypertrophy secondary, preserving training mentality. New exports use strength, hypertrophy, endurance or longevity."
         },
         "secondary_goals": {
           "type": ["array", "null"],
           "items": {
             "type": "string"
           },
-          "description": "Optional secondary training goals."
+          "description": "Optional secondary training goals. Legacy powerbuilding entries expand to strength and hypertrophy, excluding the primary goal and duplicates."
         },
         "preferred_days_per_week": {
           "type": "integer",

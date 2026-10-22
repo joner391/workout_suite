@@ -1,3 +1,5 @@
+import { ScreenHeader } from '../../ui/ScreenHeader';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — ExerciseDetailScreen
  *
@@ -52,6 +54,7 @@ import {
   formatAxialLoading,
   getAxialLoadingBadgeStyle,
   formatMuscleBias,
+  uniqueMuscleBiases,
   getSentimentPillStyle,
 } from './biomechanicalFormatters';
 import { PRBoardTable } from './PRBoardTable';
@@ -59,6 +62,8 @@ import { SBDStandardsCard } from './SBDStandardsCard';
 import { SBDBalanceRadarChart } from './SBDBalanceRadarChart';
 import { SessionDetailModal } from '../calendar/SessionDetailModal';
 import { formatWeight } from '../../core/math/unitConversion';
+import { ExerciseControls } from '../../core/rules/trainingAdaptation';
+import { TRAINING_CONTROLS_KEY, readTrainingJson } from '../../services/trainingAdaptationService';
 
 export interface ExerciseDetailScreenProps {
   exerciseId: string;
@@ -84,6 +89,25 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
   onClose,
 }) => {
   const optionalRepos = useOptionalRepositories();
+  const controlsSettings = userSettingsRepo ?? optionalRepos?.userSettingsRepo;
+  const [trainingControls, setTrainingControls] = useState<ExerciseControls>({});
+  const [strengthFocus, setStrengthFocus] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([readTrainingJson<Record<string, ExerciseControls>>(controlsSettings, TRAINING_CONTROLS_KEY, {}),
+      optionalRepos?.userProfileRepo.getProfile()]).then(([all, profile]) => {
+      if (alive) { setTrainingControls(all[exerciseId] ?? {});
+        setStrengthFocus(profile?.primary_goal === 'strength'); }
+    });
+    return () => { alive = false; };
+  }, [exerciseId, controlsSettings, optionalRepos?.userProfileRepo]);
+  const toggleTrainingControl = async (key: 'anchor' | 'main', current: boolean) => {
+    if (!controlsSettings) return;
+    const all = await readTrainingJson<Record<string, ExerciseControls>>(controlsSettings, TRAINING_CONTROLS_KEY, {});
+    const updated = { ...all[exerciseId], [key]: !current };
+    await controlsSettings.set(TRAINING_CONTROLS_KEY, JSON.stringify({ ...all, [exerciseId]: updated }));
+    setTrainingControls(updated);
+  };
 
   const inspectionService = useMemo(
     () => propInspectionService ?? new ExerciseInspectionService(workoutRepo, exerciseRepo),
@@ -338,7 +362,7 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
   if (loading || !exercise) {
     return (
       <View style={styles.loadingScreen} testID="exercise-detail-loading">
-        <ActivityIndicator size="large" color="#00E676" />
+        <ActivityIndicator size="large" color={uiColors.accent} />
         <Text style={styles.loadingText}>Loading exercise analytics...</Text>
       </View>
     );
@@ -357,30 +381,12 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
   return (
     <View style={styles.container} testID="exercise-detail-screen">
       {/* Top Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTitleCol}>
-          <Text style={styles.headerSubtitle}>
-            {exercise.muscle_group.toUpperCase()} • {exercise.category.toUpperCase()}
-          </Text>
-          <Text style={styles.headerTitle}>{exercise.name}</Text>
-          {exercise.default_bar_weight_kg > 0 && exercise.category === 'Barbell' && (
-            <Text style={styles.gearTareSubtext}>
-              Tare: {exercise.default_bar_weight_kg} kg standard bar
-            </Text>
-          )}
-        </View>
-
-        {onClose && (
-          <TouchableOpacity
-            testID="close-exercise-detail-btn"
-            style={styles.closeBtn}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      <ScreenHeader
+        title={exercise.name}
+        subtitle={`${exercise.muscle_group} · ${exercise.category}${exercise.default_bar_weight_kg > 0 && exercise.category === 'Barbell' ? ` · ${exercise.default_bar_weight_kg} kg bar` : ''}`}
+        onClose={onClose}
+        closeTestID="close-exercise-detail-btn"
+      />
 
       <ScrollView
         style={styles.scrollArea}
@@ -464,7 +470,7 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
             <View style={styles.regionalBiasContainer}>
               <Text style={styles.regionalBiasLabel}>REGIONAL FOCUS</Text>
               <View style={styles.regionalBiasRow}>
-                {exercise.muscle_biases.map((bias) => (
+                {uniqueMuscleBiases(exercise.muscle_biases).map((bias) => (
                   <View
                     key={bias}
                     testID={`chip-muscle-bias-${bias}`}
@@ -480,6 +486,19 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
 
         {/* Planner Preference & Sentiment Controls */}
         <View style={styles.preferenceCard} testID="exercise-preference-card">
+          {controlsSettings && <View style={styles.sentimentPillRow}>
+            <TouchableOpacity testID="exercise-anchor-toggle" style={styles.sentimentBtn}
+              accessibilityRole="checkbox" accessibilityState={{ checked: Boolean(trainingControls.anchor) }}
+              onPress={() => toggleTrainingControl('anchor', Boolean(trainingControls.anchor))}>
+              <Text style={styles.sentimentBtnText}>{trainingControls.anchor ? '✓ Anchored' : 'Anchor exercise'}</Text>
+            </TouchableOpacity>
+            {strengthFocus && <TouchableOpacity testID="exercise-main-toggle" style={styles.sentimentBtn}
+              accessibilityRole="checkbox" accessibilityState={{ checked: trainingControls.main ?? Boolean(exercise?.standard_lift_type && exercise.standard_lift_type !== 'row') }}
+              onPress={() => toggleTrainingControl('main', trainingControls.main ?? Boolean(exercise?.standard_lift_type && exercise.standard_lift_type !== 'row'))}>
+              <Text style={styles.sentimentBtnText}>{(trainingControls.main ?? Boolean(exercise?.standard_lift_type && exercise.standard_lift_type !== 'row')) ? '✓ Main strength lift' : 'Main strength lift'}</Text>
+            </TouchableOpacity>}
+          </View>}
+          <Text style={styles.preferenceExplanationText}>Anchors stay across blocks unless discomfort requires a substitution. Likes influence selection; dislikes are avoided.</Text>
           <View style={styles.preferenceHeaderRow}>
             <Text style={styles.cardHeaderTitle}>PLANNER PREFERENCE</Text>
             {preference && preference.sentiment !== 'neutral' && (
@@ -571,7 +590,7 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
           {/* Helper / explanation note */}
           <Text style={styles.preferenceExplanationText}>
             {preference?.sentiment === 'liked' && 'Prioritized by program generator & adaptive substitution (+25 bonus).'}
-            {preference?.sentiment === 'disliked' && 'De-prioritized by generator (-60 penalty).'}
+            {preference?.sentiment === 'disliked' && 'Avoided by program generation and evolution.'}
             {preference?.sentiment === 'blacklisted' && 'Strictly excluded from synthesizer and logger substitutions.'}
             {(!preference || preference.sentiment === 'neutral') &&
               ((preference?.swap_in_count ?? 0) > 0 || (preference?.swap_out_count ?? 0) > 0
@@ -583,7 +602,7 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
           {preference?.last_pain_reported_at && (
             <View style={styles.painWarningBox}>
               <Text style={styles.painWarningText}>
-                ⚠ Discomfort reported on {preference.pain_joint ?? 'joint'} (Severity {preference.max_pain_severity}/5)
+                ⚠ Discomfort reported on {preference.pain_joint ?? 'joint'} (Severity {preference.max_pain_severity}/10)
               </Text>
             </View>
           )}
@@ -663,66 +682,19 @@ export const ExerciseDetailScreen: React.FC<ExerciseDetailScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: uiColors.background,
   },
   loadingScreen: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: uiColors.background,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   loadingText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 14,
     marginTop: 12,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-  },
-  headerTitleCol: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  headerSubtitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#00E676',
-    letterSpacing: 0.6,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#FAFAFA',
-    marginTop: 2,
-  },
-  gearTareSubtext: {
-    fontSize: 11,
-    color: '#71717A',
-    marginTop: 2,
-    fontStyle: 'italic',
-  },
-  closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeBtnText: {
-    fontSize: 15,
-    color: '#FAFAFA',
-    fontWeight: '700',
   },
   scrollArea: {
     flex: 1,
@@ -733,9 +705,9 @@ const styles = StyleSheet.create({
   },
   summaryBar: {
     flexDirection: 'row',
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 8,
@@ -750,25 +722,25 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 24,
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   statLabel: {
     fontSize: 9,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.4,
     marginBottom: 3,
     textAlign: 'center',
   },
   statValue: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   statValueAccent: {
     fontSize: 13,
-    fontWeight: '900',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -780,27 +752,27 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.8,
   },
   sectionCountText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   biomechanicsCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginBottom: 12,
   },
   cardHeaderTitle: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.8,
     marginBottom: 10,
   },
@@ -811,28 +783,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   specBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    minHeight: 26,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
     borderWidth: 1,
   },
   specBadgeText: {
+    lineHeight: 16,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '600',
     letterSpacing: 0.3,
   },
   sfrBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    minHeight: 26,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
     borderWidth: 1,
     backgroundColor: '#102A1E',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   sfrBadgeText: {
+    lineHeight: 16,
     fontSize: 11,
-    fontWeight: '800',
-    color: '#00E676',
+    fontWeight: '600',
+    color: uiColors.accentText,
   },
   regionalBiasContainer: {
     marginTop: 10,
@@ -842,8 +820,8 @@ const styles = StyleSheet.create({
   },
   regionalBiasLabel: {
     fontSize: 9,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.5,
     marginBottom: 6,
   },
@@ -855,21 +833,21 @@ const styles = StyleSheet.create({
   biasChip: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
     backgroundColor: '#1A1A22',
     borderWidth: 1,
     borderColor: '#2D2D38',
   },
   biasChipText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#D4D4D8',
+    fontWeight: '600',
+    color: uiColors.secondaryText,
   },
   preferenceCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginBottom: 12,
   },
@@ -880,9 +858,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   affinityBadgeText: {
+    lineHeight: 16,
     fontSize: 11,
-    fontWeight: '800',
-    color: '#00E676',
+    fontWeight: '600',
+    color: uiColors.accentText,
   },
   sentimentPillRow: {
     flexDirection: 'row',
@@ -892,18 +871,21 @@ const styles = StyleSheet.create({
   sentimentBtn: {
     flex: 1,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
+    backgroundColor: uiColors.raised,
+    borderColor: uiColors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sentimentBtnText: {
+    color: uiColors.text,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   preferenceExplanationText: {
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     lineHeight: 16,
   },
   painWarningBox: {

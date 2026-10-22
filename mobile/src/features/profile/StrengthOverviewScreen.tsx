@@ -1,3 +1,4 @@
+import { colors as uiColors } from '../../ui/theme';
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Modal } from 'react-native';
 import { Gender, SBDBalanceProfile, WeightUnit } from '../../core/types';
@@ -62,7 +63,7 @@ export function StrengthOverviewScreen({ workoutRepo, exerciseRepo, userSettings
       <Text style={styles.title}>SBD / DOTS</Text>
     </View>
     <ScrollView contentContainerStyle={styles.content}>
-      {loading ? <ActivityIndicator color="#00E676" /> : error ? <TouchableOpacity onPress={() => setReload(n => n + 1)} style={styles.card}>
+      {loading ? <ActivityIndicator color={uiColors.accent} /> : error ? <TouchableOpacity onPress={() => setReload(n => n + 1)} style={styles.card}>
         <Text style={styles.link}>Could not load strength overview. Try again →</Text>
       </TouchableOpacity> : <>
         <Text style={styles.muted}>Best estimated strength from your logged squat, bench press, and deadlift. Estimates are separate from tested single-rep records.</Text>
@@ -142,17 +143,17 @@ export function StrengthOverviewScreen({ workoutRepo, exerciseRepo, userSettings
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#27272A', gap: 10 },
+  container: { flex: 1, backgroundColor: uiColors.background },
+  header: { padding: 16, borderBottomWidth: 1, borderBottomColor: uiColors.border, gap: 10 },
   content: { padding: 16, paddingBottom: 40, gap: 16 },
-  title: { color: '#FAFAFA', fontSize: 23, fontWeight: '700' },
-  card: { padding: 18, borderRadius: 14, backgroundColor: '#18181B', gap: 10 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#27272A' },
-  name: { color: '#FAFAFA', fontSize: 16, fontWeight: '600' },
-  value: { color: '#86EFAC', fontSize: 18, fontWeight: '700' },
-  large: { color: '#86EFAC', fontSize: 32, fontWeight: '700' },
-  muted: { color: '#A1A1AA', fontSize: 12, lineHeight: 20 },
-  link: { color: '#86EFAC', fontWeight: '600' },
+  title: { color: uiColors.text, fontSize: 23, fontWeight: '700' },
+  card: { padding: 18, borderRadius: 14, backgroundColor: uiColors.raised, gap: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: uiColors.border },
+  name: { color: uiColors.text, fontSize: 16, fontWeight: '600' },
+  value: { color: uiColors.accentText, fontSize: 18, fontWeight: '700' },
+  large: { color: uiColors.accentText, fontSize: 32, fontWeight: '700' },
+  muted: { color: uiColors.muted, fontSize: 12, lineHeight: 20 },
+  link: { color: uiColors.accentText, fontWeight: '600' },
   button: { paddingVertical: 12, minHeight: 44 },
   flex: { flex: 1, gap: 4 },
 });

@@ -87,13 +87,12 @@ export type IntensityStyle =
 export type PrimaryGoal =
   | 'strength'
   | 'hypertrophy'
-  | 'powerbuilding'
   | 'endurance'
   | 'longevity';
 
 export type TrainingArchetype =
   | 'archetype_i_pure_strength'
-  | 'archetype_ii_powerbuilding'
+  | 'archetype_ii_strength_hypertrophy'
   | 'archetype_iii_hypertrophy_strength'
   | 'archetype_iv_pure_hypertrophy';
 
@@ -213,6 +212,10 @@ export interface TemplateExercise {
   order_index: number;
   exercise_group_id: string | null;
   set_type?: SetType | null;
+  /** Prescribed between-set rest, or between-round rest for grouped exercises. */
+  rest_seconds?: number | null;
+  /** Each activation set is followed by the prescribed short-rest mini-sets. */
+  rest_pause?: { mini_sets: number; mini_reps_min: number; mini_reps_max: number; rest_seconds: number } | null;
 }
 
 /**
@@ -539,6 +542,12 @@ export interface SynthesizedProgramSummary {
   hasSupersets: boolean;
   progressionSchemeSummary: string;
   archetype?: TrainingArchetype;
+  sessionDurationsMins?: number[];
+  planningWarnings?: string[];
+  weeklyMuscleSets?: Record<string, number>;
+  weeklyMuscleEReps?: Record<string, number>;
+  weeklyMiniSets?: Record<string, number>;
+  totalWeeklyMiniSets?: number;
 }
 
 export interface SynthesizedProgram {

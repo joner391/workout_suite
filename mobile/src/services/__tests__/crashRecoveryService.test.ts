@@ -288,7 +288,7 @@ describe('CrashRecoveryService', () => {
   });
 
   describe('discardSession & deleteSession', () => {
-    it('discards an in-progress workout by setting status to discarded', async () => {
+    it('permanently deletes an interrupted session when discarded', async () => {
       const inProgressWorkout: Workout = {
         id: 'w_to_discard',
         template_id: null,
@@ -307,6 +307,8 @@ describe('CrashRecoveryService', () => {
       const discarded = await recoveryService.discardSession('w_to_discard');
       expect(discarded.status).toBe('discarded');
       expect(discarded.completed_at).toBeDefined();
+      expect(await workoutRepo.findById('w_to_discard')).toBeNull();
+      expect(await workoutRepo.getSetsByWorkoutId('w_to_discard')).toEqual([]);
 
       // Should no longer be reported as in_progress
       const active = await workoutRepo.getInProgressWorkout();

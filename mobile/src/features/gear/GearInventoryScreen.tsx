@@ -1,3 +1,8 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
+import { Badge } from '../../ui/Badge';
+import { ScreenHeader } from '../../ui/ScreenHeader';
+import { commonStyles } from '../../ui/theme';
 /**
  * Workout Suite — GearInventoryScreen
  *
@@ -238,43 +243,29 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Equipment & Gear Inventory</Text>
-          <Text style={styles.headerSubtitle}>
-            {gearList.length} items • Available equipment in your gym
-          </Text>
-        </View>
+      <ScreenHeader
+        title="Gear & equipment"
+        subtitle={`${gearList.length} items in your gym`}
+        onClose={onClose}
+        closeTestID="close-gear-screen-btn"
+        actions={<TouchableOpacity testID="add-gear-btn" style={commonStyles.button} onPress={handleOpenCreateModal}><Text style={commonStyles.buttonText}>Add equipment</Text></TouchableOpacity>}
+      />
 
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            testID="add-gear-btn"
-            style={styles.addBtn}
-            onPress={handleOpenCreateModal}
-          >
-            <Text style={styles.addBtnText}>+ Add Gear</Text>
-          </TouchableOpacity>
-
-          {onClose && (
-            <TouchableOpacity
-              testID="close-gear-screen-btn"
-              style={styles.closeHeaderBtn}
-              onPress={onClose}
-            >
-              <Text style={styles.closeHeaderBtnText}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {onEditAccess && <TouchableOpacity testID="gear-edit-access-btn" accessibilityRole="button" onPress={onEditAccess} style={{ padding: 16 }}><Text style={{ color: '#86EFAC', fontWeight: '600' }}>Edit equipment access →</Text></TouchableOpacity>}
+      {onEditAccess && <TouchableOpacity
+        testID="gear-edit-access-btn"
+        accessibilityRole="button"
+        onPress={onEditAccess}
+        style={{ padding: 16 }}
+      >
+        <Text style={{ color: uiColors.accentText, fontWeight: '600' }}>Edit equipment access →</Text>
+      </TouchableOpacity>}
       {/* Search Input */}
       <View style={styles.searchSection}>
         <TextInput
           testID="search-gear-input"
           style={styles.searchInput}
           placeholder="Search barbells, cable machines..."
-          placeholderTextColor="#71717A"
+          placeholderTextColor={uiColors.subtle}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -313,7 +304,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
       {/* Main List */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#00E676" />
+          <ActivityIndicator size="large" color={uiColors.accent} />
           <Text style={styles.loadingText}>Loading equipment inventory...</Text>
         </View>
       ) : (
@@ -350,14 +341,11 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
                 >
                   <View style={styles.cardTitleCol}>
                     <View style={styles.nameRow}>
-                      <Text style={styles.gearNameText}>{item.name}</Text>
-                      {isStandardFallback && (
-                        <View style={styles.defaultBadge}>
-                          <Text style={styles.defaultBadgeText}>
-                            STANDARD {item.type === 'barbell' ? 'BAR' : 'PULLEY'}
-                          </Text>
-                        </View>
-                      )}
+                      <Text style={styles.gearNameText} numberOfLines={2} accessibilityLabel={item.name}>{item.name}</Text>
+                      <View style={commonStyles.wrapRow}>
+                        {isStandardFallback && <Badge label={`Standard ${item.type === 'barbell' ? 'bar' : 'pulley'}`} tone="accent" />}
+                        <Badge label={GEAR_TYPES.find(g => g.type === item.type)?.label || item.type} />
+                      </View>
                     </View>
 
                     {item.notes && (
@@ -365,11 +353,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
                     )}
                   </View>
 
-                  <View style={styles.typeTag}>
-                    <Text style={styles.typeTagText}>
-                      {GEAR_TYPES.find((gt) => gt.type === item.type)?.label || item.type}
-                    </Text>
-                  </View>
+
                 </TouchableOpacity>
 
                 {/* Specs Row */}
@@ -450,9 +434,9 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
               <TouchableOpacity
                 testID="close-gear-modal-btn"
                 onPress={() => setModalVisible(false)}
-                style={styles.modalCloseBtn}
+                style={styles.modalCloseBtn} accessibilityRole="button" accessibilityLabel="Close"
               >
-                <Text style={styles.modalCloseBtnText}>✕</Text>
+                <AppIcon name="close" size={20} color={uiColors.accentText} />
               </TouchableOpacity>
             </View>
 
@@ -470,7 +454,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
                   testID="gear-name-input"
                   style={styles.textInput}
                   placeholder="e.g. Rogue Ohio Power Bar, Lat Pulldown"
-                  placeholderTextColor="#71717A"
+                  placeholderTextColor={uiColors.subtle}
                   value={name}
                   onChangeText={(t) => {
                     setName(t);
@@ -574,8 +558,8 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
                     testID="gear-default-switch"
                     value={isDefault}
                     onValueChange={setIsDefault}
-                    trackColor={{ false: '#27272A', true: '#00E676' }}
-                    thumbColor={isDefault ? '#000000' : '#A1A1AA'}
+                    trackColor={{ false: uiColors.border, true: uiColors.accent }}
+                    thumbColor={isDefault ? uiColors.background : uiColors.muted}
                   />
                 </View>
               ) : (
@@ -593,7 +577,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
                   testID="gear-notes-input"
                   style={styles.textInput}
                   placeholder="e.g. Rack #2, 28mm grip, knurl markings"
-                  placeholderTextColor="#71717A"
+                  placeholderTextColor={uiColors.subtle}
                   value={notes}
                   onChangeText={setNotes}
                 />
@@ -630,56 +614,7 @@ export const GearInventoryScreen: React.FC<GearInventoryScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-    flexShrink: 0,
-  },
-  headerLeft: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#FAFAFA',
-    letterSpacing: 0.3,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#A1A1AA',
-    marginTop: 2,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  addBtn: {
-    backgroundColor: '#00E676',
-    borderRadius: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  addBtnText: {
-    color: '#000000',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  closeHeaderBtn: {
-    padding: 8,
-  },
-  closeHeaderBtnText: {
-    color: '#A1A1AA',
-    fontSize: 16,
-    fontWeight: '700',
+    backgroundColor: uiColors.background,
   },
   searchSection: {
     paddingHorizontal: 16,
@@ -688,21 +623,21 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   searchInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
   },
   filterBar: {
     height: 50,
     flexShrink: 0,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-    backgroundColor: '#000000',
+    borderBottomColor: uiColors.border,
+    backgroundColor: uiColors.background,
     justifyContent: 'center',
   },
   filterChipsRow: {
@@ -712,10 +647,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterChip: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 20,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 12,
     paddingVertical: 7,
     marginRight: 8,
@@ -724,17 +659,17 @@ const styles = StyleSheet.create({
   },
   filterChipActive: {
     backgroundColor: '#0F291E',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   filterChipText: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontWeight: '600',
     includeFontPadding: false,
   },
   filterChipTextActive: {
-    color: '#00E676',
-    fontWeight: '800',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
   flatList: {
     flex: 1,
@@ -750,21 +685,17 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   loadingText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     marginTop: 10,
   },
   gearCard: {
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginBottom: 8,
-  },
-  gearCardDefault: {
-    borderColor: '#14532D',
-    backgroundColor: '#0A140D',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -772,69 +703,49 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   cardTitleCol: {
+    minWidth: 0,
     flex: 1,
   },
   nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 8,
+    flexWrap: 'nowrap',
   },
   gearNameText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FAFAFA',
-  },
-  defaultBadge: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#38BDF8',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  defaultBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#38BDF8',
-    letterSpacing: 0.5,
+    minHeight: 44,
+    lineHeight: 22,
+    width: '100%',
+    fontSize: 16,
+    fontWeight: '600',
+    color: uiColors.text,
   },
   specialtyBarNotice: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 6,
     padding: 10,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   specialtyBarNoticeText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     lineHeight: 15,
   },
   gearNotesText: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 3,
   },
-  typeTag: {
-    backgroundColor: '#18181B',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  typeTagText: {
-    fontSize: 10,
-    color: '#A1A1AA',
-    fontWeight: '700',
-  },
   specsRow: {
+    flexWrap: 'wrap',
     flexDirection: 'row',
-    gap: 14,
+    gap: 12,
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
   },
   specItem: {
     flexDirection: 'row',
@@ -843,43 +754,56 @@ const styles = StyleSheet.create({
   },
   specLabel: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
   },
   specValue: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   cardActions: {
+    flexWrap: 'wrap',
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 10,
+    gap: 8,
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
   },
   defaultBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    minHeight: 40,
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   defaultBtnText: {
     fontSize: 11,
-    color: '#00E676',
+    color: uiColors.accentText,
     fontWeight: '700',
   },
   editBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    minHeight: 40,
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   editBtnText: {
     fontSize: 11,
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontWeight: '700',
   },
   deleteBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    minHeight: 40,
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   deleteBtnText: {
     fontSize: 11,
@@ -892,12 +816,12 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   emptySubtitle: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 4,
   },
   modalOverlay: {
@@ -910,10 +834,10 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxHeight: '90%',
-    backgroundColor: '#09090B',
-    borderRadius: 12,
+    backgroundColor: uiColors.background,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 18,
   },
   modalHeader: {
@@ -923,20 +847,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    lineHeight: 28,
+    flexShrink: 1,
+    fontSize: 22,
+    fontWeight: '700',
+    color: uiColors.text,
   },
   modalCloseBtn: {
+    width: 44,
+    height: 44,
+    flexShrink: 0,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     padding: 6,
-  },
-  modalCloseBtnText: {
-    fontSize: 16,
-    color: '#A1A1AA',
-    fontWeight: '700',
   },
   errorBanner: {
     backgroundColor: '#3F1212',
@@ -959,24 +885,24 @@ const styles = StyleSheet.create({
   },
   formLabel: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#A1A1AA',
+    fontWeight: '700',
+    color: uiColors.muted,
     letterSpacing: 0.5,
     marginBottom: 6,
   },
   helpText: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginBottom: 6,
   },
   textInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 14,
   },
   chipsRow: {
@@ -985,25 +911,25 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   formChip: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 14,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   formChipActive: {
     backgroundColor: '#0F291E',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   formChipText: {
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontWeight: '600',
   },
   formChipTextActive: {
-    color: '#00E676',
-    fontWeight: '800',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
   numericRow: {
     flexDirection: 'row',
@@ -1011,14 +937,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   numericInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     width: 80,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -1028,13 +954,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   quickChip: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 4,
+    borderRadius: uiRadius.control,
   },
   quickChipText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -1044,7 +970,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
     marginBottom: 12,
   },
   toggleCol: {
@@ -1054,11 +980,11 @@ const styles = StyleSheet.create({
   toggleTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   toggleSubtitle: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
   },
   modalActions: {
@@ -1067,32 +993,32 @@ const styles = StyleSheet.create({
     marginTop: 14,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
   },
   modalCancelBtn: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingVertical: 12,
     alignItems: 'center',
   },
   modalCancelBtnText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     fontWeight: '700',
   },
   modalSaveBtn: {
     flex: 2,
-    backgroundColor: '#00E676',
-    borderRadius: 6,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 12,
     alignItems: 'center',
   },
   modalSaveBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

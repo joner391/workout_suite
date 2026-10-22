@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors } from '../../ui/theme';
 /**
  * Workout Suite — UserProfileScreen
  *
@@ -53,6 +55,8 @@ import { BodyMetricsScreen } from '../bodyMetrics/BodyMetricsScreen';
 import { PersonalRecordsScreen } from './PersonalRecordsScreen';
 import { StrengthOverviewScreen } from './StrengthOverviewScreen';
 import { mergeProfileEditorChanges, ProfileEditorSection } from '../../services/profilePreferencesService';
+import { useOptionalRepositories } from '../../context/RepositoryContext';
+import { TrainingAdaptationService } from '../../services/trainingAdaptationService';
 
 export interface UserProfileScreenProps {
   userProfileRepo: IUserProfileRepository;
@@ -91,6 +95,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   onOpenProgramOverview,
   initialEditor,
 }) => {
+  const repositories = useOptionalRepositories();
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [generating, setGenerating] = useState<boolean>(false);
@@ -167,7 +172,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               workoutRepo,
               painReportRepo,
               exerciseRepo,
-              programBlockService
+              programBlockService,
+              userSettingsRepo,
+              repositories?.exercisePreferenceRepo
             );
           const readiness = await evoService.isReadyForEvolution(activeProg.program.id);
           setIsCycleCompleted(readiness.ready);
@@ -306,7 +313,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           workoutRepo,
           painReportRepo,
           exerciseRepo,
-          programBlockService
+          programBlockService,
+          userSettingsRepo,
+          repositories?.exercisePreferenceRepo
         );
 
       let catalog: Exercise[] | undefined = undefined;
@@ -326,7 +335,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       setShowEvolutionModal(true);
       setPendingMesoMood(false);
       setLastGeneratedProgramId(result.programId);
-      setStatusMessage(`⚡ Mesocycle ${result.mesoNumber} staged successfully! (${result.summaryBadge})`);
+      setStatusMessage(`Mesocycle ${result.mesoNumber} applied. (${result.summaryBadge})`);
 
       if (programBlockService) {
         const fresh = await programBlockService.getActiveProgram();
@@ -374,6 +383,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       // 1. Synthesize multi-day split pure program
       const synthesized = synthesizeProgram(profile, {
         availableExercises: catalog,
+        preferences: await repositories?.exercisePreferenceRepo?.getAll(),
       });
 
       // 2. Persist full hierarchy to SQLite
@@ -381,6 +391,12 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
       // 3. 1-Tap activate program meso-cycle block
       await programBlockService.swapActiveProgram(synthesized.program.id);
+      if (workoutRepo && userSettingsRepo) {
+        const adaptation = new TrainingAdaptationService(workoutRepo, { settings: userSettingsRepo, programs: programRepo, profiles: userProfileRepo });
+        const state = await adaptation.state(synthesized.program.id);
+        state.mood = profile.training_mentality;
+        await adaptation.save(synthesized.program.id, state);
+      }
 
       setGeneratedSummary(synthesized.summary);
       setLastGeneratedProgramId(synthesized.program.id);
@@ -408,7 +424,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#00E676" />
+        <ActivityIndicator size="large" color={uiColors.accent} />
         <Text style={styles.loadingText}>Loading your profile...</Text>
       </View>
     );
@@ -417,8 +433,18 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
   const editor = editorSection ? (
         <View style={styles.screen}>
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>{editorSection === 'training' ? 'Training preferences' : editorSection === 'details' ? 'Personal details' : editorSection === 'equipment' ? 'Equipment access' : 'Program setup'}</Text>
-            <TouchableOpacity testID="profile-editor-close" accessibilityRole="button" style={styles.closeBtn} disabled={saving || generating || evolving} onPress={closeEditor}><Text style={styles.closeBtnText}>✕</Text></TouchableOpacity>
+        <Text style={styles.headerTitle}>
+          {editorSection === 'training' ? 'Training preferences' : editorSection === 'details' ? 'Personal details' : editorSection === 'equipment' ? 'Equipment access' : 'Program setup'}
+        </Text>
+        <TouchableOpacity
+          testID="profile-editor-close"
+          accessibilityRole="button"
+          style={styles.closeBtn}
+          disabled={saving || generating || evolving}
+          onPress={closeEditor}
+          accessibilityLabel="Close">
+          <AppIcon name="close" size={20} color={uiColors.accentText} />
+        </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
             <View testID="questionnaire-body" style={styles.questionnaireBody}>
@@ -453,7 +479,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                       value={heightCm}
                       onChangeText={setHeightCm}
                       placeholder="180"
-                      placeholderTextColor="#71717A"
+                    placeholderTextColor={uiColors.subtle}
                     />
                   </View>
                   <View style={styles.fieldHalf}>
@@ -464,7 +490,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                       value={birthdate}
                       onChangeText={setBirthdate}
                       placeholder="1995-01-01"
-                      placeholderTextColor="#71717A"
+                    placeholderTextColor={uiColors.subtle}
                     />
                   </View>
                 </View>
@@ -594,7 +620,6 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                     [
                       'hypertrophy',
                       'strength',
-                      'powerbuilding',
                       'endurance',
                       'longevity',
                     ] as PrimaryGoal[]
@@ -622,7 +647,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
                 <Text style={[styles.inputLabel, { marginTop: 16 }]}>Secondary Goals (Multi-select)</Text>
                 <View style={styles.secondaryGoalRow}>
-                  {['strength', 'hypertrophy', 'powerbuilding', 'endurance', 'longevity'].map((goal) => {
+                  {['strength', 'hypertrophy', 'endurance', 'longevity'].map((goal) => {
                     const selected = secondaryGoals.includes(goal);
                     return (
                       <TouchableOpacity
@@ -703,7 +728,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                     activeOpacity={0.8}
                   >
                     {evolving ? (
-                      <ActivityIndicator size="small" color="#0A0A0A" />
+                    <ActivityIndicator size="small" color={uiColors.background} />
                     ) : (
                       <Text style={styles.evolveProgramBtnText}>
                         {isCycleCompleted
@@ -722,7 +747,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                   activeOpacity={0.8}
                 >
                   {generating ? (
-                    <ActivityIndicator size="small" color="#0A0A0A" />
+                  <ActivityIndicator size="small" color={uiColors.background} />
                   ) : (
                     <Text style={styles.generateProgramBtnText}>Create Brand New Program</Text>
                   )}
@@ -737,7 +762,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                   activeOpacity={0.8}
                 >
                   {saving ? (
-                    <ActivityIndicator size="small" color="#00E676" />
+                <ActivityIndicator size="small" color={uiColors.accent} />
                   ) : (
                     <Text style={styles.saveProfileBtnText}>Save changes</Text>
                   )}
@@ -763,9 +788,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
           <TouchableOpacity
             testID="close-user-profile-btn"
             style={styles.closeBtn}
-            onPress={onClose}
+            onPress={onClose} accessibilityRole="button" accessibilityLabel="Close"
           >
-            <Text style={styles.closeBtnText}>✕</Text>
+            <AppIcon name="close" size={20} color={uiColors.accentText} />
           </TouchableOpacity>
         )}
       </View>
@@ -773,18 +798,63 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.performanceLinks}>
           {workoutRepo && exerciseRepo && <>
-            <TouchableOpacity testID="profile-records-btn" accessibilityRole="button" style={styles.performanceLink} onPress={() => setShowRecords(true)}><Text style={styles.hubTitle}>Personal records →</Text><Text style={styles.hubSubtitle}>Search your lifts and rep PRs</Text></TouchableOpacity>
-            <TouchableOpacity testID="profile-strength-btn" accessibilityRole="button" style={styles.performanceLink} onPress={() => setShowStrength(true)}><Text style={styles.hubTitle}>SBD / DOTS →</Text><Text style={styles.hubSubtitle}>Lift estimates, total and history</Text></TouchableOpacity>
+            <TouchableOpacity
+              testID="profile-records-btn"
+              accessibilityRole="button"
+              style={styles.performanceLink}
+              onPress={() => setShowRecords(true)}
+            >
+              <Text style={styles.hubTitle}>Exercises →</Text>
+              <Text style={styles.hubSubtitle}>Exercise details, records and history</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="profile-strength-btn"
+              accessibilityRole="button"
+              style={styles.performanceLink}
+              onPress={() => setShowStrength(true)}
+            >
+              <Text style={styles.hubTitle}>SBD / DOTS →</Text>
+              <Text style={styles.hubSubtitle}>Lift estimates, total and history</Text>
+            </TouchableOpacity>
           </>}
         </View>
-        <TouchableOpacity testID="profile-training-preferences-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setEditorSection('training')}>
+        <TouchableOpacity
+          testID="profile-training-preferences-btn"
+          accessibilityRole="button"
+          style={styles.hubRow}
+          onPress={() => setEditorSection('training')}
+        >
           <Text style={styles.hubTitle}>Training preferences →</Text>
           <Text style={styles.hubSubtitle}>{primaryGoal} · {preferredDays} days/week · {preferredDurationMins} minutes</Text>
           <Text style={styles.hubSubtitle}>Mood: {trainingMentality.replace('_', ' ')}{pendingMesoMood ? ' · Changes saved for next cycle' : ''}</Text>
         </TouchableOpacity>
-        {gearRepo && <TouchableOpacity testID="profile-gear-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setShowGearInventory(true)}><Text style={styles.hubTitle}>Gear & equipment →</Text><Text style={styles.hubSubtitle}>Manage your gym inventory</Text></TouchableOpacity>}
-        {bodyMetricsRepo && <TouchableOpacity testID="profile-open-body-metrics-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setShowBodyMetrics(true)}><Text style={styles.hubTitle}>Bodyweight & measurements →</Text><Text style={styles.hubSubtitle}>Weigh-ins, body composition and measurements</Text></TouchableOpacity>}
-        <TouchableOpacity testID="profile-personal-details-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setEditorSection('details')}><Text style={styles.hubTitle}>Personal details →</Text><Text style={styles.hubSubtitle}>Sex, height, birthdate and experience</Text></TouchableOpacity>
+        {gearRepo && <TouchableOpacity
+          testID="profile-gear-btn"
+          accessibilityRole="button"
+          style={styles.hubRow}
+          onPress={() => setShowGearInventory(true)}
+        >
+          <Text style={styles.hubTitle}>Gear & equipment →</Text>
+          <Text style={styles.hubSubtitle}>Manage your gym inventory</Text>
+        </TouchableOpacity>}
+        {bodyMetricsRepo && <TouchableOpacity
+          testID="profile-open-body-metrics-btn"
+          accessibilityRole="button"
+          style={styles.hubRow}
+          onPress={() => setShowBodyMetrics(true)}
+        >
+          <Text style={styles.hubTitle}>Bodyweight & measurements →</Text>
+          <Text style={styles.hubSubtitle}>Weigh-ins, body composition and measurements</Text>
+        </TouchableOpacity>}
+        <TouchableOpacity
+          testID="profile-personal-details-btn"
+          accessibilityRole="button"
+          style={styles.hubRow}
+          onPress={() => setEditorSection('details')}
+        >
+          <Text style={styles.hubTitle}>Personal details →</Text>
+          <Text style={styles.hubSubtitle}>Sex, height, birthdate and experience</Text>
+        </TouchableOpacity>
         {/* Active Program Banner & Program Overview Hub */}
         <View testID="active-program-banner-card" style={styles.activeProgramCard}>
           <View style={styles.activeProgramHeader}>
@@ -793,7 +863,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 <Text style={styles.activeProgramBadge}>ACTIVE PROGRAM</Text>
                 {pendingMesoMood && (
                   <View style={styles.pendingMoodBadge}>
-                    <Text style={styles.pendingMoodBadgeText}>⚡ Mood Staged for Meso N+1</Text>
+                    <Text style={styles.pendingMoodBadgeText}>Mood Staged for Meso N+1</Text>
                   </View>
                 )}
               </View>
@@ -817,12 +887,20 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 }
               }}
             >
-              <Text style={styles.openOverviewBtnText}>Programs 📋</Text>
+              <Text style={styles.openOverviewBtnText}>Programs </Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        <TouchableOpacity testID="profile-program-setup-btn" accessibilityRole="button" style={styles.hubRow} onPress={() => setEditorSection('programs')}><Text style={styles.hubTitle}>Create or evolve a program →</Text><Text style={styles.hubSubtitle}>Review your setup before generating changes</Text></TouchableOpacity>
+        <TouchableOpacity
+          testID="profile-program-setup-btn"
+          accessibilityRole="button"
+          style={styles.hubRow}
+          onPress={() => setEditorSection('programs')}
+        >
+          <Text style={styles.hubTitle}>Create or evolve a program →</Text>
+          <Text style={styles.hubSubtitle}>Review your setup before generating changes</Text>
+        </TouchableOpacity>
 
         {/* Status Notification Banner */}
         {statusMessage && (
@@ -854,7 +932,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               </View>
               <View style={styles.summaryMetricItem}>
                 <Text style={styles.metricLabel}>Weekly Sets</Text>
-                <Text style={styles.metricValue}>{generatedSummary.totalWeeklySets} sets</Text>
+                  <Text style={styles.metricValue}>{generatedSummary.totalWeeklySets} full{generatedSummary.totalWeeklyMiniSets ? ` + ${generatedSummary.totalWeeklyMiniSets} mini` : ''}</Text>
               </View>
               <View style={styles.summaryMetricItem}>
                 <Text style={styles.metricLabel}>Antagonist Pairs</Text>
@@ -862,16 +940,37 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               </View>
             </View>
             <Text style={styles.summaryProgressionText}>
-              ⚙️ {generatedSummary.progressionSchemeSummary}
+              {generatedSummary.progressionSchemeSummary}
             </Text>
+              {generatedSummary.planningWarnings?.map((warning, index) => (
+                <Text key={index} style={styles.summaryProgressionText}>{warning}</Text>
+              ))}
           </View>
         )}
 
       </ScrollView>
       {!initialEditor && editor && <Modal visible animationType="slide" onRequestClose={closeEditor}>{editor}</Modal>}
 
-      {showRecords && workoutRepo && exerciseRepo && <Modal visible animationType="slide" onRequestClose={() => setShowRecords(false)}><PersonalRecordsScreen workoutRepo={workoutRepo} exerciseRepo={exerciseRepo} gearRepo={gearRepo} userSettingsRepo={userSettingsRepo} programBlockService={programBlockService} onClose={() => setShowRecords(false)} /></Modal>}
-      {showStrength && workoutRepo && exerciseRepo && <Modal visible animationType="slide" onRequestClose={() => setShowStrength(false)}><StrengthOverviewScreen workoutRepo={workoutRepo} exerciseRepo={exerciseRepo} userSettingsRepo={userSettingsRepo} userProfileRepo={userProfileRepo} bodyMetricsRepo={bodyMetricsRepo} onClose={() => setShowStrength(false)} /></Modal>}
+      {showRecords && workoutRepo && exerciseRepo && <Modal visible animationType="slide" onRequestClose={() => setShowRecords(false)}>
+        <PersonalRecordsScreen
+          workoutRepo={workoutRepo}
+          exerciseRepo={exerciseRepo}
+          gearRepo={gearRepo}
+          userSettingsRepo={userSettingsRepo}
+          programBlockService={programBlockService}
+          onClose={() => setShowRecords(false)}
+        />
+      </Modal>}
+      {showStrength && workoutRepo && exerciseRepo && <Modal visible animationType="slide" onRequestClose={() => setShowStrength(false)}>
+        <StrengthOverviewScreen
+          workoutRepo={workoutRepo}
+          exerciseRepo={exerciseRepo}
+          userSettingsRepo={userSettingsRepo}
+          userProfileRepo={userProfileRepo}
+          bodyMetricsRepo={bodyMetricsRepo}
+          onClose={() => setShowStrength(false)}
+        />
+      </Modal>}
 
       {/* Mesocycle Evolution Diff Modal */}
       {showEvolutionModal && evolutionResult && (
@@ -886,7 +985,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
               <View style={styles.evolutionModalHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.evolutionModalBadge}>
-                    MESOCYCLE {evolutionResult.mesoNumber} STAGED
+                    MESOCYCLE {evolutionResult.mesoNumber} APPLIED
                   </Text>
                   <Text style={styles.evolutionModalTitle}>What Changed & Why</Text>
                 </View>
@@ -896,9 +995,9 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                     setShowEvolutionModal(false);
                     setShowProgramOverview(true);
                   }}
-                  style={styles.modalCloseBtn}
+                  style={styles.modalCloseBtn} accessibilityRole="button" accessibilityLabel="Close"
                 >
-                  <Text style={styles.modalCloseText}>✕</Text>
+                  <AppIcon name="close" size={20} color={uiColors.accentText} />
                 </TouchableOpacity>
               </View>
               <ScrollView style={styles.evolutionDiffScroll}>
@@ -916,7 +1015,7 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
                 activeOpacity={0.8}
               >
                 <Text style={styles.closeEvolutionBtnText}>
-                  Accept Meso {evolutionResult.mesoNumber} Adjustments ✓
+                  View Meso {evolutionResult.mesoNumber} ✓
                 </Text>
               </TouchableOpacity>
             </View>
@@ -987,14 +1086,14 @@ export const UserProfileScreen: React.FC<UserProfileScreenProps> = ({
 
 const styles = StyleSheet.create({
   performanceLinks: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
-  performanceLink: { flex: 1, minWidth: 140, backgroundColor: '#14251D', borderRadius: 14, borderWidth: 1, borderColor: '#315744', padding: 16, gap: 8 },
-  hubRow: { backgroundColor: '#18181B', borderRadius: 12, padding: 16, gap: 6, marginBottom: 12 },
-  hubTitle: { color: '#FAFAFA', fontWeight: '700', fontSize: 16 },
-  hubSubtitle: { color: '#A1A1AA', lineHeight: 20, fontSize: 12 },
+  performanceLink: { flex: 1, minWidth: 140, backgroundColor: uiColors.accentSurface, borderRadius: 14, borderWidth: 1, borderColor: uiColors.accentBorder, padding: 16, gap: 8 },
+  hubRow: { backgroundColor: uiColors.raised, borderRadius: 12, padding: 16, gap: 6, marginBottom: 12 },
+  hubTitle: { color: uiColors.text, fontWeight: '700', fontSize: 16 },
+  hubSubtitle: { color: uiColors.muted, lineHeight: 20, fontSize: 12 },
   activeProgramCard: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
@@ -1006,37 +1105,37 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   activeProgramBadge: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1,
     marginBottom: 4,
   },
   activeProgramTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 16,
     fontWeight: '800',
   },
   activeProgramMeta: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     marginTop: 2,
   },
   openOverviewBtn: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
   },
   openOverviewBtnText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 12,
     fontWeight: '700',
   },
   optionSubtitle: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     fontWeight: '600',
     marginTop: 1,
@@ -1044,16 +1143,16 @@ const styles = StyleSheet.create({
   },
   screen: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
   },
   loadingText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     marginTop: 12,
   },
@@ -1065,26 +1164,26 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#FAFAFA',
+    color: uiColors.text,
     letterSpacing: -0.5,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
   },
   closeBtn: {
+    width: 44,
+    height: 44,
+    flexShrink: 0,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     padding: 8,
-  },
-  closeBtnText: {
-    color: '#A1A1AA',
-    fontSize: 18,
-    fontWeight: 'bold',
   },
   scrollView: {
     flex: 1,
@@ -1109,7 +1208,7 @@ const styles = StyleSheet.create({
     borderColor: '#DC2626',
   },
   statusBannerText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
@@ -1117,7 +1216,7 @@ const styles = StyleSheet.create({
   summaryCard: {
     backgroundColor: '#0F1A12',
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
@@ -1126,14 +1225,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   summaryBadge: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1,
     marginBottom: 4,
   },
   summarySplitTitle: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 16,
     fontWeight: '800',
   },
@@ -1149,12 +1248,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   metricLabel: {
-    color: '#86EFAC',
+    color: uiColors.accentText,
     fontSize: 10,
     fontWeight: '500',
   },
   metricValue: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
     marginTop: 2,
@@ -1166,26 +1265,26 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#00E676',
+    color: uiColors.accentText,
     letterSpacing: 1,
     marginTop: 16,
     marginBottom: 8,
   },
   card: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#1E1E22',
+    borderColor: uiColors.border,
     borderRadius: 10,
     padding: 14,
     marginBottom: 12,
   },
   cardDescription: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 12,
     marginBottom: 12,
   },
   inputLabel: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 8,
@@ -1197,25 +1296,25 @@ const styles = StyleSheet.create({
   },
   toggleBtn: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     paddingVertical: 10,
     borderRadius: 6,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   toggleBtnActive: {
-    backgroundColor: '#00E676',
-    borderColor: '#00E676',
+    backgroundColor: uiColors.accent,
+    borderColor: uiColors.accent,
   },
   toggleBtnText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     fontWeight: '600',
   },
   toggleBtnTextActive: {
-    color: '#0A0A0A',
-    fontWeight: '800',
+    color: uiColors.background,
+    fontWeight: '600',
   },
   fieldRow: {
     flexDirection: 'row',
@@ -1225,11 +1324,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   textInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 6,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 14,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1245,15 +1344,15 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   optionRowActive: {
-    backgroundColor: '#18181B',
-    borderColor: '#27272A',
+    backgroundColor: uiColors.raised,
+    borderColor: uiColors.border,
   },
   optionRadio: {
     width: 18,
     height: 18,
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: '#71717A',
+    borderColor: uiColors.subtle,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 2,
@@ -1263,7 +1362,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
   },
   optionTextContainer: {
     flex: 1,
@@ -1274,8 +1373,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   optionTitleActive: {
-    color: '#00E676',
-    fontWeight: '700',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
   goalPillContainer: {
     flexDirection: 'row',
@@ -1283,25 +1382,28 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   goalPill: {
-    backgroundColor: '#18181B',
+    minHeight: 26,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    borderColor: uiColors.border,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 20,
   },
   goalPillActive: {
-    backgroundColor: '#00E676',
-    borderColor: '#00E676',
+    backgroundColor: uiColors.accent,
+    borderColor: uiColors.accent,
   },
   goalPillText: {
-    color: '#D4D4D8',
-    fontSize: 12,
+    lineHeight: 16,
+    color: uiColors.secondaryText,
+    fontSize: 11,
     fontWeight: '600',
   },
   goalPillTextActive: {
-    color: '#0A0A0A',
-    fontWeight: '800',
+    color: uiColors.background,
+    fontWeight: '600',
   },
   secondaryGoalRow: {
     flexDirection: 'row',
@@ -1309,11 +1411,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   secondaryPill: {
-    backgroundColor: '#18181B',
+    minHeight: 26,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
+    borderColor: uiColors.border,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 14,
   },
   secondaryPillActive: {
@@ -1321,7 +1425,9 @@ const styles = StyleSheet.create({
     borderColor: '#38BDF8',
   },
   secondaryPillText: {
-    color: '#71717A',
+    lineHeight: 16,
+    fontWeight: '600',
+    color: uiColors.subtle,
     fontSize: 11,
   },
   secondaryPillTextActive: {
@@ -1334,32 +1440,32 @@ const styles = StyleSheet.create({
   },
   dayBtn: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     alignItems: 'center',
   },
   dayBtnActive: {
-    backgroundColor: '#00E676',
-    borderColor: '#00E676',
+    backgroundColor: uiColors.accent,
+    borderColor: uiColors.accent,
   },
   dayBtnText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     fontWeight: '700',
   },
   dayBtnTextActive: {
-    color: '#0A0A0A',
-    fontWeight: '900',
+    color: uiColors.background,
+    fontWeight: '700',
   },
   actionButtonsContainer: {
     marginTop: 16,
     gap: 12,
   },
   evolveProgramBtn: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
@@ -1371,7 +1477,7 @@ const styles = StyleSheet.create({
     borderColor: '#7DD3FC',
   },
   evolveProgramBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 15,
     fontWeight: '900',
     letterSpacing: -0.2,
@@ -1391,30 +1497,33 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   saveProfileBtn: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
   },
   saveProfileBtnText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 13,
     fontWeight: '600',
   },
   pendingMoodBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: '#002914',
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   pendingMoodBadgeText: {
-    color: '#00E676',
-    fontSize: 9,
-    fontWeight: '800',
+    lineHeight: 16,
+    color: uiColors.accentText,
+    fontSize: 11,
+    fontWeight: '600',
     letterSpacing: 0.5,
   },
   modalOverlay: {
@@ -1425,10 +1534,10 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   evolutionModalCard: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     width: '100%',
     maxHeight: '80%',
     padding: 20,
@@ -1440,36 +1549,36 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   evolutionModalBadge: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.8,
     marginBottom: 2,
   },
   evolutionModalTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 18,
     fontWeight: '800',
   },
   modalCloseBtn: {
+    width: 44,
+    height: 44,
+    flexShrink: 0,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     padding: 6,
-  },
-  modalCloseText: {
-    color: '#A1A1AA',
-    fontSize: 18,
-    fontWeight: '700',
   },
   evolutionDiffScroll: {
     maxHeight: 320,
     marginVertical: 12,
   },
   evolutionDiffMarkdown: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 13,
     lineHeight: 20,
   },
   closeEvolutionBtn: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
@@ -1477,7 +1586,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   closeEvolutionBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 14,
     fontWeight: '900',
   },
@@ -1485,11 +1594,11 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   questionnaireBody: {
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderLeftWidth: 1,
     borderRightWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     borderBottomLeftRadius: 12,
     borderBottomRightRadius: 12,
     paddingTop: 16,

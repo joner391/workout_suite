@@ -1,3 +1,4 @@
+import { radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — SupersetBracketGroup Component
  *
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
   badge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: uiRadius.badge,
   },
   supersetBadge: {
     backgroundColor: '#1E3A8A',
@@ -117,7 +118,7 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   supersetBadgeText: {
@@ -135,7 +136,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     backgroundColor: '#1E293B',
-    borderRadius: 4,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
     borderColor: '#334155',
   },

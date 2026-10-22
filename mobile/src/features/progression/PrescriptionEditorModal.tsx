@@ -1,3 +1,4 @@
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — Prescription Editor Modal
  *
@@ -82,7 +83,12 @@ export const PrescriptionEditorModal: React.FC<PrescriptionEditorModalProps> = (
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.overlay}
@@ -128,7 +134,7 @@ export const PrescriptionEditorModal: React.FC<PrescriptionEditorModalProps> = (
                   value={repsMin}
                   onChangeText={setRepsMin}
                   placeholder="8"
-                  placeholderTextColor="#71717A"
+                  placeholderTextColor={uiColors.subtle}
                 />
               </View>
               <Text style={styles.repDash}>to</Text>
@@ -141,7 +147,7 @@ export const PrescriptionEditorModal: React.FC<PrescriptionEditorModalProps> = (
                   value={repsMax}
                   onChangeText={setRepsMax}
                   placeholder="12"
-                  placeholderTextColor="#71717A"
+                  placeholderTextColor={uiColors.subtle}
                 />
               </View>
             </View>
@@ -197,7 +203,7 @@ export const PrescriptionEditorModal: React.FC<PrescriptionEditorModalProps> = (
                 value={targetExertion}
                 onChangeText={setTargetExertion}
                 placeholder={exertionMode === 'rpe' ? '8.0' : '2'}
-                placeholderTextColor="#71717A"
+                placeholderTextColor={uiColors.subtle}
               />
             </View>
 
@@ -286,20 +292,22 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   content: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderRadius: 12,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     maxHeight: '80%',
   },
   title: {
-    color: '#FAFAFA',
-    fontSize: 16,
-    fontWeight: '800',
+    lineHeight: 28,
+    flexShrink: 1,
+    color: uiColors.text,
+    fontSize: 22,
+    fontWeight: '700',
   },
   exerciseName: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 13,
     fontWeight: '700',
     marginTop: 2,
@@ -309,7 +317,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   inputLabel: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 6,
@@ -318,29 +326,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 6,
   },
   stepperBtn: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
     width: 36,
     height: 36,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepperBtnText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 18,
     fontWeight: 'bold',
   },
   stepperValue: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   repRangeRow: {
     flexDirection: 'row',
@@ -351,21 +359,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   repColLabel: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     marginBottom: 4,
   },
   repDash: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     marginTop: 14,
   },
   textInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
+    color: uiColors.text,
     fontSize: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -377,25 +385,25 @@ const styles = StyleSheet.create({
   },
   toggleBtn: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingVertical: 8,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
   },
   toggleBtnActive: {
-    backgroundColor: '#00E676',
-    borderColor: '#00E676',
+    backgroundColor: uiColors.accent,
+    borderColor: uiColors.accent,
   },
   toggleBtnText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     fontWeight: '600',
   },
   toggleBtnTextActive: {
-    color: '#0A0A0A',
-    fontWeight: '800',
+    color: uiColors.background,
+    fontWeight: '600',
   },
   actionRow: {
     flexDirection: 'row',
@@ -408,20 +416,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   cancelBtnText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     fontWeight: '600',
   },
   saveBtn: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   saveBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   gearChipsRow: {
     flexDirection: 'row',
@@ -429,24 +437,24 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   gearChip: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   gearChipActive: {
     backgroundColor: '#0F291E',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   gearChipText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 12,
     fontWeight: '600',
   },
   gearChipTextActive: {
-    color: '#00E676',
-    fontWeight: '800',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
 });

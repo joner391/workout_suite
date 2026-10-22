@@ -1,3 +1,7 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { prescribedRestSeconds, executionRestSeconds } from '../../core/rules/sessionPlanning';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
+import { commonStyles } from '../../ui/theme';
 /**
  * Workout Suite — ActiveLoggerScreen
  *
@@ -33,14 +37,13 @@ import {
   GearInventory,
   WeightUnit,
   IntensityMetric,
-  ProgressionProposal,
   CalibratedParam,
   AutoWarmupMode,
 } from '../../core/types';
 import { IWorkoutRepository } from '../../domain/repositories/IWorkoutRepository';
 import { IExerciseRepository } from '../../domain/repositories/IExerciseRepository';
 import { IGearRepository } from '../../domain/repositories/IGearRepository';
-import { IUserSettingsRepository } from '../../domain/repositories/IUserSettingsRepository';
+import { IUserSettingsRepository, SETTINGS_KEYS } from '../../domain/repositories/IUserSettingsRepository';
 import { IProgramRepository } from '../../domain/repositories/IProgramRepository';
 import { IPainReportRepository } from '../../domain/repositories/IPainReportRepository';
 import { IExercisePreferenceRepository } from '../../domain/repositories/IExercisePreferenceRepository';
@@ -54,7 +57,9 @@ import {
   CrashRecoveryService,
   CrashRecoveryPromptData,
 } from '../../services/crashRecoveryService';
-import { evaluateProgressionRules } from '../../core/rules/progressionRuleEngine';
+import { buildWorkoutPreview, captureWorkoutProgression, ExercisePrescription } from '../../services/workoutPreviewService';
+import { TrainingAdaptationService, PrescriptionSnapshot, readTrainingJson } from '../../services/trainingAdaptationService';
+import { ProgramEvolutionService } from '../../services/programEvolutionService';
 
 import { SetRowComponent } from './SetRowComponent';
 import { RestTimerBanner, formatTimeRemaining } from './RestTimerBanner';
@@ -63,18 +68,13 @@ import { ExerciseSubstitutionModal } from './ExerciseSubstitutionModal';
 import { PainReportModal } from './PainReportModal';
 import { CrashRecoveryDialog } from './CrashRecoveryDialog';
 import { SupersetBracketGroup } from './SupersetBracketGroup';
-import { ProgressionProposalBanner } from './ProgressionProposalBanner';
-import { MentalityTransitionBanner } from './MentalityTransitionBanner';
-import {
-  TransitionWaveStep,
-  calculateTransitionWave,
-} from '../../core/generator/transitionWave';
+
 import { WarmupAssessmentModal } from './WarmupAssessmentModal';
 import { ExerciseLibraryScreen } from '../inspection/ExerciseLibraryScreen';
 import { SessionDetailModal } from '../calendar/SessionDetailModal';
 import { useKeepAwake } from 'expo-keep-awake';
 import {
-  generateWarmupSets,
+  shouldGenerateWarmups,
   isLastWarmupSet,
   WarmupPerceptionRating,
 } from '../../core/math/warmupEstimator';
@@ -159,8 +159,7 @@ export function resolveNextSupersetExercise(
     }
   }
 
-  // Fallback to next circular exercise
-  return exercises[(currentIdx + 1) % n].exercise.id;
+  return null;
 }
 
 /**
@@ -235,9 +234,10 @@ export interface ActiveLoggerScreenProps {
   restTimerService?: RestTimerService;
   exerciseSubstitutionService?: ExerciseSubstitutionService;
   crashRecoveryService?: CrashRecoveryService;
-  transitionWave?: TransitionWaveStep | null;
+
   onFinishSession?: (workout: Workout) => void;
   onDiscardSession?: () => void;
+  isActiveTab?: boolean;
 }
 
 export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
@@ -255,9 +255,10 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   restTimerService: propTimerService,
   exerciseSubstitutionService: propSubService,
   crashRecoveryService: propRecoveryService,
-  transitionWave: propTransitionWave,
+
   onFinishSession,
   onDiscardSession,
+  isActiveTab = true,
 }) => {
   // Lock screen awake during workout session
   try {
@@ -267,6 +268,12 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   }
 
   const optionalRepos = useOptionalRepositories();
+  const adaptation = useMemo(() => new TrainingAdaptationService(workoutRepo, { settings: userSettingsRepo,
+    programs: programRepo, profiles: optionalRepos?.userProfileRepo,
+    preferences: propExercisePreferenceRepo ?? optionalRepos?.exercisePreferenceRepo,
+    calibration: calibratedParamService ?? optionalRepos?.calibratedParamService }),
+    [workoutRepo, userSettingsRepo, programRepo, optionalRepos?.userProfileRepo, propExercisePreferenceRepo, optionalRepos?.exercisePreferenceRepo]);
+  const [returnPainExerciseIds, setReturnPainExerciseIds] = useState<string[]>([]);
 
   const prefService = useMemo(() => {
     if (propExercisePreferenceService) return propExercisePreferenceService;
@@ -299,6 +306,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   // Core State
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [sets, setSets] = useState<WorkoutSet[]>([]);
+  const [prescriptions, setPrescriptions] = useState<ExercisePrescription[]>([]);
   const [completedSetIds, setCompletedSetIds] = useState<Set<string>>(new Set());
   const completedSetIdsRef = useRef<Set<string>>(completedSetIds);
 
@@ -309,6 +317,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   const [expandedExerciseIds, setExpandedExerciseIds] = useState<Set<string>>(new Set());
   const [expandedWarmupExercises, setExpandedWarmupExercises] = useState<Set<string>>(new Set());
   const [autoWarmupMode, setAutoWarmupMode] = useState<AutoWarmupMode>('smart_compounds');
+  const [smartWarmup, setSmartWarmup] = useState(false);
   const cardOffsetsRef = useRef<Record<string, number>>({});
   const supersetContainerYRef = useRef<number>(0);
   const mainScrollViewRef = useRef<ScrollView>(null);
@@ -373,19 +382,6 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
   const [painAlertBanner, setPainAlertBanner] = useState<string | null>(null);
 
-  // Mentality Transition Wave State (Step 8.4)
-  const [activeTransitionWave, setActiveTransitionWave] = useState<TransitionWaveStep | null>(
-    propTransitionWave ?? null
-  );
-  const [isTransitionDismissed, setIsTransitionDismissed] = useState<boolean>(false);
-
-  // Sync transitionWave if passed via props
-  useEffect(() => {
-    if (propTransitionWave !== undefined) {
-      setActiveTransitionWave(propTransitionWave);
-    }
-  }, [propTransitionWave]);
-
   // Warm-Up Set Autoregulation Assessment State (ADR-082)
   const [warmupAssessmentTarget, setWarmupAssessmentTarget] = useState<{
     visible: boolean;
@@ -417,13 +413,23 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     new Map()
   );
 
-  // Active Progression Proposal State (Step 4.4)
-  const [activeProposal, setActiveProposal] = useState<{
-    proposal: ProgressionProposal;
-    exerciseName?: string;
-    templateExerciseId?: string;
-    exerciseId?: string;
-  } | null>(null);
+  // The logger stays mounted while settings are edited on another tab.
+  useEffect(() => {
+    if (!isActiveTab) return;
+    let cancelled = false;
+    if (!userSettingsRepo) return;
+    Promise.all([
+      userSettingsRepo.get(SETTINGS_KEYS.SMART_WARMUP),
+      userSettingsRepo.getAutoWarmupMode(),
+    ]).then(([value, mode]) => {
+      if (cancelled) return;
+      const enabled = value === '1';
+      setSmartWarmup(enabled);
+      setAutoWarmupMode(mode);
+      if (!enabled) setWarmupAssessmentTarget((prev) => ({ ...prev, visible: false }));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isActiveTab, userSettingsRepo]);
 
   // 1. Initial Load: Check Crash Recovery or Load Specified Workout
   useEffect(() => {
@@ -644,82 +650,34 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       return next;
     });
 
-    // Evaluate Progression Rules if programRepo and template_id are present (Step 4.4)
+    setPrescriptions([]);
+    // Display the shared prescription; progression is applied at template startup.
     if (programRepo && session.workout.template_id) {
       try {
         const templateDetail = await programRepo.getTemplateWithDetails(session.workout.template_id);
         if (templateDetail && templateDetail.exercises) {
-          for (const tex of templateDetail.exercises) {
-            if (tex.rules && tex.rules.length > 0) {
-              const historicalSets = await workoutRepo.getHistoricalSetsForExercise(tex.exercise_id, {
-                onlyCompletedWorkouts: true,
-              });
-              const sessionSetsMap = new Map<string, WorkoutSet[]>();
-              for (const hs of historicalSets) {
-                if (!sessionSetsMap.has(hs.workout_id)) {
-                  sessionSetsMap.set(hs.workout_id, []);
-                }
-                sessionSetsMap.get(hs.workout_id)!.push(hs);
-              }
-              const recentSessions = Array.from(sessionSetsMap.entries()).map(([wId, wSets]) => ({
-                id: wId,
-                date: wSets[0]?.created_at?.split('T')[0] || '',
-                sets: wSets,
-              }));
-
-              const result = evaluateProgressionRules(tex.rules, recentSessions, tex);
-              if (result.primaryProposal) {
-                const exName = currentExerciseMap.get(tex.exercise_id)?.name ?? 'Prescribed Movement';
-                setActiveProposal({
-                  proposal: result.primaryProposal,
-                  exerciseName: exName,
-                  templateExerciseId: tex.id,
-                  exerciseId: tex.exercise_id,
-                });
-                break;
-              }
-            }
-          }
+          // Template startup already loads the resolved plan. Do not offer the
+          // same progression a second time, including after crash recovery.
+          const bodyweight = await userSettingsRepo?.getUserBodyweight();
+          const unit = await userSettingsRepo?.getUnitSystem() ?? unitSystem;
+          const plan = await buildWorkoutPreview(templateDetail, workoutRepo, currentExerciseMap, unit, gearRepo, bodyweight, adaptation.context);
+          setPrescriptions(plan);
         }
 
-        // Detect and stage Mentality Transition Wave if present and not provided via props (Step 8.4)
-        if (!propTransitionWave && templateDetail?.program_id) {
-          try {
-            const prog = await programRepo.findById(templateDetail.program_id);
-            if (prog && prog.notes) {
-              const match = prog.notes.match(/<!--\s*TRANSITION_WAVE:\s*(\{.*?\})\s*-->/);
-              if (match) {
-                const parsed = JSON.parse(match[1]);
-                let currentWeek = 1;
-                const activeBlock = await programRepo.getActiveProgramBlock();
-                if (activeBlock && activeBlock.start_date) {
-                  const start = new Date(activeBlock.start_date);
-                  const now = new Date();
-                  const diffDays = Math.floor(
-                    Math.max(0, now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)
-                  );
-                  currentWeek = Math.max(1, Math.floor(diffDays / 7) + 1);
-                }
-                const wave = calculateTransitionWave(
-                  parsed.from,
-                  parsed.to,
-                  currentWeek,
-                  parsed.totalWeeks ?? 3
-                );
-                if (wave.isTransitionActive) {
-                  setActiveTransitionWave(wave);
-                }
-              }
-            }
-          } catch (err) {
-            console.warn('Failed to detect transition wave metadata:', err);
-          }
-        }
       } catch (err) {
         console.warn('Failed to evaluate progression rules in active logger:', err);
       }
     }
   };
+
+  useEffect(() => {
+    if (!activeWorkout) return;
+    let alive = true;
+    readTrainingJson<PrescriptionSnapshot | null>(userSettingsRepo, `training_snapshot_${activeWorkout.id}`, null).then(snapshot => {
+      if (alive) setReturnPainExerciseIds(snapshot?.exercises.filter(row => row.painReturn).map(row => row.prescription.exercise_id) ?? []);
+    });
+    return () => { alive = false; };
+  }, [activeWorkout?.id, userSettingsRepo]);
 
   // Resynchronize rest timer when returning from background
   useEffect(() => {
@@ -752,44 +710,6 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       const fresh = await sessionService.startWorkout();
       await loadWorkout(fresh.id);
     }
-  };
-
-  // Progression Proposal Actions (Step 4.4)
-  const handleAcceptProgressionProposal = async (proposal: ProgressionProposal) => {
-    if (!activeProposal) return;
-    try {
-      const targetExId = activeProposal.exerciseId;
-      if (targetExId) {
-        const targetSets = sets.filter((s) => s.exercise_id === targetExId && !completedSetIds.has(s.id));
-        if (proposal.setProposals && proposal.setProposals.length > 0) {
-          for (const sp of proposal.setProposals) {
-            const setObj =
-              targetSets[sp.setIndex - 1] ||
-              sets.find((s) => s.exercise_id === targetExId && s.set_number === sp.setIndex);
-            if (setObj) {
-              await handleUpdateSet(setObj.id, {
-                raw_input_weight: sp.suggestedWeightKg ?? setObj.raw_input_weight,
-              });
-            }
-          }
-        } else if (proposal.suggestedWeightKg !== undefined) {
-          for (const s of targetSets) {
-            await handleUpdateSet(s.id, {
-              raw_input_weight: proposal.suggestedWeightKg,
-              reps: proposal.suggestedTargetReps !== undefined ? proposal.suggestedTargetReps : s.reps,
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Error applying progression proposal:', err);
-    } finally {
-      setActiveProposal(null);
-    }
-  };
-
-  const handleDismissProgressionProposal = () => {
-    setActiveProposal(null);
   };
 
   // Group sets by exercise
@@ -954,8 +874,8 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       exerciseId,
       rawInputWeight: defaultWeight,
       reps: defaultReps,
-      rpe: defaultRpe,
-      rir: defaultRir,
+      rpe: null,
+      rir: null,
       gearId: lastSet?.gear_id ?? null,
       exerciseGroupId: lastSet?.exercise_group_id ?? null,
       unitSystem,
@@ -963,20 +883,6 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
     setSets((prev) => [...prev, newSet]);
     setExpandedSetId(newSet.id);
-  };
-
-  // Generate Warmup Sets for Exercise (Warm_up_estimator.md)
-  const handleGenerateWarmupSets = async (exerciseId: string) => {
-    if (!activeWorkout) return;
-    const createdWarmupSets = await sessionService.generateWarmupSetsForExercise(
-      activeWorkout.id,
-      exerciseId
-    );
-    if (createdWarmupSets.length > 0) {
-      const updatedSets = await sessionService.getWorkoutSets(activeWorkout.id);
-      setSets(updatedSets);
-      setExpandedExerciseIds((prev) => new Set(prev).add(exerciseId));
-    }
   };
 
   // Update Set
@@ -1068,7 +974,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
     if (isNowCompleted) {
       // ADR-082: Diagnostic Warm-Up Set Autoregulation Trigger
-      if (isLastWarmupSet(targetSet, sets)) {
+      if (smartWarmup && isLastWarmupSet(targetSet, sets)) {
         const uncompletedWorkSets = sets.filter(
           (s) =>
             s.exercise_id === targetSet.exercise_id &&
@@ -1174,6 +1080,11 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
       // ADR-009: Check if inside a superset group
       const exercise = exerciseMap.get(targetSet.exercise_id);
+      const planned = prescriptions.find(row => row.templateExercise.exercise_id === targetSet.exercise_id)?.templateExercise;
+      const executionIndex = sets.filter(s => s.exercise_id === targetSet.exercise_id && s.set_type !== 'warmup')
+        .sort((a, b) => a.set_number - b.set_number).findIndex(s => s.id === targetSet.id);
+      const clusterComplete = planned?.rest_pause != null && executionIndex >= 0 &&
+        executionIndex % (planned.rest_pause.mini_sets + 1) === planned.rest_pause.mini_sets;
       const isGrouped = !!targetSet.exercise_group_id;
 
       let shouldStartTimer = true;
@@ -1191,7 +1102,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         // Rest timer suppressed between exercises inside superset group; triggers only after final exercise in group
         shouldStartTimer = RestTimerService.shouldTriggerForExerciseInGroup(
           targetSet.exercise_id,
-          groupExerciseIds
+          groupExerciseIds.filter(id => id === targetSet.exercise_id || sets.some(s => s.exercise_id === id && !nextCompleted.has(s.id)))
         );
       }
 
@@ -1204,20 +1115,25 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         timerService.reset();
       } else if (targetSet.set_type === 'myorep') {
         if (exercise) {
-          timerService.start(10, {
+          timerService.start(executionRestSeconds(planned, exercise, 'myorep', clusterComplete), {
             exerciseId: exercise.id,
             exerciseGroupId: targetSet.exercise_group_id,
           });
         }
       } else if (targetSet.set_type === 'dc') {
         if (exercise) {
-          timerService.start(30, {
+          timerService.start(executionRestSeconds(planned, exercise, 'dc', clusterComplete), {
             exerciseId: exercise.id,
             exerciseGroupId: targetSet.exercise_group_id,
           });
         }
       } else if (shouldStartTimer && exercise) {
-        const restDuration = exercise.default_rest_seconds || 90;
+        const grouped = planned?.exercise_group_id
+          ? prescriptions.filter(row => row.templateExercise.exercise_group_id === planned.exercise_group_id)
+          : [];
+        const restDuration = grouped.length > 1
+          ? Math.max(...grouped.map(row => prescribedRestSeconds(row.templateExercise, exerciseMap.get(row.templateExercise.exercise_id))))
+          : executionRestSeconds(planned, exercise, targetSet.set_type);
         timerService.start(restDuration, {
           exerciseId: exercise.id,
           exerciseGroupId: targetSet.exercise_group_id,
@@ -1360,14 +1276,15 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
     setPainModalTarget({ visible: false, exercise: null });
 
-    // 2. If severity > 6, skip all remaining uncompleted sets for this exercise
-    if (shouldSkipRemainingSets) {
+    const policyStopped = await adaptation.recordPain(activeWorkout.id, targetExercise.id, severity, completedSetIdsRef.current);
+    // Returning discomfort stops work even below the high-pain threshold.
+    if (severity >= 7 || policyStopped || shouldSkipRemainingSets) {
       const uncompletedSets = sets.filter(
         (s) => s.exercise_id === targetExercise.id && !completedSetIds.has(s.id)
       );
 
       for (const uncompletedSet of uncompletedSets) {
-        await sessionService.deleteSet(activeWorkout.id, uncompletedSet.id);
+        if (!policyStopped) await sessionService.deleteSet(activeWorkout.id, uncompletedSet.id);
       }
 
       // Refresh workout sets
@@ -1396,7 +1313,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       }
 
       setPainAlertBanner(
-        `Skipped ${uncompletedSets.length} remaining set(s) on ${targetExercise.name} due to severe pain score (${severity}/10).`
+        `Stopped remaining sets on ${targetExercise.name} after discomfort (${severity}/10). Recovery will adjust the next exposure.`
       );
       setTimeout(() => setPainAlertBanner(null), 6000);
     }
@@ -1404,6 +1321,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 
   // Open Warm-Up Assessment Modal Manually (ADR-082)
   const handleOpenWarmupAssessment = (warmupSet: WorkoutSet, exercise: Exercise) => {
+    if (!smartWarmup) return;
     const uncompletedWorkSets = sets.filter(
       (s) =>
         s.exercise_id === exercise.id &&
@@ -1471,6 +1389,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         {
           completedSetIds: completedSetIdsRef.current,
           hasRecentFatigueFlag: !!painAlertBanner,
+          plannedWorkingWeightKg: warmupAssessmentTarget.plannedWorkingWeightKg,
         }
       );
 
@@ -1517,17 +1436,15 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
       exerciseId: exercise.id,
       rawInputWeight: initialWeight,
       reps: initialReps,
-      rpe: 8.0,
+      rpe: null,
       unitSystem,
     });
 
     // Automated Warm-Up Synthesis (Phase 3)
-    if (
-      autoWarmupMode === 'all_exercises' ||
-      (autoWarmupMode === 'smart_compounds' && exercise.is_compound)
-    ) {
+    if (shouldGenerateWarmups(autoWarmupMode, exercise)) {
       await sessionService.generateWarmupSetsForExercise(activeWorkout.id, exercise.id, {
         targetWorkingWeightKg: initialWeight,
+        completedSetIds: completedSetIdsRef.current,
       });
     }
 
@@ -1539,6 +1456,20 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   // Finish Workout
   const handleConfirmFinish = async () => {
     if (!activeWorkout) return;
+    const performed = sets.filter(s => s.set_type !== 'warmup' && (completedSetIds.has(s.id) || markIncompleteAsComplete));
+    const lastByExercise = new Map<string, WorkoutSet>();
+    performed.forEach(s => lastByExercise.set(s.exercise_id, s));
+    const unrated = [...lastByExercise.values()].find(s => {
+      const rir = s.rir ?? (s.rpe != null ? 10 - s.rpe : null);
+      return rir == null || !Number.isFinite(rir) || rir < 0 || rir > 10;
+    });
+    if (unrated) {
+      setShowFinishConfirmModal(false);
+      setExpandedExerciseIds(prev => new Set(prev).add(unrated.exercise_id));
+      setSelectedItemId(unrated.exercise_id);
+      Alert.alert('Log final-set effort', 'Enter RIR or RPE on the last working set of each exercise before finishing.');
+      return;
+    }
     setShowFinishConfirmModal(false);
     timerService.skip();
 
@@ -1566,6 +1497,29 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     const finished = await sessionService.finishWorkout(activeWorkout.id, {
       notes: finishNotes.trim() === '' ? activeWorkout.notes : finishNotes.trim(),
     });
+    try {
+      await adaptation.complete(finished.id);
+      if (programRepo && finished.template_id) {
+        const template = await programRepo.getTemplateWithDetails(finished.template_id);
+        if (template) await captureWorkoutProgression(finished.id, template, workoutRepo, exerciseMap,
+          unitSystem, gearRepo, await userSettingsRepo?.getUserBodyweight(), adaptation.context);
+      }
+      if (programRepo && optionalRepos?.userProfileRepo) {
+      const template = finished.template_id ? await programRepo.findTemplateById(finished.template_id) : null;
+      if (template?.program_id) {
+        const evolution = new ProgramEvolutionService(programRepo, optionalRepos.userProfileRepo, workoutRepo,
+          painReportRepo, exerciseRepo, optionalRepos.programBlockService, userSettingsRepo,
+          propExercisePreferenceRepo ?? optionalRepos.exercisePreferenceRepo);
+        if ((await evolution.isReadyForEvolution(template.program_id)).ready) {
+          const result = await evolution.evolveActiveProgramForNextMeso({ programId: template.program_id });
+          Alert.alert('Next block ready', result.conciseSummaries?.join('\n') ?? result.summaryBadge);
+        }
+      }
+      }
+    } catch (err) {
+      console.error('Workout saved; automatic training review needs retry:', err);
+      Alert.alert('Workout saved', 'Training review could not finish. Open your program to retry the next-block review.');
+    }
 
     setFinishedWorkoutObj(finished);
     setSummaryWorkoutId(finished.id);
@@ -1612,12 +1566,15 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   // Ungroup Superset
   const handleUngroupSuperset = async (groupId: string) => {
     if (!activeWorkout) return;
+    const groupExerciseId = selectedItem?.type === 'superset' && selectedItem.groupId === groupId
+      ? activeSupersetExerciseId ?? selectedItem.items[0]?.exercise.id
+      : sets.find(set => set.exercise_group_id === groupId)?.exercise_id;
     await sessionService.ungroupSuperset(activeWorkout.id, groupId);
     const refreshed = await sessionService.getActiveWorkout(activeWorkout.id);
     if (refreshed) {
       setSets(refreshed.sets);
-      if (supersetSourceExercise) {
-        setSelectedItemId(supersetSourceExercise.id);
+      if (groupExerciseId) {
+        setSelectedItemId(groupExerciseId);
       } else if (refreshed.sets.length > 0) {
         setSelectedItemId(refreshed.sets[0].exercise_id);
       }
@@ -1653,6 +1610,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
     isInsideSuperset: boolean = false,
     supersetPrefix?: string
   ) => {
+    const prescription = prescriptions.find(row => row.templateExercise.exercise_id === exercise.id);
     const ghostSets = ghostSetsByExercise.get(exercise.id) || [];
     const isDumbbell = exercise.load_mode === 'per_hand';
     const firstSetGearId = exSets[0]?.gear_id;
@@ -1714,6 +1672,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               >
                 {exercise.name}
               </Text>
+                <View style={commonStyles.wrapRow}>
               {/* Gear Subtext Indicator & 1-Tap Implement Switcher (ADR-025) */}
               {exercise.category === 'Barbell' || exercise.category === 'Cable' || gear ? (
                 <TouchableOpacity
@@ -1743,22 +1702,8 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
                   <Text style={styles.supersetBadgeText}>SUPERSET</Text>
                 </View>
               )}
-            </View>
-            <Text
-              style={[
-                styles.expandChevron,
-                isAllSetsCompleted && styles.completedExpandChevron,
-              ]}
-            >
-              ▼
-            </Text>
-          </View>
-
-          {/* Row 2: Header Sub-row: Left actions + Right stacked PRs */}
-          <View style={styles.exerciseHeaderSubRow}>
-            <View style={styles.headerSubRowLeft}>
               {/* Action Pills Row: LINK / UNLINK, SWAP, PAIN */}
-              <View style={styles.headerActionPillsRow}>
+
                 {isGrouped ? (
                   <TouchableOpacity
                     testID={`ungroup-exercise-button-${exercise.id}`}
@@ -1796,8 +1741,22 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
                 >
                   <Text style={styles.painButtonText}>🩹 PAIN</Text>
                 </TouchableOpacity>
-              </View>
 
+                </View>
+            </View>
+            <Text
+              style={[
+                styles.expandChevron,
+                isAllSetsCompleted && styles.completedExpandChevron,
+              ]}
+            >
+              ▼
+            </Text>
+          </View>
+
+          {/* Readiness warnings and personal records */}
+          <View style={styles.exerciseHeaderSubRow}>
+            <View style={styles.headerSubRowLeft}>
               {/* SFR Warning Badge (ADR-072 / Phase 6) */}
               {(() => {
                 const cp = calibratedParamsMap.get(exercise.id);
@@ -1843,16 +1802,23 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
           </View>
         </TouchableOpacity>
 
+        {prescription && (
+          <View testID={`exercise-prescription-${exercise.id}`} style={styles.prescription}>
+            <Text style={styles.prescriptionLabel}>PRESCRIBED</Text>
+            <Text style={styles.prescriptionText}>{prescription.summary}</Text>
+          </View>
+        )}
+
         {/* Sets Table Header & Body */}
         <View testID={`exercise-card-body-${exercise.id}`}>
           {/* Sets Table Header Columns */}
           <View style={styles.tableHeaderRow}>
             <Text style={[styles.tableHeaderCol, { minWidth: 46, marginRight: 6, textAlign: 'center' }]}>SET</Text>
             <Text style={[styles.tableHeaderCol, { flex: 1, marginRight: 6 }]}>PREV</Text>
-            <Text style={[styles.tableHeaderCol, { minWidth: 68, marginRight: 6, textAlign: 'center' }]}>
+            <Text style={[styles.tableHeaderCol, { width: 54, marginRight: 6, textAlign: 'center' }]}>
               {unitSystem.toUpperCase()}
             </Text>
-            <Text style={[styles.tableHeaderCol, { width: 44, marginRight: 6, textAlign: 'center' }]}>
+            <Text style={[styles.tableHeaderCol, { width: exercise.is_unilateral ? 72 : 44, marginRight: 6, textAlign: 'center' }]}>
               {exercise.is_unilateral ? 'L / R' : 'REPS'}
             </Text>
             <Text style={[styles.tableHeaderCol, { minWidth: 48, marginRight: 4, textAlign: 'center' }]}>
@@ -1911,9 +1877,10 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
                 ghostSet={ghostSet}
                 unitSystem={unitSystem}
                 intensityMetric={intensityMetric}
+                requireEffort={prescription != null && (prescription.templateExercise.target_rpe != null || prescription.templateExercise.target_rir != null)}
                 isCompleted={isCompleted}
                 isExpanded={expandedSetId === s.id}
-                isLastWarmup={isLastWarmup}
+                isLastWarmup={smartWarmup && isLastWarmup}
                 onOpenWarmupAssessment={() => handleOpenWarmupAssessment(s, exercise)}
                 onToggleExpand={() =>
                   setExpandedSetId((prev) => (prev === s.id ? null : s.id))
@@ -1926,18 +1893,8 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
             );
           })}
 
-          {/* Add Set & Warmup Buttons */}
+          {/* Add Set: tap the new set's type tag to create a manual warm-up. */}
           <View style={styles.setActionButtonRow}>
-            {warmupSets.length === 0 && (
-              <TouchableOpacity
-                testID={`add-warmups-button-${exercise.id}`}
-                style={styles.addWarmupButton}
-                onPress={() => handleGenerateWarmupSets(exercise.id)}
-                accessibilityLabel={`Generate warm-up sets for ${exercise.name}`}
-              >
-                <Text style={styles.addWarmupButtonText}>+ WARMUPS</Text>
-              </TouchableOpacity>
-            )}
             <TouchableOpacity
               testID={`add-set-button-${exercise.id}`}
               style={styles.addSetButton}
@@ -1984,7 +1941,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
   if (loading) {
     return (
       <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color="#00E676" />
+        <ActivityIndicator size="large" color={uiColors.accent} />
         <Text style={styles.loadingText}>Loading training ledger...</Text>
       </View>
     );
@@ -2023,22 +1980,13 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
         </View>
       </View>
 
-      {/* Mentality Transition Wave Banner (Step 8.4) */}
-      {activeTransitionWave && activeTransitionWave.isTransitionActive && !isTransitionDismissed && (
-        <MentalityTransitionBanner
-          transitionWave={activeTransitionWave}
-          onDismiss={() => setIsTransitionDismissed(true)}
-        />
+
+
+      {returnPainExerciseIds.length > 0 && (
+        <View testID="pain-return-prompt" style={styles.painAlertBanner}>
+          <Text style={styles.painAlertBannerText}>First session back: log any discomfort using PAIN on the returning exercise. Stop if it remains uncomfortable.</Text>
+        </View>
       )}
-
-      {/* Embedded Progression Proposal Banner (Step 4.4) */}
-      <ProgressionProposalBanner
-        proposal={activeProposal?.proposal ?? null}
-        exerciseName={activeProposal?.exerciseName}
-        onAccept={handleAcceptProgressionProposal}
-        onDismiss={handleDismissProgressionProposal}
-      />
-
       {/* Dynamic Pain Alert Banner */}
       {painAlertBanner && (
         <View testID="pain-alert-banner" style={styles.painAlertBanner}>
@@ -2081,15 +2029,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
                   accessibilityLabel={`Superset: ${groupLabel}, ${completedSets} of ${totalSets} sets complete`}
                 >
                   <View style={styles.railPillContent}>
-                    <Text
-                      style={[
-                        styles.railSupersetIcon,
-                        isSelected && styles.railSupersetIconSelected,
-                        !isSelected && isAllDone && styles.railTextCompleted,
-                      ]}
-                    >
-                      🔗
-                    </Text>
+                    <AppIcon name="link" size={20} color={uiColors.accentText} />
                     <Text
                       style={[
                         styles.railPillText,
@@ -2253,9 +2193,9 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
                 </Text>
                 <TouchableOpacity
                   testID="gear-picker-close-btn"
-                  onPress={() => setGearPickerExercise(null)}
+                  onPress={() => setGearPickerExercise(null)} accessibilityRole="button" accessibilityLabel="Close"
                 >
-                  <Text style={styles.closeText}>✕</Text>
+                  <AppIcon name="close" size={20} color={uiColors.accentText} />
                 </TouchableOpacity>
               </View>
 
@@ -2380,9 +2320,9 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               <Text style={styles.addExerciseTitle}>Add Exercise</Text>
               <TouchableOpacity
                 testID="add-exercise-modal-close"
-                onPress={() => setShowAddExerciseModal(false)}
+                onPress={() => setShowAddExerciseModal(false)} accessibilityRole="button" accessibilityLabel="Close"
               >
-                <Text style={styles.closeText}>✕</Text>
+                <AppIcon name="close" size={20} color={uiColors.accentText} />
               </TouchableOpacity>
             </View>
 
@@ -2392,7 +2332,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               onPress={() => setShowFullLibraryModal(true)}
             >
               <Text style={styles.browseFullLibraryBtnText}>
-                ⚡ Browse Library & Variant Tree ➔
+                Browse Library & Variant Tree ➔
               </Text>
             </TouchableOpacity>
 
@@ -2400,7 +2340,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               testID="search-exercise-input"
               style={styles.searchExerciseInput}
               placeholder="Search exercise catalog..."
-              placeholderTextColor="#71717A"
+              placeholderTextColor={uiColors.subtle}
               value={exerciseSearchQuery}
               onChangeText={setExerciseSearchQuery}
               autoCapitalize="none"
@@ -2511,7 +2451,7 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               testID="finish-workout-notes-input"
               style={styles.finishNotesInput}
               placeholder="Session notes (e.g. good energy, top set felt smooth)..."
-              placeholderTextColor="#71717A"
+              placeholderTextColor={uiColors.subtle}
               value={finishNotes}
               onChangeText={setFinishNotes}
               multiline
@@ -2576,9 +2516,9 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
               <Text style={styles.addExerciseTitle}>Create Superset</Text>
               <TouchableOpacity
                 testID="superset-modal-close"
-                onPress={() => setShowSupersetModal(false)}
+                onPress={() => setShowSupersetModal(false)} accessibilityRole="button" accessibilityLabel="Close"
               >
-                <Text style={styles.closeText}>✕</Text>
+                <AppIcon name="close" size={20} color={uiColors.accentText} />
               </TouchableOpacity>
             </View>
 
@@ -2639,16 +2579,16 @@ export const ActiveLoggerScreen: React.FC<ActiveLoggerScreenProps> = ({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#000000', // Pure OLED Black
+    backgroundColor: uiColors.background, // Pure OLED Black
   },
   loadingScreen: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: uiColors.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 14,
     marginTop: 12,
   },
@@ -2656,20 +2596,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   headerTitleSection: {
     flex: 1,
   },
   headerWorkoutTitle: {
     fontSize: 18,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   headerSubRow: {
     flexDirection: 'row',
@@ -2681,35 +2621,37 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
   },
   headerTicker: {
     fontSize: 13,
     fontFamily: 'monospace',
     fontWeight: '700',
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   headerUnitPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     fontSize: 10,
     fontWeight: '700',
-    color: '#71717A',
-    backgroundColor: '#18181B',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    color: uiColors.subtle,
+    backgroundColor: uiColors.raised,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   headerActions: {
     marginLeft: 12,
   },
   finishHeaderButton: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   finishHeaderButtonText: {
-    color: '#000000',
-    fontWeight: '900',
+    color: uiColors.background,
+    fontWeight: '700',
     fontSize: 12,
     letterSpacing: 0.5,
   },
@@ -2738,8 +2680,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   collapseWarmupsBanner: {
-    backgroundColor: '#18181B',
-    borderColor: '#27272A',
+    backgroundColor: uiColors.raised,
+    borderColor: uiColors.border,
     borderWidth: 1,
     borderRadius: 4,
     paddingVertical: 4,
@@ -2748,14 +2690,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   collapseWarmupsBannerText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     fontWeight: '600',
   },
+  prescription: { paddingHorizontal: 14, paddingVertical: 10, gap: 4 },
+  prescriptionLabel: { color: uiColors.secondaryText, fontSize: 11, fontWeight: '600' },
+  prescriptionText: { color: uiColors.accentText, fontSize: 14 },
   railContainer: {
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
     paddingVertical: 8,
   },
   railContent: {
@@ -2765,21 +2710,22 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   railPill: {
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 20,
+    backgroundColor: uiColors.raised,
+    borderWidth: 1.5,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.badge,
     paddingHorizontal: 12,
     paddingVertical: 7,
     maxWidth: 200,
   },
   railSupersetPill: {
+    borderWidth: 1.5,
     borderColor: '#1E293B',
     backgroundColor: '#0F172A',
   },
   railPillSelected: {
     backgroundColor: '#0F1A12',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     borderWidth: 1.5,
   },
   railSupersetPillSelected: {
@@ -2798,64 +2744,58 @@ const styles = StyleSheet.create({
   },
   railIndexBadge: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
   },
   railIndexBadgeSelected: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   railIndexBadgeCompleted: {
     color: '#34D399',
   },
-  railSupersetIcon: {
-    fontSize: 12,
-    color: '#60A5FA',
-  },
-  railSupersetIconSelected: {
-    color: '#38BDF8',
-  },
   railPillText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#D4D4D8',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
+    color: uiColors.secondaryText,
     maxWidth: 110,
   },
   railPillTextSelected: {
-    color: '#FAFAFA',
-    fontWeight: '800',
+    color: uiColors.text,
+    fontWeight: '600',
   },
   railTextCompleted: {
-    color: '#86EFAC',
+    color: uiColors.accentText,
   },
   railCountBadge: {
-    backgroundColor: '#27272A',
-    borderRadius: 10,
+    backgroundColor: uiColors.border,
+    borderRadius: uiRadius.badge,
     paddingHorizontal: 6,
     paddingVertical: 2,
     marginLeft: 2,
   },
   railCountBadgeSelected: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
   },
   railCountBadgeCompleted: {
     backgroundColor: '#14532D',
   },
   railCountText: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#A1A1AA',
+    fontWeight: '700',
+    color: uiColors.muted,
   },
   railCountTextSelected: {
-    color: '#000000',
+    color: uiColors.background,
   },
   railCountTextCompleted: {
-    color: '#86EFAC',
+    color: uiColors.accentText,
   },
   railAddBtn: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1.5,
     borderColor: '#3F3F46',
-    borderRadius: 18,
+    borderRadius: uiRadius.control,
     width: 36,
     height: 36,
     justifyContent: 'center',
@@ -2864,21 +2804,25 @@ const styles = StyleSheet.create({
   },
   railAddBtnText: {
     fontSize: 18,
-    fontWeight: '800',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
     lineHeight: 20,
     textAlign: 'center',
   },
   supersetPrefixBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
     backgroundColor: '#1D4ED8',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    borderRadius: uiRadius.badge,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   supersetPrefixBadgeText: {
+    lineHeight: 16,
     color: '#DBEAFE',
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   supersetInnerCard: {
     marginBottom: 12,
@@ -2891,185 +2835,48 @@ const styles = StyleSheet.create({
   activeSupersetContainer: {
     marginBottom: 16,
   },
-  supersetQuickNavRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 8,
-  },
-  supersetNavPill: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  supersetNavPillActive: {
-    backgroundColor: '#1E3A8A',
-    borderColor: '#60A5FA',
-  },
-  supersetNavPillDone: {
-    backgroundColor: '#064E3B',
-    borderColor: '#10B981',
-  },
-  supersetNavPillText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  supersetNavPillTextActive: {
-    color: '#FFFFFF',
-  },
-  supersetNavPillTextDone: {
-    color: '#A7F3D0',
-  },
-  supersetBannerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#1E3A8A',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
-  supersetBannerInfo: {
-    flex: 1,
-  },
-  supersetBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  supersetGroupBadge: {
-    backgroundColor: '#1D4ED8',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  supersetGroupBadgeText: {
-    color: '#DBEAFE',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  supersetSubtitle: {
-    color: '#93C5FD',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  supersetExercisesSummary: {
-    color: '#FAFAFA',
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  unlinkGroupButton: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#EF4444',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginLeft: 8,
-  },
-  unlinkGroupButtonText: {
-    color: '#F87171',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  railNavRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#121215',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 10,
-    padding: 8,
-    marginTop: 6,
-    marginBottom: 12,
-  },
-  railNavBtn: {
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#3F3F46',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  railNavBtnDisabled: {
-    backgroundColor: '#121215',
-    borderColor: '#1E1E22',
-  },
-  railNavBtnText: {
-    color: '#FAFAFA',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  railNavBtnTextDisabled: {
-    color: '#3F3F46',
-  },
-  railNavProgressCenter: {
-    alignItems: 'center',
-  },
-  railNavProgressText: {
-    color: '#FAFAFA',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  railNavProgressSubtext: {
-    color: '#71717A',
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-    maxWidth: 140,
-    textAlign: 'center',
-  },
   emptySessionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 40,
     paddingHorizontal: 20,
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#18181B',
+    borderColor: uiColors.border,
     marginVertical: 20,
   },
   emptySessionTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 6,
   },
   emptySessionSubtitle: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 16,
   },
   emptyAddBtn: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
   },
   emptyAddBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   exerciseCardWrapper: {
     marginBottom: 16,
   },
   exerciseCard: {
-    backgroundColor: '#09090B',
-    borderRadius: 12,
+    backgroundColor: uiColors.background,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#18181B',
+    borderColor: uiColors.border,
     marginBottom: 0,
     overflow: 'hidden',
   },
@@ -3084,9 +2891,9 @@ const styles = StyleSheet.create({
   exerciseCardHeader: {
     flexDirection: 'column',
     padding: 12,
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   completedExerciseCardHeader: {
     backgroundColor: '#0F1A12',
@@ -3095,105 +2902,117 @@ const styles = StyleSheet.create({
   exerciseTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     width: '100%',
   },
   exerciseTitleLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
+    minWidth: 0,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    flexWrap: 'nowrap',
+    gap: 8,
     flex: 1,
     marginRight: 8,
   },
   exerciseHeaderSubRow: {
-    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    flexDirection: 'column',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'stretch',
     marginTop: 8,
     width: '100%',
   },
   headerSubRowLeft: {
-    flex: 1,
+    flex: 0,
     alignItems: 'flex-start',
     justifyContent: 'center',
-    marginRight: 8,
+    marginRight: 0,
   },
   headerActionPillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     flexWrap: 'wrap',
   },
   exerciseNameText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    lineHeight: 24,
+    fontSize: 17,
+    fontWeight: '600',
+    color: uiColors.text,
   },
   completedExerciseNameText: {
-    color: '#86EFAC',
+    color: uiColors.accentText,
   },
   dumbbellHeaderBadge: {
-    backgroundColor: '#27272A',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    minHeight: 26,
+    justifyContent: 'center',
+    backgroundColor: uiColors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   dumbbellHeaderBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#A1A1AA',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
+    color: uiColors.muted,
   },
   supersetBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: '#1D4ED8',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   supersetBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
     color: '#DBEAFE',
   },
-  gearSubtext: {
-    fontSize: 11,
-    color: '#38BDF8',
-    marginTop: 4,
-    fontWeight: '500',
-  },
   gearPillBtn: {
-    backgroundColor: '#0F172A',
+    maxWidth: '100%',
+    minHeight: 32,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#1E293B',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   gearSubtextInteractive: {
+    flexShrink: 1,
+    lineHeight: 18,
     fontSize: 11,
-    color: '#38BDF8',
+    color: uiColors.accentText,
     fontWeight: '600',
   },
   sfrWarningBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
     borderWidth: 1,
     borderColor: '#EF4444',
-    borderRadius: 6,
+    borderRadius: uiRadius.badge,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     marginTop: 4,
     alignSelf: 'flex-start',
   },
   sfrWarningBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
     color: '#EF4444',
     letterSpacing: 0.5,
   },
   gearPickerModalContent: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 12,
     padding: 16,
     width: '90%',
@@ -3205,25 +3024,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
+    borderBottomColor: uiColors.border,
     paddingBottom: 8,
   },
   gearPickerTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
     flex: 1,
   },
   gearOptionRow: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
   },
   gearOptionName: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -3234,22 +3053,27 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   prSummaryStack: {
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    maxWidth: '100%',
+    gap: 8,
+    alignItems: 'center',
     justifyContent: 'flex-end',
     flexShrink: 0,
   },
   prSummaryText: {
+    flexShrink: 1,
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
-    lineHeight: 16,
+    lineHeight: 18,
     textAlign: 'right',
   },
   exerciseHistoryContainer: {
     backgroundColor: '#0C0C0E',
     borderWidth: 1,
-    borderColor: '#1E1E22',
+    borderColor: uiColors.border,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -3257,8 +3081,8 @@ const styles = StyleSheet.create({
   },
   exerciseHistoryTitle: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.5,
     marginBottom: 4,
   },
@@ -3270,13 +3094,13 @@ const styles = StyleSheet.create({
   exerciseHistoryDateText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginRight: 6,
     fontVariant: ['tabular-nums'],
   },
   exerciseHistorySetsText: {
     fontSize: 11,
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     flex: 1,
     fontVariant: ['tabular-nums'],
   },
@@ -3288,33 +3112,37 @@ const styles = StyleSheet.create({
   },
   expandChevron: {
     fontSize: 14,
-    color: '#71717A',
+    color: uiColors.subtle,
     fontWeight: '700',
     marginLeft: 4,
   },
   completedExpandChevron: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   swapButton: {
-    backgroundColor: '#18181B',
+    minHeight: 36,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#3F3F46',
+    borderColor: uiColors.border,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 6,
+    borderRadius: 10,
   },
   swapButtonText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#D4D4D8',
+    fontWeight: '600',
+    color: uiColors.accentText,
   },
   painButton: {
+    minHeight: 36,
+    justifyContent: 'center',
     backgroundColor: '#1E1B1B',
     borderWidth: 1,
     borderColor: '#7F1D1D',
     paddingHorizontal: 8,
     paddingVertical: 5,
-    borderRadius: 6,
+    borderRadius: 10,
   },
   painButtonText: {
     fontSize: 11,
@@ -3346,69 +3174,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   tableHeaderCol: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.5,
   },
   setActionButtonRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
   },
   addSetButton: {
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
   },
   addSetButtonText: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
     letterSpacing: 0.5,
-  },
-  addWarmupButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    backgroundColor: '#121215',
-    borderLeftWidth: 1,
-    borderLeftColor: '#18181B',
-  },
-  addWarmupButtonText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FEF08A',
-    letterSpacing: 0.5,
-  },
-  addExerciseButton: {
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginVertical: 10,
-  },
-  addExerciseButtonText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#FAFAFA',
-    letterSpacing: 0.5,
-  },
-  discardFooterButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    marginTop: 6,
-  },
-  discardFooterText: {
-    fontSize: 13,
-    color: '#EF4444',
-    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
@@ -3420,10 +3209,10 @@ const styles = StyleSheet.create({
   addExerciseContent: {
     width: '100%',
     maxHeight: '80%',
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 18,
   },
   addExerciseHeader: {
@@ -3434,43 +3223,38 @@ const styles = StyleSheet.create({
   },
   addExerciseTitle: {
     fontSize: 18,
-    fontWeight: '800',
-    color: '#FAFAFA',
-  },
-  closeText: {
-    fontSize: 16,
-    color: '#A1A1AA',
     fontWeight: '700',
+    color: uiColors.text,
   },
   searchExerciseInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     padding: 10,
-    color: '#FAFAFA',
+    color: uiColors.text,
     marginBottom: 12,
   },
   browseFullLibraryBtn: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingVertical: 10,
     paddingHorizontal: 12,
     alignItems: 'center',
     marginBottom: 10,
   },
   browseFullLibraryBtnText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   catalogItem: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#18181B',
+    borderColor: uiColors.border,
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
@@ -3478,38 +3262,38 @@ const styles = StyleSheet.create({
   catalogItemName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   catalogItemMeta: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
   },
   confirmModalCard: {
     width: '100%',
-    backgroundColor: '#09090B',
-    borderRadius: 16,
+    backgroundColor: uiColors.background,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 20,
   },
   confirmModalTitle: {
     fontSize: 18,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   confirmModalSubtitle: {
     fontSize: 13,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginVertical: 8,
   },
   finishNotesInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     padding: 10,
-    color: '#FAFAFA',
+    color: uiColors.text,
     minHeight: 60,
     marginVertical: 10,
   },
@@ -3520,29 +3304,29 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   cancelButtonText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 14,
     fontWeight: '700',
   },
   confirmFinishButton: {
     flex: 1,
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
   },
   confirmFinishButtonText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   discardModalButton: {
     marginTop: 16,
@@ -3556,7 +3340,7 @@ const styles = StyleSheet.create({
     color: '#EF4444',
   },
   uncompletedSetsContainer: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#3F3F46',
@@ -3580,51 +3364,55 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 5,
     borderWidth: 1.5,
-    borderColor: '#71717A',
-    backgroundColor: '#27272A',
+    borderColor: uiColors.subtle,
+    backgroundColor: uiColors.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
   checkboxBoxActive: {
-    backgroundColor: '#00E676',
-    borderColor: '#00E676',
+    backgroundColor: uiColors.accent,
+    borderColor: uiColors.accent,
   },
   checkboxCheckText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   checkboxLabelText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '600',
     flex: 1,
   },
   incompleteExplanationText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     marginTop: 6,
     fontStyle: 'italic',
   },
   linkButton: {
-    backgroundColor: '#1E293B',
+    minHeight: 36,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: 10,
     marginRight: 6,
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: uiColors.border,
   },
   linkButtonText: {
-    color: '#60A5FA',
+    color: uiColors.accentText,
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   unlinkButton: {
-    backgroundColor: '#27272A',
+    minHeight: 36,
+    justifyContent: 'center',
+    backgroundColor: uiColors.border,
     paddingHorizontal: 6,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: 10,
     marginRight: 6,
     borderWidth: 1,
     borderColor: '#EF4444',
@@ -3643,20 +3431,20 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
+    borderBottomColor: uiColors.border,
   },
   candidateName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   candidateCategory: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
   },
   noCandidatesText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 20,
@@ -3665,4 +3453,3 @@ const styles = StyleSheet.create({
     maxHeight: 350,
   },
 });
-

@@ -12,6 +12,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { ISQLiteDatabase } from '../database/schema';
+import { normalizeTrainingGoals } from '../core/rules/trainingGoals';
 import {
   WorkoutExportPayload,
   Program,
@@ -138,7 +139,7 @@ export class ExportService {
     // 4. Template Exercises
     const rawTemplateExercises = await db.getAllAsync<any>(
       `SELECT id, template_id, exercise_id, gear_id, target_sets, target_reps_min,
-              target_reps_max, target_rpe, target_rir, order_index, exercise_group_id, set_type
+              target_reps_max, target_rpe, target_rir, order_index, exercise_group_id, set_type, rest_seconds, rest_pause_json
        FROM template_exercises
        ORDER BY template_id ASC, order_index ASC;`
     );
@@ -155,6 +156,8 @@ export class ExportService {
       order_index: Number(r.order_index ?? 0),
       exercise_group_id: r.exercise_group_id != null ? String(r.exercise_group_id) : null,
       set_type: r.set_type != null ? (r.set_type as any) : 'working',
+      rest_seconds: r.rest_seconds != null ? Number(r.rest_seconds) : null,
+      rest_pause: r.rest_pause_json ? JSON.parse(r.rest_pause_json) : null,
     }));
 
     // 5. Progression Rules
@@ -342,8 +345,7 @@ export class ExportService {
         birthdate: r.birthdate != null ? String(r.birthdate) : null,
         height_cm: r.height_cm != null ? Number(r.height_cm) : null,
         training_mentality: mentality,
-        primary_goal: r.primary_goal ?? 'hypertrophy',
-        secondary_goals: secondaryGoals,
+        ...normalizeTrainingGoals(r.primary_goal ?? 'hypertrophy', secondaryGoals),
         preferred_days_per_week: Number(r.preferred_days_per_week ?? 4),
         preferred_session_duration_mins: Number(r.preferred_session_duration_mins ?? 60),
         equipment_access: r.equipment_access ?? 'commercial_gym',

@@ -1,3 +1,4 @@
+import { colors as uiColors } from '../../ui/theme';
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Modal } from 'react-native';
 import { IWorkoutRepository, IExerciseRepository, IGearRepository, IUserSettingsRepository, IProgramRepository, IBodyMetricsRepository, IUserProfileRepository } from '../../domain/repositories';
@@ -12,6 +13,7 @@ import { SessionDetailModal } from '../calendar/SessionDetailModal';
 import { WorkloadDeepDiveModal } from '../plots/WorkloadDeepDiveModal';
 import { BodyMetricsScreen } from '../bodyMetrics/BodyMetricsScreen';
 import { PersonalRecordsScreen } from '../profile/PersonalRecordsScreen';
+import { useOptionalRepositories } from '../../context/RepositoryContext';
 
 export interface HomeScreenProps {
   workoutRepo: IWorkoutRepository;
@@ -30,6 +32,7 @@ export interface HomeScreenProps {
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = (props) => {
+  const repositories = useOptionalRepositories();
   const { workoutRepo, exerciseRepo, gearRepo, userSettingsRepo, programRepo, programBlockService,
     bodyMetricsRepo, userProfileRepo, onNavigateToWorkout, onNavigateToProfile,
     onNavigateToPrograms, onNavigateToCalendar, onNavigateToAnalytics } = props;
@@ -77,7 +80,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = (props) => {
           ]);
           template = selectNextTemplate(details?.templates ?? [], completed);
         }
-        const preview = template ? await buildWorkoutPreview(template, workoutRepo, exerciseMap, currentUnit) : [];
+        const bodyweight = await userSettingsRepo?.getUserBodyweight();
+        const preview = template ? await buildWorkoutPreview(template, workoutRepo, exerciseMap, currentUnit, gearRepo, bodyweight,
+          { settings: userSettingsRepo, programs: programRepo, profiles: userProfileRepo ?? repositories?.userProfileRepo,
+            preferences: repositories?.exercisePreferenceRepo, calibration: repositories?.calibratedParamService }) : [];
         if (!alive) return;
         setOverview(summary); setCatalog(exerciseMap); setInProgress(current); setActive(activeProgram);
         setNext(template); setRows(preview); setUnit(currentUnit);
@@ -86,7 +92,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = (props) => {
       } finally { if (alive) setLoading(false); }
     })();
     return () => { alive = false; };
-  }, [workoutRepo, exerciseRepo, programRepo, programBlockService, userSettingsRepo, period, periodReady, reload]);
+  }, [workoutRepo, exerciseRepo, gearRepo, programRepo, programBlockService, userSettingsRepo, period, periodReady, reload]);
 
   const choosePeriod = (value: 7 | 14) => {
     setPeriod(value);
@@ -104,7 +110,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = (props) => {
           <Text style={styles.link}>Programs →</Text>
         </TouchableOpacity>}
       </View>
-      {loading && <ActivityIndicator accessibilityLabel="Loading training overview" color="#00E676" />}
+      {loading && <ActivityIndicator accessibilityLabel="Loading training overview" color={uiColors.accent} />}
 
       {error && <View style={styles.card}>
         <Text style={styles.body}>
@@ -126,7 +132,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = (props) => {
           {inProgress ? <Text style={styles.body}>Your session is saved. Pick up where you left off.</Text> : next ? <>
             <Text style={styles.muted}>{active?.program.name} · {rows.length} exercises</Text>
             <WorkoutPrescription rows={rows} limit={3} />
-            <Text style={styles.hint}>Suggestions are reviewed in the logger before they are applied.</Text>
           </> : <Text style={styles.body}>Choose a program or start a freestyle workout.</Text>}
 
           <TouchableOpacity
@@ -289,34 +294,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = (props) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
+  container: { flex: 1, backgroundColor: uiColors.background },
   content: { padding: 16, paddingBottom: 40, gap: 12 },
   headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
-  title: { color: '#FAFAFA', fontSize: 30, fontWeight: '800' },
-  eyebrow: { color: '#86EFAC', fontSize: 11, letterSpacing: 1.2, fontWeight: '700' },
-  sectionTitle: { color: '#FAFAFA', fontSize: 19, fontWeight: '700', marginTop: 8 },
-  card: { backgroundColor: '#141417', borderRadius: 16, borderWidth: 1, borderColor: '#27272A', padding: 16, gap: 8 },
-  nextCard: { borderColor: '#315744' },
-  body: { color: '#D4D4D8', lineHeight: 21 },
-  muted: { color: '#A1A1AA', fontSize: 12, marginTop: 3 },
-  hint: { color: '#A1A1AA', fontSize: 12, lineHeight: 18 },
-  link: { color: '#86EFAC', fontWeight: '600' },
-  primary: { backgroundColor: '#00E676', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 8 },
-  primaryText: { color: '#052E16', fontWeight: '700' },
-  smallButton: { backgroundColor: '#18181B', padding: 12, borderRadius: 10, minHeight: 44, justifyContent: 'center' },
-  toggle: { flexDirection: 'row', backgroundColor: '#18181B', borderRadius: 9, padding: 3 },
+  title: { color: uiColors.text, fontSize: 30, fontWeight: '800' },
+  eyebrow: { color: uiColors.accentText, fontSize: 11, letterSpacing: 1.2, fontWeight: '700' },
+  sectionTitle: { color: uiColors.text, fontSize: 19, fontWeight: '700', marginTop: 8 },
+  card: { backgroundColor: uiColors.surface, borderRadius: 16, borderWidth: 1, borderColor: uiColors.border, padding: 16, gap: 8 },
+  nextCard: { borderColor: uiColors.accentBorder },
+  body: { color: uiColors.secondaryText, lineHeight: 21 },
+  muted: { color: uiColors.muted, fontSize: 12, marginTop: 3 },
+  hint: { color: uiColors.muted, fontSize: 12, lineHeight: 18 },
+  link: { color: uiColors.accentText, fontWeight: '600' },
+  primary: { backgroundColor: uiColors.accent, borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 8 },
+  primaryText: { color: uiColors.onAccent, fontWeight: '700' },
+  smallButton: { backgroundColor: uiColors.raised, padding: 12, borderRadius: 10, minHeight: 44, justifyContent: 'center' },
+  toggle: { flexDirection: 'row', backgroundColor: uiColors.raised, borderRadius: 9, padding: 3 },
   period: { padding: 9, borderRadius: 7, minHeight: 40, justifyContent: 'center' },
-  selected: { backgroundColor: '#00E676' },
+  selected: { backgroundColor: uiColors.accent },
   timeline: { flexDirection: 'row', justifyContent: 'space-between' },
   day: { flex: 1, alignItems: 'center', gap: 7, paddingVertical: 8 },
-  dayLabel: { color: '#A1A1AA', fontSize: 10 },
-  dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#27272A' },
-  activeDot: { backgroundColor: '#00E676' },
+  dayLabel: { color: uiColors.muted, fontSize: 10 },
+  dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: uiColors.border },
+  activeDot: { backgroundColor: uiColors.accent },
   metrics: { flexDirection: 'row', gap: 8 },
-  metric: { flex: 1, backgroundColor: '#18181B', padding: 12, borderRadius: 12 },
-  metricValue: { color: '#FAFAFA', fontSize: 25, fontWeight: '700' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#141417', borderRadius: 12, padding: 14 },
-  rowTitle: { color: '#FAFAFA', fontSize: 15, fontWeight: '600' },
+  metric: { flex: 1, backgroundColor: uiColors.raised, padding: 12, borderRadius: 12 },
+  metricValue: { color: uiColors.text, fontSize: 25, fontWeight: '700' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: uiColors.surface, borderRadius: 12, padding: 14 },
+  rowTitle: { color: uiColors.text, fontSize: 15, fontWeight: '600' },
   flex: { flex: 1, gap: 4 },
   shortcuts: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 });

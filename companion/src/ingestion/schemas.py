@@ -9,7 +9,7 @@ Mirrors:
 from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional, Union
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ============================================================================
 # Enums / Literal Type Aliases
@@ -38,7 +38,6 @@ IntensityStyle = Literal[
 PrimaryGoal = Literal[
     "strength",
     "hypertrophy",
-    "powerbuilding",
     "endurance",
     "longevity",
 ]
@@ -140,8 +139,24 @@ class WorkoutTemplate(StrictSchemaModel):
     created_at: str = Field(description="ISO 8601 creation timestamp.")
 
 
+class RestPausePrescription(StrictSchemaModel):
+    mini_sets: int = Field(ge=1, le=5)
+    mini_reps_min: int = Field(ge=1, le=10)
+    mini_reps_max: int = Field(ge=1, le=10)
+    rest_seconds: int = Field(ge=10, le=60)
+
+    @model_validator(mode="after")
+    def validate_rep_range(self) -> RestPausePrescription:
+        if self.mini_reps_max < self.mini_reps_min:
+            raise ValueError("Mini-set maximum reps must be at least the minimum.")
+        return self
+
+
 class TemplateExercise(StrictSchemaModel):
     """Prescribed exercise slot within a workout template."""
+
+    rest_seconds: Optional[int] = Field(default=None, ge=0, description="Prescribed rest between sets or superset rounds.")
+    rest_pause: Optional[RestPausePrescription] = None
 
     id: str = Field(description="Unique identifier for the prescription.")
     template_id: str = Field(description="Foreign key referencing workout_templates.id.")
@@ -504,6 +519,36 @@ class BodyMetric(StrictSchemaModel):
 class UserProfile(StrictSchemaModel):
     """User physiological demographics and training psychology matrix."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_goals(cls, data: Any) -> Any:
+        """Accept old exports while keeping canonical goals separate from mood."""
+        if not isinstance(data, dict):
+            return data
+        primary = data.get("primary_goal", "hypertrophy")
+        secondary = data.get("secondary_goals")
+        if primary != "powerbuilding" and (
+            not isinstance(secondary, list) or "powerbuilding" not in secondary
+        ):
+            return data
+        if secondary is not None and (
+            not isinstance(secondary, list) or not all(isinstance(item, str) for item in secondary)
+        ):
+            return data  # Leave malformed inputs to normal field validation.
+        result = dict(data)
+        result["primary_goal"] = "strength" if primary == "powerbuilding" else primary
+        expanded = [
+            goal
+            for item in (secondary or [])
+            for goal in (["strength", "hypertrophy"] if item == "powerbuilding" else [item])
+        ]
+        if primary == "powerbuilding":
+            expanded.append("hypertrophy")
+        result["secondary_goals"] = list(dict.fromkeys(
+            goal for goal in expanded if goal != result["primary_goal"]
+        ))
+        return result
+
     id: str = Field(description="Unique identifier for the user profile.")
     gender: Gender = Field(description="Biological sex.")
     birthdate: Optional[str] = Field(
@@ -807,6 +852,19 @@ class ProgramAuditPayload(StrictSchemaModel):
     )
 
 
+class MesocycleFeedbackPayload(StrictSchemaModel):
+    """Evidence accompanying a block-length recommendation; never an unconditional command."""
+
+    recommended_accumulation_weeks: int = Field(ge=3, le=12)
+    confidence_score: float = Field(ge=0, le=100)
+    confidence_tier: Literal["LOW", "MODERATE", "HIGH"]
+    detected_blocks_count: int = Field(ge=0)
+    explicit_rpe_coverage: float = Field(ge=0, le=1)
+    observed_through: str
+    exported_at: str
+    primary_goal: str
+
+
 class CalibratedParametersEnvelope(StrictSchemaModel):
     """Envelope wrapper for calibrated parameter export file."""
 
@@ -820,6 +878,7 @@ class CalibratedParametersEnvelope(StrictSchemaModel):
     parameters: List[CalibratedParameter] = Field(
         description="List of calibrated exercise parameters.",
     )
+    mesocycle_feedback: Optional[MesocycleFeedbackPayload] = None
     muscle_landmarks: Optional[Dict[str, MuscleLandmarkPayload]] = Field(
         default=None,
         description="Individualized volume landmarks and localized readiness per muscle group.",

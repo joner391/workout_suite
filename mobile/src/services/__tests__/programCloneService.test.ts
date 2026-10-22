@@ -46,6 +46,8 @@ describe('ProgramCloneService (Section 1.1)', () => {
 
     const exercise1: TemplateExercise = {
       id: 'te_bench_1',
+      rest_seconds: 45,
+      rest_pause: { mini_sets: 3, mini_reps_min: 3, mini_reps_max: 5, rest_seconds: 15 },
       template_id: template1.id,
       exercise_id: 'barbell_bench_press',
       gear_id: null,
@@ -108,6 +110,9 @@ describe('ProgramCloneService (Section 1.1)', () => {
     const clonedEx2 = clonedTmpl.exercises[1];
 
     expect(clonedEx1.id).not.toBe(exercise1.id);
+    expect(clonedEx1.rest_seconds).toBe(45);
+    expect(clonedEx1.rest_pause).toEqual(exercise1.rest_pause);
+    expect(clonedEx1.rest_pause).not.toBe(exercise1.rest_pause);
     expect(clonedEx2.id).not.toBe(exercise2.id);
     expect(clonedEx1.template_id).toBe(clonedTmpl.id);
     expect(clonedEx2.template_id).toBe(clonedTmpl.id);

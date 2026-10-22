@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — WorkoutTabRouter
  *
@@ -32,8 +34,12 @@ import {
   ActiveProgramInfo,
 } from '../../services/programBlockService';
 import { ExercisePreferenceService } from '../../services/exercisePreferenceService';
+import { TrainingAdaptationService } from '../../services/trainingAdaptationService';
+import { ProgramEvolutionService } from '../../services/programEvolutionService';
+import { useOptionalRepositories } from '../../context/RepositoryContext';
 import { ActiveSessionService } from '../../services/activeSessionService';
 import { ActiveLoggerScreen } from './ActiveLoggerScreen';
+import { shouldGenerateWarmups } from '../../core/math/warmupEstimator';
 import { WorkoutPrescription } from '../home/WorkoutPrescription';
 import { buildWorkoutPreview, selectNextTemplate, ExercisePrescription } from '../../services/workoutPreviewService';
 import {
@@ -84,6 +90,10 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
   onDiscardSession,
   onOpenProgramPlanner,
 }) => {
+  const repositories = useOptionalRepositories();
+  const adaptationContext = { settings: userSettingsRepo, programs: programRepo,
+    profiles: repositories?.userProfileRepo, preferences: exercisePreferenceRepo ?? repositories?.exercisePreferenceRepo,
+    calibration: repositories?.calibratedParamService };
   const [loading, setLoading] = useState<boolean>(true);
   const [starting, setStarting] = useState<boolean>(false);
   const [activeInfo, setActiveInfo] = useState<ActiveProgramInfo | null>(null);
@@ -101,12 +111,13 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
     (async () => {
       try {
         const unit = await userSettingsRepo?.getUnitSystem() ?? 'kg';
-        const rows = await buildWorkoutPreview(selectedTemplate, workoutRepo, exerciseCatalog, unit);
+        const bodyweight = await userSettingsRepo?.getUserBodyweight();
+        const rows = await buildWorkoutPreview(selectedTemplate, workoutRepo, exerciseCatalog, unit, gearRepo, bodyweight, adaptationContext);
         if (alive) setPreviewRows(rows);
       } catch { if (alive) setPreviewError(true); }
     })();
     return () => { alive = false; };
-  }, [selectedTemplate, workoutRepo, exerciseCatalog, userSettingsRepo, isActiveTab, hasActiveWorkout]);
+  }, [selectedTemplate, workoutRepo, exerciseCatalog, gearRepo, userSettingsRepo, isActiveTab, hasActiveWorkout]);
 
   // Load active program, template sequence, and exercises
   const loadRouterState = useCallback(async () => {
@@ -117,7 +128,19 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
       setExerciseCatalog(exMap);
 
       if (programBlockService && programRepo) {
-        const active = await programBlockService.getActiveProgram();
+        let active = await programBlockService.getActiveProgram();
+        if (active && userSettingsRepo && repositories?.userProfileRepo) {
+          const adaptation = new TrainingAdaptationService(workoutRepo, adaptationContext);
+          const recent = await workoutRepo.findAll({ status: 'completed', startDate: active.block.start_date });
+          for (const workout of [...recent].reverse()) await adaptation.complete(workout.id);
+          const evolution = new ProgramEvolutionService(programRepo, repositories.userProfileRepo, workoutRepo,
+            painReportRepo, exerciseRepo, programBlockService, userSettingsRepo,
+            exercisePreferenceRepo ?? repositories.exercisePreferenceRepo);
+          if ((await evolution.isReadyForEvolution(active.program.id)).ready) {
+            await evolution.evolveActiveProgramForNextMeso({ programId: active.program.id });
+            active = await programBlockService.getActiveProgram();
+          }
+        }
         setActiveInfo(active);
         setSelectedTemplate(null);
         setProgramDetails(null);
@@ -150,6 +173,10 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
     try {
       setStarting(true);
       const sessionService = new ActiveSessionService(workoutRepo, exerciseRepo, gearRepo);
+      const bodyweight = await userSettingsRepo?.getUserBodyweight();
+      const adaptation = new TrainingAdaptationService(workoutRepo, adaptationContext);
+      const resolvedTemplate = await adaptation.resolve(template, exerciseCatalog);
+      const plan = await buildWorkoutPreview(template, workoutRepo, exerciseCatalog, 'kg', gearRepo, bodyweight, adaptationContext);
 
       const newWorkout = await sessionService.startWorkout({
         name: template.name,
@@ -170,36 +197,27 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
 
       // Populate planned sets from template exercises
       if (template.exercises && template.exercises.length > 0) {
-        for (const te of template.exercises) {
-          const setCount = te.target_sets || 3;
-          for (let s = 1; s <= setCount; s++) {
+        for (const row of plan) {
+          const te = row.templateExercise;
+          for (const [index, set] of row.sets.entries()) {
             await sessionService.addSet(newWorkout.id, {
               exerciseId: te.exercise_id,
-              rawInputWeight: 0,
-              reps: te.target_reps_min || 8,
-              rpe: te.target_rpe ?? null,
-              rir: te.target_rir ?? null,
+              rawInputWeight: set.rawInputWeight ?? 0,
+              reps: set.reps,
+              setType: set.setType,
+              bodyweightKg: row.bodyweightKg,
+              rpe: null,
+              rir: null,
               gearId: te.gear_id ?? null,
-              exerciseGroupId: te.exercise_group_id ?? null,
-              setNumber: s,
+              exerciseGroupId: row.groupId,
+              setNumber: index + 1,
             });
           }
 
-          // Pre-populate smart warmups for SBD & compounds (ADR-082)
+          // Use the same warm-up policy as adding an exercise during a session.
           if (warmupMode !== 'off') {
             const exObj = exerciseCatalog.get(te.exercise_id);
-            const isSBDorCompound =
-              exObj?.is_compound ||
-              exObj?.standard_lift_type === 'squat' ||
-              exObj?.standard_lift_type === 'bench' ||
-              exObj?.standard_lift_type === 'deadlift' ||
-              exObj?.category === 'Barbell' ||
-              (exObj?.parent_exercise_id &&
-                (exObj.parent_exercise_id.includes('squat') ||
-                  exObj.parent_exercise_id.includes('bench') ||
-                  exObj.parent_exercise_id.includes('deadlift')));
-
-            if (warmupMode === 'all_exercises' || isSBDorCompound) {
+            if (exObj && shouldGenerateWarmups(warmupMode, exObj)) {
               try {
                 await sessionService.generateWarmupSetsForExercise(newWorkout.id, te.exercise_id);
               } catch (warmupErr) {
@@ -210,6 +228,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
         }
       }
 
+      await adaptation.capture(newWorkout.id, resolvedTemplate, exerciseCatalog);
       onStartSession(newWorkout.id);
     } catch (err: any) {
       console.error('Failed to start template workout:', err);
@@ -241,6 +260,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
     return (
       <View testID="workout-state-a-logger" style={styles.container}>
         <ActiveLoggerScreen
+          isActiveTab={isActiveTab}
           initialWorkoutId={currentWorkoutId}
           workoutRepo={workoutRepo}
           exerciseRepo={exerciseRepo}
@@ -260,7 +280,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#00E676" />
+        <ActivityIndicator size="large" color={uiColors.accent} />
         <Text style={styles.loadingText}>Resolving workout status...</Text>
       </View>
     );
@@ -280,14 +300,21 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
     return (
       <View testID="workout-state-b-preflight" style={styles.container}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          <TouchableOpacity testID="workout-manage-programs-btn" accessibilityRole="button" style={styles.secondaryBtn} onPress={onOpenProgramPlanner}><Text style={styles.secondaryBtnText}>Manage programs →</Text></TouchableOpacity>
+          <TouchableOpacity
+            testID="workout-manage-programs-btn"
+            accessibilityRole="button"
+            style={styles.secondaryBtn}
+            onPress={onOpenProgramPlanner}
+          >
+            <Text style={styles.secondaryBtnText}>Manage programs →</Text>
+          </TouchableOpacity>
           {/* Header Banner */}
           <View style={styles.preflightHeader}>
             <View style={styles.programPill}>
               <View
                 style={[
                   styles.colorDot,
-                  { backgroundColor: activeInfo.program.color_hex || '#00E676' },
+                  { backgroundColor: activeInfo.program.color_hex || uiColors.accent },
                 ]}
               />
               <Text style={styles.programPillText}>{activeInfo.program.name}</Text>
@@ -314,8 +341,9 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
           {/* Planned Exercise List Preview */}
           <Text style={styles.sectionTitle}>PLANNED EXERCISES & TARGETS</Text>
           <WorkoutPrescription rows={previewRows} />
+          {previewRows.length > 0 && previewRows.length < (selectedTemplate?.exercises.length ?? 0) &&
+            <Text style={styles.exerciseTargetText}>An exercise is omitted because no acceptable pain-recovery substitute is available. Review exercise preferences before restoring it.</Text>}
           {previewError && <Text style={styles.exerciseTargetText}>Load preview unavailable. Your template is still available in the logger.</Text>}
-          <Text style={styles.exerciseTargetText}>Suggested changes require confirmation in the logger. Last loads are references from matching equipment.</Text>
           {/* Primary CTA: START WORKOUT */}
           <TouchableOpacity
             testID="start-workout-cta"
@@ -325,9 +353,9 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
             activeOpacity={0.8}
           >
             {starting ? (
-              <ActivityIndicator size="small" color="#0A0A0A" />
+              <ActivityIndicator size="small" color={uiColors.background} />
             ) : (
-              <Text style={styles.primaryStartBtnText}>⚡ START WORKOUT</Text>
+                <Text style={styles.primaryStartBtnText}>START WORKOUT</Text>
             )}
           </TouchableOpacity>
 
@@ -401,7 +429,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
   return (
     <View testID="workout-state-c-no-program" style={styles.container}>
       <View style={styles.emptyStateCard}>
-        <Text style={styles.emptyStateIcon}>📋</Text>
+        <AppIcon name="clipboard" size={32} color={uiColors.accentText} />
         <Text style={styles.emptyStateTitle}>No Active Training Program</Text>
         <Text style={styles.emptyStateText}>
           You are not currently subscribed to a training program. Select a pre-built split,
@@ -414,7 +442,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
           onPress={onOpenProgramPlanner}
           activeOpacity={0.8}
         >
-          <Text style={styles.openPlannerBtnText}>Open Program Planner 📋</Text>
+          <Text style={styles.openPlannerBtnText}>Open Program Planner </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -424,7 +452,7 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
           activeOpacity={0.8}
         >
           <Text style={styles.startFreestyleEmptyBtnText}>
-            Start Freestyle Workout ⚡
+            Start Freestyle Workout
           </Text>
         </TouchableOpacity>
       </View>
@@ -435,16 +463,16 @@ export const WorkoutTabRouter: React.FC<WorkoutTabRouterProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
   },
   loadingText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     marginTop: 12,
   },
@@ -462,14 +490,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   programPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 20,
+    borderColor: uiColors.border,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: uiRadius.badge,
     flex: 1,
     marginRight: 8,
   },
@@ -480,92 +510,95 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   programPillText: {
-    color: '#FAFAFA',
-    fontSize: 12,
-    fontWeight: '700',
+    lineHeight: 16,
+    color: uiColors.text,
+    fontSize: 11,
+    fontWeight: '600',
   },
   sequencePill: {
-    color: '#00E676',
+    minHeight: 26,
+    justifyContent: 'center',
+    color: uiColors.accentText,
     backgroundColor: '#0F1A12',
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     fontSize: 9,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0.5,
     paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 12,
+    borderRadius: uiRadius.badge,
   },
   templateCard: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#1E1E22',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 16,
     marginBottom: 16,
   },
   templateName: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     marginBottom: 4,
   },
   templateNotes: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 12,
     marginBottom: 10,
   },
   summaryBar: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 6,
     paddingVertical: 6,
     paddingHorizontal: 10,
     alignSelf: 'flex-start',
   },
   summaryBarText: {
-    color: '#86EFAC',
+    color: uiColors.accentText,
     fontSize: 11,
     fontWeight: '700',
   },
   sectionTitle: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 1,
     marginBottom: 10,
   },
   exerciseTargetText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 12,
     marginTop: 2,
   },
   primaryStartBtn: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
   },
   primaryStartBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: -0.3,
   },
   secondaryActionsContainer: {
     gap: 8,
   },
   secondaryBtn: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
   },
   secondaryBtnText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -575,54 +608,50 @@ const styles = StyleSheet.create({
   emptyStateCard: {
     margin: 20,
     marginTop: 60,
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#1E1E22',
-    borderRadius: 16,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 24,
     alignItems: 'center',
   },
-  emptyStateIcon: {
-    fontSize: 40,
-    marginBottom: 12,
-  },
   emptyStateTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 8,
   },
   emptyStateText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 20,
   },
   openPlannerBtn: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     width: '100%',
     paddingVertical: 14,
-    borderRadius: 10,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
     marginBottom: 10,
   },
   openPlannerBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   startFreestyleEmptyBtn: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     width: '100%',
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
   },
   startFreestyleEmptyBtnText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -633,40 +662,42 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: {
-    backgroundColor: '#121214',
-    borderRadius: 12,
+    backgroundColor: uiColors.surface,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 16,
   },
   modalTitle: {
-    color: '#FAFAFA',
-    fontSize: 16,
-    fontWeight: '800',
+    lineHeight: 28,
+    flexShrink: 1,
+    color: uiColors.text,
+    fontSize: 22,
+    fontWeight: '700',
     marginBottom: 12,
   },
   dayPickerItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   dayPickerItemActive: {
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     backgroundColor: '#0F1A12',
   },
   dayPickerItemIndex: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     marginRight: 10,
   },
   dayPickerItemName: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -676,7 +707,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   modalCancelBtnText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     fontWeight: '600',
   },

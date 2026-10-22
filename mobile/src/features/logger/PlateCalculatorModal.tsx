@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — PlateCalculatorModal
  *
@@ -66,16 +68,16 @@ const BAR_PRESETS_LBS: BarTarePreset[] = [
  */
 const PLATE_STYLES: Record<number, { bg: string; text: string; height: number; width: number }> = {
   // Metric (kg)
-  25: { bg: '#DC2626', text: '#FFFFFF', height: 90, width: 22 }, // Red
-  20: { bg: '#2563EB', text: '#FFFFFF', height: 86, width: 20 }, // Blue
-  15: { bg: '#CA8A04', text: '#000000', height: 78, width: 18 }, // Yellow
-  10: { bg: '#16A34A', text: '#FFFFFF', height: 70, width: 16 }, // Green
-  5: { bg: '#E4E4E7', text: '#000000', height: 56, width: 14 }, // White
-  2.5: { bg: '#3F3F46', text: '#FFFFFF', height: 46, width: 12 }, // Black/Dark
-  1.25: { bg: '#94A3B8', text: '#000000', height: 38, width: 10 }, // Chrome/Silver
+  25: { bg: '#DC2626', text: uiColors.text, height: 90, width: 22 }, // Red
+  20: { bg: '#2563EB', text: uiColors.text, height: 86, width: 20 }, // Blue
+  15: { bg: '#CA8A04', text: uiColors.background, height: 78, width: 18 }, // Yellow
+  10: { bg: '#16A34A', text: uiColors.text, height: 70, width: 16 }, // Green
+  5: { bg: '#E4E4E7', text: uiColors.background, height: 56, width: 14 }, // White
+  2.5: { bg: '#3F3F46', text: uiColors.text, height: 46, width: 12 }, // Black/Dark
+  1.25: { bg: '#94A3B8', text: uiColors.background, height: 38, width: 10 }, // Chrome/Silver
   // Imperial (lbs)
-  45: { bg: '#2563EB', text: '#FFFFFF', height: 90, width: 22 }, // Blue
-  35: { bg: '#CA8A04', text: '#000000', height: 82, width: 20 }, // Yellow
+  45: { bg: '#2563EB', text: uiColors.text, height: 90, width: 22 }, // Blue
+  35: { bg: '#CA8A04', text: uiColors.background, height: 82, width: 20 }, // Yellow
 };
 
 export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
@@ -184,9 +186,9 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
               testID="plate-calculator-close"
               style={styles.closeButton}
               onPress={onClose}
-              accessibilityLabel="Close plate calculator"
+              accessibilityLabel="Close plate calculator" accessibilityRole="button"
             >
-              <Text style={styles.closeButtonText}>✕</Text>
+              <AppIcon name="close" size={20} color={uiColors.accentText} />
             </TouchableOpacity>
           </View>
 
@@ -203,7 +205,7 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
                   onChangeText={handleTextChange}
                   selectTextOnFocus
                   placeholder="0"
-                  placeholderTextColor="#71717A"
+                  placeholderTextColor={uiColors.subtle}
                   accessibilityLabel="Target barbell weight in kg"
                 />
                 <Text style={styles.targetUnit}>{unitSystem}</Text>
@@ -294,7 +296,7 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
                     calculation.platesPerSide.map((plateWeight, index) => {
                       const styleInfo = PLATE_STYLES[plateWeight] || {
                         bg: '#52525B',
-                        text: '#FFFFFF',
+                        text: uiColors.text,
                         height: 50,
                         width: 14,
                       };
@@ -350,7 +352,7 @@ export const PlateCalculatorModal: React.FC<PlateCalculatorModalProps> = ({
                     .sort(([a], [b]) => parseFloat(b) - parseFloat(a))
                     .map(([weightStr, count]) => {
                       const weightNum = parseFloat(weightStr);
-                      const styleInfo = PLATE_STYLES[weightNum] || { bg: '#27272A', text: '#FAFAFA' };
+                      const styleInfo = PLATE_STYLES[weightNum] || { bg: uiColors.border, text: uiColors.text };
                       return (
                         <View
                           key={weightStr}
@@ -400,10 +402,10 @@ const styles = StyleSheet.create({
   modalContent: {
     width: '100%',
     maxHeight: '90%',
-    backgroundColor: '#09090B',
-    borderRadius: 16,
+    backgroundColor: uiColors.background,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 18,
   },
   header: {
@@ -411,31 +413,29 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
     paddingBottom: 12,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    lineHeight: 28,
+    flexShrink: 1,
+    fontSize: 22,
+    fontWeight: '700',
+    color: uiColors.text,
   },
   modalSubtitle: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#18181B',
+    flexShrink: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  closeButtonText: {
-    fontSize: 14,
-    color: '#A1A1AA',
-    fontWeight: '700',
   },
   targetSection: {
     alignItems: 'center',
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
   targetLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 1,
   },
   targetInputContainer: {
@@ -456,13 +456,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   targetNumericInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1.5,
     borderColor: '#38BDF8',
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     color: '#38BDF8',
     fontSize: 32,
-    fontWeight: '900',
+    fontWeight: '700',
     paddingHorizontal: 16,
     paddingVertical: 6,
     textAlign: 'center',
@@ -471,14 +471,8 @@ const styles = StyleSheet.create({
   targetSubDisplay: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     marginBottom: 4,
-  },
-  targetValueText: {
-    fontSize: 40,
-    fontWeight: '900',
-    color: '#38BDF8',
-    marginVertical: 2,
   },
   targetUnit: {
     fontSize: 20,
@@ -491,22 +485,22 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   stepperChip: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   stepperChipText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#E4E4E7',
   },
   sectionHeader: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 1,
     marginBottom: 8,
   },
@@ -519,12 +513,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   barPresetChip: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   barPresetChipSelected: {
     borderColor: '#38BDF8',
@@ -533,14 +527,14 @@ const styles = StyleSheet.create({
   barPresetText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   barPresetTextSelected: {
-    color: '#FAFAFA',
-    fontWeight: '700',
+    color: uiColors.text,
+    fontWeight: '600',
   },
   visualizerContainer: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderRadius: 12,
     padding: 14,
     marginVertical: 10,
@@ -553,7 +547,7 @@ const styles = StyleSheet.create({
     height: 100,
     justifyContent: 'flex-start',
     paddingHorizontal: 10,
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderRadius: 8,
     marginVertical: 8,
     overflow: 'hidden',
@@ -569,7 +563,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     height: 14,
-    backgroundColor: '#71717A',
+    backgroundColor: uiColors.subtle,
     flex: 1,
     borderRadius: 2,
     gap: 3,
@@ -584,7 +578,7 @@ const styles = StyleSheet.create({
   },
   visualPlateText: {
     fontSize: 8,
-    fontWeight: '900',
+    fontWeight: '700',
     transform: [{ rotate: '-90deg' }],
   },
   emptySleeveText: {
@@ -601,12 +595,12 @@ const styles = StyleSheet.create({
   },
   breakdownLabel: {
     fontSize: 13,
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   breakdownValue: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   remainderWarningBox: {
     backgroundColor: '#451A03',
@@ -630,18 +624,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   plateCountBadge: {
-    backgroundColor: '#18181B',
+    minHeight: 26,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1.5,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: uiRadius.badge,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
   plateBadgeWeight: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   plateBadgeCount: {
     fontSize: 12,
@@ -650,24 +646,24 @@ const styles = StyleSheet.create({
   },
   noPlatesText: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
     fontStyle: 'italic',
   },
   footerRow: {
     marginTop: 14,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
     paddingTop: 12,
   },
   applyButton: {
-    backgroundColor: '#00E676',
-    borderRadius: 8,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 12,
     alignItems: 'center',
   },
   applyButtonText: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#000000',
+    fontWeight: '700',
+    color: uiColors.background,
   },
 });

@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — ProgressionBuilderModal
  *
@@ -224,7 +226,12 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
 
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
       <View testID="progression-builder-modal" style={styles.modalOverlay}>
         <View style={styles.modalContainer}>
           {/* Header */}
@@ -239,9 +246,9 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
             <TouchableOpacity
               testID="close-progression-builder-btn"
               style={styles.closeBtn}
-              onPress={onClose}
+              onPress={onClose} accessibilityRole="button" accessibilityLabel="Close"
             >
-              <Text style={styles.closeBtnText}>✕</Text>
+              <AppIcon name="close" size={20} color={uiColors.accentText} />
             </TouchableOpacity>
           </View>
 
@@ -293,7 +300,7 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
             {/* Currently Active Rules */}
             <Text style={styles.sectionHeader}>ATTACHED PROGRESSION RULES ({rules.length})</Text>
             {loading ? (
-              <ActivityIndicator size="small" color="#00E676" style={{ marginVertical: 12 }} />
+              <ActivityIndicator size="small" color={uiColors.accent} style={{ marginVertical: 12 }} />
             ) : rules.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyText}>No progression rules attached.</Text>
@@ -348,24 +355,24 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
               {(conditionType === 'AVERAGE_RPE_LESS_THAN' ||
                 conditionType === 'CONSECUTIVE_SUCCESSFUL_SESSIONS' ||
                 conditionType === 'CONSECUTIVE_FAILED_SESSIONS') && (
-                <View style={[styles.inputCol, { marginTop: 8, marginBottom: 4 }]}>
-                  <Text style={styles.label}>
-                    {conditionType === 'AVERAGE_RPE_LESS_THAN'
-                      ? 'Condition Threshold (Target RPE, e.g. 8.0)'
-                      : 'Condition Threshold (Session Count, e.g. 2)'}
-                  </Text>
-                  <TextInput
-                    testID="condition-threshold-input"
-                    style={styles.textInput}
-                    keyboardType="numeric"
-                    value={conditionThreshold}
-                    onChangeText={setConditionThreshold}
-                    placeholder={conditionType === 'AVERAGE_RPE_LESS_THAN' ? '8.0' : '2'}
-                    placeholderTextColor="#71717A"
-                    accessibilityLabel="Condition threshold value"
-                  />
-                </View>
-              )}
+                  <View style={[styles.inputCol, { marginTop: 8, marginBottom: 4 }]}>
+                    <Text style={styles.label}>
+                      {conditionType === 'AVERAGE_RPE_LESS_THAN'
+                        ? 'Condition Threshold (Target RPE, e.g. 8.0)'
+                        : 'Condition Threshold (Session Count, e.g. 2)'}
+                    </Text>
+                    <TextInput
+                      testID="condition-threshold-input"
+                      style={styles.textInput}
+                      keyboardType="numeric"
+                      value={conditionThreshold}
+                      onChangeText={setConditionThreshold}
+                      placeholder={conditionType === 'AVERAGE_RPE_LESS_THAN' ? '8.0' : '2'}
+                      placeholderTextColor={uiColors.subtle}
+                      accessibilityLabel="Condition threshold value"
+                    />
+                  </View>
+                )}
 
               <Text style={[styles.label, { marginTop: 12 }]}>THEN Action:</Text>
               {[
@@ -401,7 +408,7 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
                     value={actionValue}
                     onChangeText={setActionValue}
                     placeholder="2.5"
-                    placeholderTextColor="#71717A"
+                    placeholderTextColor={uiColors.subtle}
                   />
                 </View>
 
@@ -414,7 +421,7 @@ export const ProgressionBuilderModal: React.FC<ProgressionBuilderModalProps> = (
                     value={priority}
                     onChangeText={setPriority}
                     placeholder="1"
-                    placeholderTextColor="#71717A"
+                    placeholderTextColor={uiColors.subtle}
                   />
                 </View>
               </View>
@@ -441,11 +448,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContainer: {
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     maxHeight: '90%',
     minHeight: '60%',
   },
@@ -455,25 +462,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   title: {
-    color: '#FAFAFA',
-    fontSize: 17,
-    fontWeight: '800',
+    lineHeight: 28,
+    flexShrink: 1,
+    color: uiColors.text,
+    fontSize: 22,
+    fontWeight: '700',
   },
   subtitle: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 12,
     marginTop: 2,
   },
   closeBtn: {
+    width: 44,
+    height: 44,
+    flexShrink: 0,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     padding: 6,
-  },
-  closeBtnText: {
-    color: '#A1A1AA',
-    fontSize: 18,
-    fontWeight: '700',
   },
   scrollView: {
     flex: 1,
@@ -483,9 +492,9 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   sectionHeader: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 1,
     marginBottom: 8,
     marginTop: 8,
@@ -497,58 +506,58 @@ const styles = StyleSheet.create({
   },
   presetBtn: {
     flex: 1,
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     padding: 10,
     alignItems: 'center',
   },
   presetBtnActive: {
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     backgroundColor: '#0F1A12',
   },
   presetBadge: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 11,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   presetTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
     marginTop: 2,
   },
   presetDesc: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 10,
     marginTop: 2,
     textAlign: 'center',
   },
   emptyCard: {
-    backgroundColor: '#121214',
-    borderRadius: 8,
+    backgroundColor: uiColors.surface,
+    borderRadius: uiRadius.card,
     padding: 14,
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1E1E22',
+    borderColor: uiColors.border,
   },
   emptyText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     fontWeight: '600',
   },
   emptySubtext: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     marginTop: 2,
   },
   ruleCard: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 12,
     marginBottom: 8,
   },
@@ -559,13 +568,15 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   rulePriorityBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     color: '#38BDF8',
     fontSize: 10,
     fontWeight: '700',
     backgroundColor: '#0F172A',
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: uiRadius.badge,
   },
   deleteRuleText: {
     color: '#EF4444',
@@ -573,20 +584,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   ruleBody: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
     fontFamily: 'monospace',
   },
   customRuleCard: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 10,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginTop: 4,
   },
   label: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 6,
@@ -597,7 +608,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   radioRowActive: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 4,
   },
   radioDot: {
@@ -605,7 +616,7 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: '#71717A',
+    borderColor: uiColors.subtle,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
@@ -614,7 +625,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
   },
   radioLabel: {
     color: '#E4E4E7',
@@ -629,25 +640,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   textInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
+    color: uiColors.text,
     fontSize: 13,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   addRuleBtn: {
-    backgroundColor: '#00E676',
-    borderRadius: 8,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 10,
     alignItems: 'center',
     marginTop: 14,
   },
   addRuleBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

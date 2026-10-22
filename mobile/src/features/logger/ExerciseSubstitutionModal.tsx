@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — ExerciseSubstitutionModal
  *
@@ -51,7 +53,7 @@ const MATCH_REASON_LABELS: Record<SubstitutionMatchReason, { label: string; bg: 
   variant_family: { label: 'Variant Family', bg: '#312E81', text: '#C7D2FE' }, // Indigo
   parent_root: { label: 'Parent Movement', bg: '#1E3A8A', text: '#BFDBFE' }, // Blue
   same_muscle_compound: { label: 'Same Muscle & Profile', bg: '#064E3B', text: '#A7F3D0' }, // Emerald
-  same_muscle_group: { label: 'Same Muscle', bg: '#27272A', text: '#D4D4D8' }, // Zinc
+  same_muscle_group: { label: 'Same Muscle', bg: uiColors.border, text: uiColors.secondaryText }, // Zinc
 };
 
 export const ExerciseSubstitutionModal: React.FC<ExerciseSubstitutionModalProps> = ({
@@ -182,9 +184,9 @@ export const ExerciseSubstitutionModal: React.FC<ExerciseSubstitutionModalProps>
               testID="substitution-close-button"
               style={styles.closeButton}
               onPress={onClose}
-              accessibilityLabel="Close substitution modal"
+              accessibilityLabel="Close substitution modal" accessibilityRole="button"
             >
-              <Text style={styles.closeButtonText}>✕</Text>
+              <AppIcon name="close" size={20} color={uiColors.accentText} />
             </TouchableOpacity>
           </View>
 
@@ -194,7 +196,7 @@ export const ExerciseSubstitutionModal: React.FC<ExerciseSubstitutionModalProps>
               testID="substitution-search-input"
               style={styles.searchInput}
               placeholder="Search substitutes or equipment..."
-              placeholderTextColor="#71717A"
+              placeholderTextColor={uiColors.subtle}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="none"
@@ -204,7 +206,7 @@ export const ExerciseSubstitutionModal: React.FC<ExerciseSubstitutionModalProps>
           {/* Substitutes List */}
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#00E676" />
+              <ActivityIndicator size="large" color={uiColors.accent} />
               <Text style={styles.loadingText}>Finding compatible movements...</Text>
             </View>
           ) : (
@@ -218,8 +220,8 @@ export const ExerciseSubstitutionModal: React.FC<ExerciseSubstitutionModalProps>
                 const isSelected = selectedExercise?.id === item.exercise.id;
                 const matchStyle = MATCH_REASON_LABELS[item.matchReason] || {
                   label: 'Alternative',
-                  bg: '#27272A',
-                  text: '#D4D4D8',
+                  bg: uiColors.border,
+                  text: uiColors.secondaryText,
                 };
                 const hasGhost = item.hasGhostData || item.ghostSets.length > 0;
 
@@ -317,7 +319,7 @@ export const ExerciseSubstitutionModal: React.FC<ExerciseSubstitutionModalProps>
               disabled={!selectedExercise || submitting}
             >
               {submitting ? (
-                <ActivityIndicator size="small" color="#000000" />
+                <ActivityIndicator size="small" color={uiColors.background} />
               ) : (
                 <Text style={styles.confirmButtonText}>
                   {selectedExercise
@@ -344,10 +346,10 @@ const styles = StyleSheet.create({
   modalContent: {
     width: '100%',
     maxHeight: '92%',
-    backgroundColor: '#09090B',
-    borderRadius: 16,
+    backgroundColor: uiColors.background,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 18,
     flexDirection: 'column',
   },
@@ -356,17 +358,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
     paddingBottom: 12,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    lineHeight: 28,
+    flexShrink: 1,
+    fontSize: 22,
+    fontWeight: '700',
+    color: uiColors.text,
   },
   modalSubtitle: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
   },
   currentExerciseHighlight: {
@@ -374,27 +378,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#18181B',
+    flexShrink: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  closeButtonText: {
-    fontSize: 14,
-    color: '#A1A1AA',
-    fontWeight: '700',
   },
   searchContainer: {
     marginVertical: 12,
   },
   searchInput: {
-    backgroundColor: '#18181B',
-    borderRadius: 8,
+    backgroundColor: uiColors.raised,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
-    borderColor: '#27272A',
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    color: uiColors.text,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     marginTop: 10,
   },
@@ -412,15 +412,15 @@ const styles = StyleSheet.create({
     maxHeight: 280,
   },
   itemCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 12,
     marginBottom: 8,
   },
   itemCardSelected: {
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     backgroundColor: '#0F2618',
   },
   itemHeaderRow: {
@@ -431,16 +431,16 @@ const styles = StyleSheet.create({
   itemName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
     flex: 1,
   },
   itemNameSelected: {
-    color: '#86EFAC',
+    color: uiColors.accentText,
   },
   badge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: uiRadius.badge,
     marginLeft: 8,
   },
   badgeText: {
@@ -455,16 +455,19 @@ const styles = StyleSheet.create({
   },
   itemMetaText: {
     fontSize: 12,
-    color: '#71717A',
+    color: uiColors.subtle,
   },
   ghostPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: '#1C1917',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   ghostPillText: {
-    fontSize: 10,
+    lineHeight: 16,
+    fontSize: 11,
     color: '#A8A29E',
     fontWeight: '600',
   },
@@ -473,19 +476,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
   },
   scopeSection: {
     marginVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
     paddingTop: 10,
   },
   scopeTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 1,
     marginBottom: 8,
   },
@@ -495,14 +498,14 @@ const styles = StyleSheet.create({
   scopeOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 10,
     borderRadius: 8,
   },
   scopeOptionActive: {
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     backgroundColor: '#092113',
   },
   radioDot: {
@@ -514,8 +517,8 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   radioDotActive: {
-    borderColor: '#00E676',
-    backgroundColor: '#00E676',
+    borderColor: uiColors.accent,
+    backgroundColor: uiColors.accent,
   },
   scopeTextWrapper: {
     flex: 1,
@@ -523,31 +526,31 @@ const styles = StyleSheet.create({
   scopeLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   scopeSublabel: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 1,
   },
   footer: {
     marginTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
     paddingTop: 12,
   },
   confirmButton: {
-    backgroundColor: '#00E676',
-    borderRadius: 8,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 12,
     alignItems: 'center',
   },
   confirmButtonDisabled: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   confirmButtonText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

@@ -13,7 +13,7 @@ describe('MockUserProfileRepository', () => {
     training_enjoyment: 'enthusiast',
     intensity_style: 'high_intensity_low_volume',
     primary_goal: 'hypertrophy',
-    secondary_goals: ['strength', 'powerbuilding'],
+    secondary_goals: ['strength'],
     preferred_days_per_week: 4,
     preferred_session_duration_mins: 60,
     equipment_access: 'commercial_gym',

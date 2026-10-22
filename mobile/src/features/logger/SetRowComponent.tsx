@@ -1,3 +1,4 @@
+import { colors as uiColors } from '../../ui/theme';
 /**
  * Workout Suite — SetRowComponent
  *
@@ -25,9 +26,11 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { WorkoutSet, Exercise, SetType, WeightUnit, IntensityMetric } from '../../core/types';
+import { SwipeToDeleteSet } from './SwipeToDeleteSet';
 
 export interface SetRowProps {
   set: WorkoutSet;
@@ -38,6 +41,7 @@ export interface SetRowProps {
   isCompleted?: boolean;
   isExpanded?: boolean;
   isLastWarmup?: boolean;
+  requireEffort?: boolean;
   onOpenWarmupAssessment?: () => void;
   onToggleExpand?: () => void;
   onUpdateSet: (updatedFields: Partial<WorkoutSet>) => void;
@@ -58,7 +62,7 @@ const SET_TYPE_LABELS: Record<SetType, string> = {
 };
 
 const SET_TYPE_COLORS: Record<SetType, { bg: string; text: string }> = {
-  working: { bg: '#27272A', text: '#FAFAFA' },
+  working: { bg: uiColors.border, text: uiColors.text },
   warmup: { bg: '#854D0E', text: '#FEF08A' }, // Amber
   drop: { bg: '#581C87', text: '#E9D5FF' }, // Purple
   myorep: { bg: '#164E63', text: '#A5F3FC' }, // Cyan
@@ -87,6 +91,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
   isCompleted = false,
   isExpanded: propIsExpanded,
   isLastWarmup = false,
+  requireEffort = false,
   onOpenWarmupAssessment,
   onToggleExpand,
   onUpdateSet,
@@ -98,6 +103,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
   const [showNotes, setShowNotes] = useState<boolean>(!!set.set_notes);
   const [notesText, setNotesText] = useState<string>(set.set_notes ?? '');
   const [weightInput, setWeightInput] = useState<string | null>(null);
+  const [weightSelection, setWeightSelection] = useState<{ start: number; end: number } | undefined>();
   const [repsInput, setRepsInput] = useState<string | null>(null);
   const [repsRightInput, setRepsRightInput] = useState<string | null>(null);
   const [intensityInput, setIntensityInput] = useState<string | null>(null);
@@ -105,6 +111,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
   // Debouncing refs for SQLite write-through reduction
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingUpdatesRef = useRef<Partial<WorkoutSet>>({});
+  const intensityInputRef = useRef<TextInput>(null);
 
   const flushPendingUpdates = useCallback(() => {
     if (debounceTimerRef.current) {
@@ -190,6 +197,8 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
 
   // Handle weight change (debounced persistence)
   const handleWeightChange = (text: string) => {
+    // Select the existing load once on focus, then let the keyboard own the caret.
+    setWeightSelection(undefined);
     const normalized = text.replace(',', '.');
     const cleaned = normalized.replace(/[^0-9.]/g, '');
     const parts = cleaned.split('.');
@@ -208,6 +217,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
   };
 
   const handleWeightBlur = () => {
+    setWeightSelection(undefined);
     setWeightInput(null);
     flushPendingUpdates();
   };
@@ -338,16 +348,26 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
   // Ghost display string (formats unilateral L/R reps as weight × L/R)
   const ghostDisplay = formatCompactGhostDisplay(exercise, ghostSet);
 
-  const isDumbbell = exercise.load_mode === 'per_hand';
   const isBarbell = exercise.category === 'Barbell';
 
+  const handleDelete = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    pendingUpdatesRef.current = {};
+    onDeleteSet();
+  };
+
   return (
+    <SwipeToDeleteSet onDelete={handleDelete}>
     <View style={[styles.container, isCompleted && styles.completedRow]}>
       {/* Primary Compact Row */}
       <View style={styles.row}>
         {/* Set Type Tag (Tappable to cycle) */}
         <TouchableOpacity
           testID="set-type-tag"
+          hitSlop={{ top: 6, bottom: 6 }}
           style={[styles.typeBadge, { backgroundColor: typeBadgeColor.bg }]}
           onPress={handleCycleSetType}
           accessibilityLabel={`Set type: ${set.set_type}, set number: ${set.set_number}`}
@@ -387,25 +407,25 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                 testID="weight-input"
                 style={[styles.input, isCompleted && styles.completedInput]}
                 keyboardType="decimal-pad"
-                selectTextOnFocus={true}
+                selectTextOnFocus={false}
+                selection={weightSelection}
+                onFocus={() => {
+                  const text = weightInput ?? (set.raw_input_weight > 0 ? `${set.raw_input_weight}` : '');
+                  setWeightSelection({ start: 0, end: text.length });
+                }}
                 placeholder={ghostSet ? `${ghostSet.raw_input_weight}` : '0'}
-                placeholderTextColor="#71717A"
+                placeholderTextColor={uiColors.subtle}
                 value={weightInput !== null ? weightInput : (set.raw_input_weight > 0 ? `${set.raw_input_weight}` : '')}
                 onChangeText={handleWeightChange}
                 onBlur={handleWeightBlur}
                 editable={!isCompleted}
               />
-              {isDumbbell && (
-                <View testID="dumbbell-badge" style={styles.dumbbellBadge}>
-                  <Text style={styles.dumbbellBadgeText}>×2</Text>
-                </View>
-              )}
             </View>
           </TouchableOpacity>
         </View>
 
         {/* Reps Column (Supports Unilateral L/R) */}
-        <View style={styles.repsColumn}>
+        <View style={[styles.repsColumn, exercise.is_unilateral && styles.unilateralRepsColumn]}>
           {exercise.is_unilateral ? (
             <View style={styles.unilateralContainer}>
               <View style={styles.unilateralInputWrapper}>
@@ -415,7 +435,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                   keyboardType="number-pad"
                   selectTextOnFocus={true}
                   placeholder={ghostSet ? `${ghostSet.reps}` : 'L'}
-                  placeholderTextColor="#71717A"
+                  placeholderTextColor={uiColors.subtle}
                   value={repsInput !== null ? repsInput : (set.reps > 0 ? `${set.reps}` : '')}
                   onChangeText={handleRepsChange}
                   onBlur={handleRepsBlur}
@@ -431,7 +451,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                   keyboardType="number-pad"
                   selectTextOnFocus={true}
                   placeholder={ghostSet?.reps_right !== null && ghostSet?.reps_right !== undefined ? `${ghostSet.reps_right}` : 'R'}
-                  placeholderTextColor="#71717A"
+                  placeholderTextColor={uiColors.subtle}
                   value={repsRightInput !== null ? repsRightInput : (set.reps_right && set.reps_right > 0 ? `${set.reps_right}` : '')}
                   onChangeText={handleRepsRightChange}
                   onBlur={handleRepsRightBlur}
@@ -447,7 +467,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
               keyboardType="number-pad"
               selectTextOnFocus={true}
               placeholder={ghostSet ? `${ghostSet.reps}` : '0'}
-              placeholderTextColor="#71717A"
+                placeholderTextColor={uiColors.subtle}
               value={repsInput !== null ? repsInput : (set.reps > 0 ? `${set.reps}` : '')}
               onChangeText={handleRepsChange}
               onBlur={handleRepsBlur}
@@ -460,11 +480,12 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
         <View style={styles.intensityColumn}>
           <TextInput
             testID="intensity-input"
+            ref={intensityInputRef}
             style={[styles.intensityInput, isCompleted && styles.completedInput]}
             keyboardType="decimal-pad"
             selectTextOnFocus={true}
             placeholder="—"
-            placeholderTextColor="#71717A"
+            placeholderTextColor={uiColors.subtle}
             value={
               intensityInput !== null
                 ? intensityInput
@@ -494,6 +515,21 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
           testID="complete-set-checkbox"
           style={[styles.checkbox, isCompleted && styles.completedCheckbox]}
           onPress={() => {
+            const current = { ...set, ...pendingUpdatesRef.current };
+            const validRpe = current.rpe != null && Number.isFinite(current.rpe) && current.rpe >= 1 && current.rpe <= 10;
+            const validRir = current.rir != null && Number.isFinite(current.rir) && current.rir >= 0 && current.rir <= 10;
+            if (!isCompleted && requireEffort && current.set_type !== 'warmup' && !validRpe && !validRir) {
+              flushPendingUpdates();
+              Alert.alert(
+                `Log ${intensityMetric} for this set`,
+                `Enter your actual ${intensityMetric} before completing the set. Your program uses this rating to adjust future workouts.`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: `Enter ${intensityMetric}`, onPress: () => intensityInputRef.current?.focus() },
+                ],
+              );
+              return;
+            }
             flushPendingUpdates();
             if (!isCompleted) {
               const needsWeight = (!set.raw_input_weight || set.raw_input_weight === 0) && !!ghostSet && ghostSet.raw_input_weight > 0;
@@ -510,10 +546,10 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                     autoCommitFields.reps_right = ghostSet.reps_right;
                   }
                 }
-                if (ghostSet?.rpe !== null && ghostSet?.rpe !== undefined && set.rpe === null) {
+                if (!requireEffort && ghostSet?.rpe !== null && ghostSet?.rpe !== undefined && set.rpe === null) {
                   autoCommitFields.rpe = ghostSet.rpe;
                 }
-                if (ghostSet?.rir !== null && ghostSet?.rir !== undefined && set.rir === null) {
+                if (!requireEffort && ghostSet?.rir !== null && ghostSet?.rir !== undefined && set.rir === null) {
                   autoCommitFields.rir = ghostSet.rir;
                 }
                 onUpdateSet(autoCommitFields);
@@ -551,7 +587,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                 accessibilityLabel="Open warm-up assessment"
               >
                 <Text style={styles.warmupAssessmentDrawerButtonText}>
-                  ⚡ Warm-Up Assessment (Light / Normal / Heavy)
+                  Warm-Up Assessment (Light / Normal / Heavy)
                 </Text>
               </TouchableOpacity>
             </View>
@@ -743,14 +779,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
 
             <TouchableOpacity
               testID="delete-set-button"
-              onPress={() => {
-                if (debounceTimerRef.current) {
-                  clearTimeout(debounceTimerRef.current);
-                  debounceTimerRef.current = null;
-                }
-                pendingUpdatesRef.current = {};
-                onDeleteSet();
-              }}
+              onPress={handleDelete}
               style={styles.deleteButton}
               accessibilityLabel="Delete set"
             >
@@ -765,7 +794,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
                 testID="set-notes-input"
                 style={styles.notesInput}
                 placeholder="Add set note (e.g. paused rep, belt on, felt tight)..."
-                placeholderTextColor="#71717A"
+                    placeholderTextColor={uiColors.subtle}
                 value={notesText}
                 onChangeText={handleSaveNotes}
                 onBlur={handleNotesBlur}
@@ -784,6 +813,7 @@ const SetRowComponentInner: React.FC<SetRowProps> = ({
     </View>
   )}
 </View>
+    </SwipeToDeleteSet>
 );
 };
 
@@ -799,6 +829,7 @@ export const SetRowComponent = React.memo(
       prev.isCompleted === next.isCompleted &&
       prev.isExpanded === next.isExpanded &&
       prev.isLastWarmup === next.isLastWarmup &&
+      prev.requireEffort === next.requireEffort &&
       prev.onOpenWarmupAssessment === next.onOpenWarmupAssessment
     );
   }
@@ -806,10 +837,10 @@ export const SetRowComponent = React.memo(
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-    paddingVertical: 3,
+    borderBottomColor: uiColors.border,
+    paddingVertical: 6,
     paddingHorizontal: 8,
   },
   completedRow: {
@@ -817,22 +848,24 @@ const styles = StyleSheet.create({
     borderBottomColor: '#14532D',
   },
   row: {
+    minHeight: 40,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   typeBadge: {
+    minHeight: 32,
     minWidth: 46,
-    height: 26,
+    height: 'auto',
     paddingHorizontal: 4,
-    borderRadius: 4,
+    borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 6,
   },
   typeBadgeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
     fontVariant: ['tabular-nums'],
     includeFontPadding: false,
   },
@@ -844,13 +877,13 @@ const styles = StyleSheet.create({
   },
   ghostText: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     fontWeight: '500',
     fontVariant: ['tabular-nums'],
     includeFontPadding: false,
   },
   weightColumn: {
-    minWidth: 68,
+    width: 54,
     flexShrink: 0,
     marginRight: 6,
   },
@@ -859,14 +892,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   input: {
-    minWidth: 68,
+    minHeight: 32,
+    width: 54,
     flexShrink: 0,
-    height: 26,
-    backgroundColor: '#18181B',
-    borderRadius: 4,
+    height: 'auto',
+    backgroundColor: uiColors.raised,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#27272A',
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    color: uiColors.text,
     textAlign: 'center',
     fontSize: 13,
     fontWeight: '600',
@@ -876,36 +910,26 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   completedInput: {
-    color: '#86EFAC',
+    color: uiColors.accentText,
     borderColor: '#166534',
-  },
-  dumbbellBadge: {
-    marginLeft: 3,
-    backgroundColor: '#27272A',
-    paddingHorizontal: 3,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  dumbbellBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#A1A1AA',
-    fontVariant: ['tabular-nums'],
-    includeFontPadding: false,
   },
   repsColumn: {
     width: 44,
     flexShrink: 0,
     marginRight: 6,
   },
+  unilateralRepsColumn: {
+    width: 72,
+  },
   repsInput: {
+    minHeight: 32,
     width: 44,
-    height: 26,
-    backgroundColor: '#18181B',
-    borderRadius: 4,
+    height: 'auto',
+    backgroundColor: uiColors.raised,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#27272A',
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    color: uiColors.text,
     textAlign: 'center',
     fontSize: 13,
     fontWeight: '600',
@@ -918,23 +942,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    width: 44,
+    width: 72,
   },
   unilateralInputWrapper: {
     flex: 1,
   },
   unilateralSeparator: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
   },
   miniInput: {
+    minHeight: 32,
     width: '100%',
-    height: 26,
-    backgroundColor: '#18181B',
-    borderRadius: 4,
+    height: 'auto',
+    backgroundColor: uiColors.raised,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#27272A',
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    color: uiColors.text,
     textAlign: 'center',
     fontSize: 11,
     fontWeight: '600',
@@ -949,14 +974,15 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   intensityInput: {
+    minHeight: 32,
     minWidth: 48,
     flexShrink: 0,
-    height: 26,
-    backgroundColor: '#18181B',
-    borderRadius: 4,
+    height: 'auto',
+    backgroundColor: uiColors.raised,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#27272A',
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    color: uiColors.text,
     textAlign: 'center',
     fontSize: 12,
     fontWeight: '600',
@@ -967,36 +993,36 @@ const styles = StyleSheet.create({
   },
   expandToggleButton: {
     width: 24,
-    height: 26,
+    height: 32,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 4,
   },
   expandToggleText: {
     fontSize: 9,
-    color: '#71717A',
+    color: uiColors.subtle,
   },
   expandToggleTextActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   checkbox: {
     width: 26,
-    height: 26,
+    height: 32,
     borderRadius: 6,
     borderWidth: 2,
     borderColor: '#3F3F46',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     justifyContent: 'center',
     alignItems: 'center',
   },
   completedCheckbox: {
-    backgroundColor: '#00E676', // Vivid green 1-tap feedback
-    borderColor: '#00E676',
+    backgroundColor: uiColors.accent, // Vivid green 1-tap feedback
+    borderColor: uiColors.accent,
   },
   checkmarkText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   emptyCheckboxDot: {
     width: 5,
@@ -1011,8 +1037,8 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     paddingHorizontal: 6,
     borderTopWidth: 1,
-    borderTopColor: '#27272A',
-    backgroundColor: '#121215',
+    borderTopColor: uiColors.border,
+    backgroundColor: uiColors.surface,
     borderRadius: 8,
   },
   drawerControlGroup: {
@@ -1021,7 +1047,7 @@ const styles = StyleSheet.create({
   drawerControlLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 0.5,
     marginBottom: 4,
   },
@@ -1043,7 +1069,7 @@ const styles = StyleSheet.create({
   pillButton: {
     paddingVertical: 5,
     paddingHorizontal: 10,
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#3F3F46',
@@ -1053,12 +1079,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0, 230, 118, 0.3)',
   },
   pillButtonText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   pillButtonTextPositive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   platePillButton: {
     paddingVertical: 5,
@@ -1071,18 +1097,18 @@ const styles = StyleSheet.create({
   platePillButtonText: {
     color: '#38BDF8',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   clearPillButton: {
     paddingVertical: 5,
     paddingHorizontal: 8,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#52525B',
   },
   clearPillButtonText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -1101,7 +1127,7 @@ const styles = StyleSheet.create({
   amrapPillButtonText: {
     color: '#F59E0B',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   amrapPillButtonTextActive: {
     color: '#EF4444',
@@ -1112,7 +1138,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 4,
     borderTopWidth: 1,
-    borderTopColor: '#18181B',
+    borderTopColor: uiColors.border,
     marginTop: 4,
   },
   notesToggleButton: {
@@ -1120,7 +1146,7 @@ const styles = StyleSheet.create({
   },
   notesToggleText: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontStyle: 'italic',
   },
   deleteButton: {
@@ -1136,9 +1162,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   notesInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 6,
     color: '#E4E4E7',
     fontSize: 12,
@@ -1167,12 +1193,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingVertical: 4,
     paddingHorizontal: 6,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 4,
   },
   completedNotesText: {
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontStyle: 'italic',
   },
 });

@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — SBDStandardsCard
  *
@@ -44,7 +46,7 @@ export interface SBDStandardsCardProps {
 }
 
 const TIER_COLORS: Record<StrengthStandardTier, { bg: string; border: string; text: string }> = {
-  untrained: { bg: 'rgba(113, 113, 122, 0.15)', border: '#52525B', text: '#A1A1AA' },
+  untrained: { bg: 'rgba(113, 113, 122, 0.15)', border: '#52525B', text: uiColors.muted },
   novice: { bg: 'rgba(59, 130, 246, 0.15)', border: '#3B82F6', text: '#60A5FA' },
   intermediate: { bg: 'rgba(16, 185, 129, 0.15)', border: '#10B981', text: '#34D399' },
   advanced: { bg: 'rgba(245, 158, 11, 0.15)', border: '#F59E0B', text: '#FBBF24' },
@@ -140,14 +142,19 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
           {/* Shaded Area */}
           <Path d={shadedD} fill="rgba(0, 230, 118, 0.22)" />
           {/* Main Bell Curve Outline */}
-          <Path d={pathD} fill="none" stroke="#52525B" strokeWidth="2" />
+          <Path
+            d={pathD}
+            fill="none"
+            stroke="#52525B"
+            strokeWidth="2"
+          />
           {/* Baseline */}
           <Line
             x1={padding}
             y1={chartHeight + 4}
             x2={width - padding}
             y2={chartHeight + 4}
-            stroke="#27272A"
+            stroke={uiColors.border}
             strokeWidth="1.5"
           />
           {/* Vertical Indicator at user percentile */}
@@ -156,12 +163,19 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
             y1={userY}
             x2={userX}
             y2={chartHeight + 4}
-            stroke="#00E676"
+            stroke={uiColors.accent}
             strokeWidth="2"
             strokeDasharray="2,2"
           />
           {/* Point on curve */}
-          <Circle cx={userX} cy={userY} r="4" fill="#00E676" stroke="#000000" strokeWidth="1.5" />
+          <Circle
+            cx={userX}
+            cy={userY}
+            r="4"
+            fill={uiColors.accent}
+            stroke={uiColors.background}
+            strokeWidth="1.5"
+          />
         </Svg>
         <View style={styles.bellCurveAxisRow}>
           <Text style={styles.bellCurveAxisLabel}>General Population</Text>
@@ -196,7 +210,7 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
               ? formatWeight(userBodyweightKg, unitSystem)
               : 'Set BW'}
           </Text>
-          <Text style={styles.profileEditIcon}>✏️</Text>
+          <AppIcon name="edit" size={20} color={uiColors.accentText} />
         </TouchableOpacity>
       </View>
 
@@ -255,7 +269,7 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
                 style={styles.drawerInput}
                 keyboardType="numeric"
                 placeholder={`BW (${unitSystem})`}
-                placeholderTextColor="#71717A"
+                placeholderTextColor={uiColors.subtle}
                 value={tempBwInput}
                 onChangeText={setTempBwInput}
               />
@@ -277,7 +291,7 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
       {/* NO BODYWEIGHT ENTERED STATE */}
       {!userBodyweightKg ? (
         <View style={styles.noBwBanner} testID="sbd-no-bw-banner">
-          <Text style={styles.noBwIcon}>⚖️</Text>
+          <AppIcon name="scale" size={20} color={uiColors.accentText} />
           <View style={styles.noBwContent}>
             <Text style={styles.noBwTitle}>Bodyweight Needed for Standards</Text>
             <Text style={styles.noBwSubtext}>
@@ -367,7 +381,7 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
           {singleLiftDots !== null && (
             <View style={styles.dotsHighlightRow} testID="sbd-dots-box">
               <View style={styles.dotsIconBox}>
-                <Text style={styles.dotsIconText}>🎯</Text>
+                  <AppIcon name="target" size={20} color={uiColors.accentText} />
               </View>
               <View style={styles.dotsInfoCol}>
                 <View style={styles.dotsScoreHeader}>
@@ -404,10 +418,10 @@ export const SBDStandardsCard: React.FC<SBDStandardsCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 14,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 16,
     marginVertical: 8,
   },
@@ -418,43 +432,41 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   headerTitleCol: {
+    minWidth: 0,
     flex: 1,
   },
   cardSuperTitle: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.6,
   },
   cardTitle: {
     fontSize: 16,
-    fontWeight: '900',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
     marginTop: 2,
   },
   profileBadgeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingVertical: 5,
     paddingHorizontal: 8,
   },
   profileBadgeText: {
+    lineHeight: 16,
     fontSize: 11,
-    fontWeight: '700',
-    color: '#00E676',
-  },
-  profileEditIcon: {
-    fontSize: 10,
-    marginLeft: 4,
+    fontWeight: '600',
+    color: uiColors.accentText,
   },
   editProfileDrawer: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 10,
     padding: 12,
     marginBottom: 14,
@@ -462,11 +474,11 @@ const styles = StyleSheet.create({
   drawerTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   drawerSubtitle: {
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
     marginBottom: 10,
     lineHeight: 15,
@@ -479,34 +491,34 @@ const styles = StyleSheet.create({
   },
   drawerGenderRow: {
     flexDirection: 'row',
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderRadius: 6,
     padding: 2,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   drawerGenderBtn: {
     paddingVertical: 6,
     paddingHorizontal: 10,
-    borderRadius: 4,
+    borderRadius: uiRadius.control,
   },
   drawerGenderBtnActive: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   drawerGenderBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
   },
   drawerGenderBtnTextActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   drawerInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 6,
     paddingHorizontal: 8,
     height: 36,
@@ -515,39 +527,36 @@ const styles = StyleSheet.create({
   },
   drawerInput: {
     flex: 1,
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
     padding: 0,
   },
   drawerInputUnit: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     fontWeight: '600',
   },
   drawerSaveBtn: {
-    backgroundColor: '#00E676',
-    borderRadius: 6,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 8,
     paddingHorizontal: 14,
   },
   drawerSaveBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   noBwBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 10,
     padding: 12,
     gap: 10,
-  },
-  noBwIcon: {
-    fontSize: 22,
   },
   noBwContent: {
     flex: 1,
@@ -555,24 +564,24 @@ const styles = StyleSheet.create({
   noBwTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   noBwSubtext: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
     lineHeight: 15,
   },
   noBwActionBtn: {
-    backgroundColor: '#00E676',
-    borderRadius: 6,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
   noBwActionBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   standardsContent: {
     gap: 12,
@@ -583,14 +592,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tierBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     borderWidth: 1.5,
-    borderRadius: 8,
-    paddingVertical: 5,
-    paddingHorizontal: 12,
+    borderRadius: uiRadius.badge,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   tierBadgeText: {
-    fontSize: 14,
-    fontWeight: '900',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
     letterSpacing: 0.8,
   },
   scoreCol: {
@@ -598,26 +610,26 @@ const styles = StyleSheet.create({
   },
   scoreNumberText: {
     fontSize: 20,
-    fontWeight: '900',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   scoreMaxText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#71717A',
+    color: uiColors.subtle,
   },
   scoreSubLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
     letterSpacing: 0.4,
   },
   progressContainer: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 8,
     padding: 10,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   progressHeaderRow: {
     flexDirection: 'row',
@@ -627,16 +639,16 @@ const styles = StyleSheet.create({
   progressTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   progressDeltaText: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
   },
   progressBarTrack: {
     height: 8,
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -645,9 +657,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   percentileSection: {
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 10,
     padding: 12,
     alignItems: 'center',
@@ -661,18 +673,18 @@ const styles = StyleSheet.create({
   },
   percentileTitle: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.5,
   },
   percentileRankText: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
   },
   percentileSubrankText: {
     fontSize: 10,
-    color: '#71717A',
+    color: uiColors.subtle,
     fontWeight: '600',
   },
   bellCurveWrapper: {
@@ -686,12 +698,12 @@ const styles = StyleSheet.create({
   },
   bellCurveAxisLabel: {
     fontSize: 9,
-    color: '#71717A',
+    color: uiColors.subtle,
     fontWeight: '600',
   },
   bellCurveCenterLabel: {
     fontSize: 9,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontWeight: '700',
   },
   dotsHighlightRow: {
@@ -712,9 +724,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dotsIconText: {
-    fontSize: 16,
-  },
   dotsInfoCol: {
     flex: 1,
   },
@@ -726,31 +735,31 @@ const styles = StyleSheet.create({
   dotsTitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   dotsScoreText: {
     fontSize: 14,
-    fontWeight: '900',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
   },
   dotsSubtext: {
     fontSize: 10,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
     lineHeight: 14,
   },
   openRadarBtn: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingVertical: 10,
     alignItems: 'center',
     marginTop: 12,
   },
   openRadarBtnText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

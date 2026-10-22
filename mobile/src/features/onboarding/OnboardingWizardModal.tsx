@@ -1,3 +1,4 @@
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite / datSet — Onboarding Wizard Modal
  *
@@ -330,7 +331,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
                 ]}
                 onPress={() => setEquipmentAccess('commercial_gym')}
               >
-                <Text style={styles.cardOptionTitle}>🏋️ Commercial Gym</Text>
+                <Text style={styles.cardOptionTitle}>Commercial Gym</Text>
                 <Text style={styles.cardOptionDesc}>
                   Full access to barbells, racks, dumbbells, cables, and selectorized machines.
                 </Text>
@@ -432,7 +433,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
                 ]}
                 onPress={() => setStarterAction('generate')}
               >
-                <Text style={styles.cardOptionTitle}>⚡ Synthesize Starter Program</Text>
+                <Text style={styles.cardOptionTitle}>Synthesize Starter Program</Text>
                 <Text style={styles.cardOptionDesc}>
                   Automatically generate a {daysPerWeek}-day split configured for your equipment
                   with built-in progressive overload auto-regulation.
@@ -515,7 +516,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
               disabled={saving}
             >
               {saving ? (
-                <ActivityIndicator color="#000000" size="small" />
+                  <ActivityIndicator color={uiColors.background} size="small" />
               ) : (
                 <Text style={styles.finishButtonText}>Complete Setup ✓</Text>
               )}
@@ -530,38 +531,38 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
   },
   header: {
     paddingTop: 54,
     paddingHorizontal: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
+    borderBottomColor: uiColors.border,
   },
   brandTitle: {
     fontSize: 24,
-    fontWeight: '900',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
     letterSpacing: 0.5,
   },
   wizardSubtitle: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
     letterSpacing: 1,
     marginTop: 2,
   },
   progressTrack: {
     height: 4,
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
     borderRadius: 2,
     marginTop: 12,
     overflow: 'hidden',
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
   },
   content: {
     flex: 1,
@@ -572,20 +573,20 @@ const styles = StyleSheet.create({
   },
   stepTitle: {
     fontSize: 20,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
     marginBottom: 6,
   },
   stepDescription: {
     fontSize: 13,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginBottom: 20,
     lineHeight: 18,
   },
   inputLabel: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.8,
     marginBottom: 8,
   },
@@ -597,9 +598,9 @@ const styles = StyleSheet.create({
   },
   pillOption: {
     flexGrow: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -607,58 +608,58 @@ const styles = StyleSheet.create({
   },
   pillOptionActive: {
     backgroundColor: 'rgba(0, 230, 118, 0.12)',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   pillOptionText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#A1A1AA',
+    fontWeight: '600',
+    color: uiColors.muted,
   },
   pillOptionTextActive: {
-    color: '#00E676',
-    fontWeight: '800',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
   cardOption: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 10,
     padding: 16,
     marginBottom: 10,
   },
   cardOptionActive: {
     backgroundColor: 'rgba(0, 230, 118, 0.08)',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   cardOptionTitle: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
     marginBottom: 4,
   },
   cardOptionDesc: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     lineHeight: 16,
   },
   disclaimerCard: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderLeftWidth: 3,
     borderLeftColor: '#F59E0B',
-    borderRadius: 8,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginTop: 14,
   },
   disclaimerHeader: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#F59E0B',
     marginBottom: 6,
     letterSpacing: 0.5,
   },
   disclaimerText: {
     fontSize: 11,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     lineHeight: 16,
   },
   footer: {
@@ -668,41 +669,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderTopWidth: 1,
-    borderTopColor: '#27272A',
-    backgroundColor: '#09090B',
+    borderTopColor: uiColors.border,
+    backgroundColor: uiColors.background,
   },
   backButton: {
     flex: 1,
     paddingVertical: 14,
     alignItems: 'center',
     marginRight: 10,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   backButtonText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   nextButton: {
     flex: 1,
     paddingVertical: 14,
     alignItems: 'center',
-    backgroundColor: '#00E676',
-    borderRadius: 8,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
   },
   nextButtonText: {
     fontSize: 14,
-    fontWeight: '800',
-    color: '#000000',
+    fontWeight: '700',
+    color: uiColors.background,
   },
   finishButton: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
   },
   finishButtonText: {
     fontSize: 14,
-    fontWeight: '900',
-    color: '#000000',
+    fontWeight: '700',
+    color: uiColors.background,
   },
 });

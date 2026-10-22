@@ -85,3 +85,5 @@ Search this index, then read only the matching record in [DECISIONS.md](../DECIS
 - **ADR-099**: Foreign-Key Decoupling for Program Deletion, Lifter-Centric Overview Notes, SBD Smart Warmup Automation, and Compact Progression Scheme Badging
 - **ADR-100**: Concise Mesocycle Evolution Summaries, Beta Phase Lifecycle Gating, and Multi-Meso Soundness Simulation Framework
 - **ADR-101**: Task-scoped documentation loading and validation
+- **ADR-102**: Response-led automatic training evolution
+- **ADR-103**: Executable time budgets, complementary volume and structured rest-pause

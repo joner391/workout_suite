@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — PRBoardTable
  *
@@ -148,13 +150,13 @@ export const PRBoardTable: React.FC<PRBoardTableProps> = ({
       {/* Loading Indicator */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color="#00E676" />
+          <ActivityIndicator size="small" color={uiColors.accent} />
           <Text style={styles.loadingText}>Updating PR records...</Text>
         </View>
       ) : records.length === 0 ? (
         /* Empty State */
         <View style={styles.emptyContainer} testID="pr-board-empty">
-          <Text style={styles.emptyIcon}>📊</Text>
+            <AppIcon name="chart" size={32} color={uiColors.accentText} />
           <Text style={styles.emptyTitle}>No Rep-Max Records Yet</Text>
           <Text style={styles.emptySubtitle}>
             Log completed sets for this exercise to establish your Rep-Max PR Board.
@@ -187,6 +189,8 @@ export const PRBoardTable: React.FC<PRBoardTableProps> = ({
                 testID={`pr-row-${rec.reps}rm`}
                 style={[styles.tableRow, isPeak && styles.tableRowPeak]}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${rec.reps}RM, ${displayLoad(rec.weightKg)}${rec.isEnveloped ? `, proven by a ${rec.derivedFromReps}-rep set` : ''}. ${rec.setDate}. View original workout.`}
                 onPress={() => onSelectWorkout && rec.workoutId && onSelectWorkout(rec.workoutId)}
               >
                 {/* Rep Max Badge */}
@@ -211,16 +215,9 @@ export const PRBoardTable: React.FC<PRBoardTableProps> = ({
 
                 {/* Weight Column */}
                 <View style={styles.colWeight}>
-                  <Text style={styles.weightValueText}>
-                    {displayLoad(rec.weightKg)}
+                  <Text style={styles.weightValueText} numberOfLines={1}>
+                    {`${displayLoad(rec.weightKg)}${rec.isEnveloped ? '*' : ''}`}
                   </Text>
-                  {rec.isEnveloped && (
-                    <View style={styles.envelopedBadge}>
-                      <Text style={styles.envelopedBadgeText}>
-                        {`↑ ${rec.derivedFromReps}RM`}
-                      </Text>
-                    </View>
-                  )}
                 </View>
 
                 {/* Set e1RM Column */}
@@ -233,11 +230,6 @@ export const PRBoardTable: React.FC<PRBoardTableProps> = ({
                   >
                     {displayLoad(rec.e1rmKg)}
                   </Text>
-                  {isPeak && (
-                    <View style={styles.peakBadge}>
-                      <Text style={styles.peakBadgeText}>★ PEAK</Text>
-                    </View>
-                  )}
                 </View>
 
                 {/* Effort (RPE / RIR) */}
@@ -264,7 +256,7 @@ export const PRBoardTable: React.FC<PRBoardTableProps> = ({
           </Text>
           {records.some((r) => r.isEnveloped) && (
             <Text style={styles.envelopeInfoText}>
-              ↑ Monotonic envelope: records dominated by higher-repetition achievements reflect your minimum proven capacity.
+              * Proven by a higher-rep set. Tap the row to see the original workout and rep count.
             </Text>
           )}
         </View>
@@ -287,47 +279,47 @@ const styles = StyleSheet.create({
   },
   scopeToggleContainer: {
     flexDirection: 'row',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 3,
   },
   scopeBtn: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   scopeBtnActive: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   scopeBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#71717A',
+    color: uiColors.subtle,
   },
   scopeBtnTextActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   variantsToggleBtn: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
-    borderColor: '#27272A',
-    backgroundColor: '#121215',
+    borderColor: uiColors.border,
+    backgroundColor: uiColors.surface,
   },
   variantsToggleBtnActive: {
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     backgroundColor: 'rgba(0, 230, 118, 0.1)',
   },
   variantsToggleText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   variantsToggleTextActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   loadingContainer: {
     padding: 24,
@@ -335,55 +327,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadingText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     marginTop: 8,
   },
   emptyContainer: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     borderRadius: 12,
     padding: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyIcon: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
   emptyTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
     marginBottom: 4,
   },
   emptySubtitle: {
     fontSize: 13,
-    color: '#71717A',
+    color: uiColors.subtle,
     textAlign: 'center',
     lineHeight: 18,
   },
   tableCard: {
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     overflow: 'hidden',
   },
   tableHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
+    borderBottomColor: uiColors.border,
   },
   columnHeader: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.5,
   },
   colRep: {
@@ -411,99 +399,72 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   tableRowPeak: {
     backgroundColor: 'rgba(255, 215, 0, 0.05)',
   },
   repBadge: {
-    backgroundColor: '#18181B',
-    borderRadius: 6,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
+    minHeight: 26,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
+    borderRadius: uiRadius.badge,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   repBadge1RM: {
     backgroundColor: 'rgba(0, 230, 118, 0.15)',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   repBadgePeak: {
     backgroundColor: 'rgba(255, 215, 0, 0.15)',
     borderColor: '#FFD700',
   },
   repBadgeText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
+    color: uiColors.text,
   },
   repBadgeTextHighlighted: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   weightValueText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   e1rmValueText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#A1A1AA',
+    color: uiColors.muted,
   },
   e1rmValuePeakText: {
     color: '#FFD700',
-    fontWeight: '800',
-  },
-  peakBadge: {
-    backgroundColor: 'rgba(255, 215, 0, 0.2)',
-    borderRadius: 4,
-    paddingVertical: 1,
-    paddingHorizontal: 4,
-    alignSelf: 'flex-start',
-    marginTop: 2,
-  },
-  peakBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#FFD700',
-    letterSpacing: 0.3,
+    fontWeight: '700',
   },
   effortText: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontWeight: '600',
   },
   dateText: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     fontWeight: '500',
   },
   tapArrowText: {
     fontSize: 14,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginLeft: 4,
     fontWeight: '700',
   },
   footerInfoText: {
     fontSize: 11,
-    color: '#71717A',
-  },
-  envelopedBadge: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    borderRadius: 4,
-    paddingVertical: 1,
-    paddingHorizontal: 4,
-    alignSelf: 'flex-start',
-    marginTop: 2,
-    borderWidth: 0.5,
-    borderColor: '#38BDF8',
-  },
-  envelopedBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#38BDF8',
-    letterSpacing: 0.2,
+    color: uiColors.subtle,
   },
   footerContainer: {
     marginTop: 6,

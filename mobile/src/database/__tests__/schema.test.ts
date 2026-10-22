@@ -231,6 +231,22 @@ describe('Database Schema & Migrations', () => {
     );
   });
 
+  it('migrates existing v10 template prescriptions to optional stored rest without rewriting sets', async () => {
+    mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 10 }]);
+    await migrateDatabase(mockDb);
+    expect(mockDb.execQueries).toContain('ALTER TABLE template_exercises ADD COLUMN rest_seconds INTEGER;');
+    expect(mockDb.execQueries).toContain('PRAGMA user_version = 11;');
+    expect(mockDb.execQueries.some(query => query.includes('UPDATE template_exercises'))).toBe(false);
+  });
+
+  it('adds structured rest-pause storage for v11 programs without rewriting prescriptions', async () => {
+    mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 11 }]);
+    await migrateDatabase(mockDb);
+    expect(mockDb.execQueries).toContain('ALTER TABLE template_exercises ADD COLUMN rest_pause_json TEXT;');
+    expect(mockDb.execQueries).toContain('PRAGMA user_version = 12;');
+    expect(mockDb.execQueries.some(query => query.includes('UPDATE template_exercises'))).toBe(false);
+  });
+
   it('resets the database by dropping tables and re-migrating', async () => {
     // Simulate current version = 1 initially, but resetDatabase will drop and re-seed
     mockDb.mockData.set('PRAGMA user_version;', [{ user_version: 0 }]);

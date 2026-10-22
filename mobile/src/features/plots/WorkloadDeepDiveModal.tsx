@@ -1,3 +1,6 @@
+import { ScreenHeader } from '../../ui/ScreenHeader';
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — Workload & Intensity Deep Dive Modal
  *
@@ -123,7 +126,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
   const getTierColor = (tier: string) => {
     switch (tier) {
       case 'optimal':
-        return '#00E676';
+        return uiColors.accent;
       case 'high':
         return '#FF9100';
       case 'peak':
@@ -155,20 +158,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
     >
       <View testID="workload-deep-dive-modal" style={styles.container}>
         {/* Header */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerTitleGroup}>
-            <Text style={styles.headerSubtitle}>WORKLOAD & INTENSITY INTELLIGENCE</Text>
-            <Text style={styles.headerTitle}>Volume Deep Dive</Text>
-          </View>
-          <TouchableOpacity
-            testID="workload-modal-close-btn"
-            style={styles.closeBtn}
-            onPress={onClose}
-            accessibilityLabel="Close Workload Deep Dive"
-          >
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenHeader title="Training workload" subtitle="Volume, effort and intensity" onClose={onClose} closeTestID="workload-modal-close-btn" />
 
         {/* Week Selector Bar */}
         <View style={styles.weekSelectorBar}>
@@ -205,7 +195,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
 
         {loading || !deepDive ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#00E676" />
+            <ActivityIndicator size="large" color={uiColors.accent} />
             <Text style={styles.loadingText}>Synthesizing workload metrics...</Text>
           </View>
         ) : (
@@ -276,7 +266,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                       volumeMetricMode === 'ereps' && styles.metricToggleTextActive,
                     ]}
                   >
-                    ⚡ Effective Reps
+                      Effective Reps
                   </Text>
                 </TouchableOpacity>
 
@@ -295,7 +285,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                       volumeMetricMode === 'sets' && styles.metricToggleTextActive,
                     ]}
                   >
-                    📋 Working Sets
+                      Working Sets
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -330,7 +320,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                   {volumeMetricMode === 'ereps' && (
                     <View testID="ereps-coverage-banner" style={styles.coverageBanner}>
                       <Text style={styles.coverageText}>
-                        ⚡ Rated sets: {deepDive.totalRatedSets}/{deepDive.totalWorkingSets} ({deepDive.ratingCoveragePercent}%)
+                          Rated sets: {deepDive.totalRatedSets}/{deepDive.totalWorkingSets} ({deepDive.ratingCoveragePercent}%)
                         {deepDive.totalUnratedSets > 0 &&
                           ` • ${deepDive.totalUnratedSets} unrated sets omitted (0 eReps)`}
                       </Text>
@@ -509,10 +499,10 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                 <View style={styles.bucketList}>
                   {deepDive.intensity.rpeBuckets.map((b) => {
                     const isUnrated = b.label.includes('Unrated');
-                    const color = isUnrated ? '#71717A' : '#38BDF8';
+                    const color = isUnrated ? uiColors.subtle : '#38BDF8';
                     return (
                       <View key={b.label} style={styles.bucketRow}>
-                        <Text style={[styles.bucketLabel, isUnrated && { color: '#A1A1AA' }]}>{b.label}</Text>
+                        <Text style={[styles.bucketLabel, isUnrated && { color: uiColors.muted }]}>{b.label}</Text>
                         <View style={styles.bucketTrack}>
                           <View style={[styles.bucketFill, { width: `${b.percentage}%`, backgroundColor: color }]} />
                         </View>
@@ -527,14 +517,14 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
               <View style={[styles.intensityCard, { marginTop: 12 }]}>
                 <View style={styles.intensityCardTitleRow}>
                   <Text style={styles.intensityCardLabel}>2. Relative Load Intensity (% of 1RM)</Text>
-                  <Text style={[styles.intensityBadge, { backgroundColor: '#14291B', color: '#00E676' }]}>
+                        <Text style={[styles.intensityBadge, { backgroundColor: '#14291B', color: uiColors.accentText }]}>
                     LOMBARDI MODEL
                   </Text>
                 </View>
 
                 <View style={styles.intensityStatRow}>
                   <View style={styles.intensityStatBox}>
-                    <Text style={[styles.intensityStatVal, { color: '#00E676' }]}>
+                          <Text style={[styles.intensityStatVal, { color: uiColors.accentText }]}>
                       {deepDive.intensity.avgRelativeIntensityPercent
                         ? `${deepDive.intensity.avgRelativeIntensityPercent}%`
                         : '—'}
@@ -555,7 +545,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
                   {deepDive.intensity.loadZoneBuckets.map((b) => {
                     const isHeavy = b.label.includes('Heavy');
                     const isMod = b.label.includes('Moderate');
-                    const color = isHeavy ? '#FF5252' : isMod ? '#00E676' : '#FFD600';
+                    const color = isHeavy ? '#FF5252' : isMod ? uiColors.accent : '#FFD600';
 
                     return (
                       <View key={b.label} style={styles.bucketRow}>
@@ -586,45 +576,7 @@ export const WorkloadDeepDiveModal: React.FC<WorkloadDeepDiveModalProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1A1A1A',
-  },
-  headerTitleGroup: {
-    flex: 1,
-  },
-  headerSubtitle: {
-    color: '#71717A',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  headerTitle: {
-    color: '#FAFAFA',
-    fontSize: 20,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1C1C1E',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeBtnText: {
-    color: '#E4E4E7',
-    fontSize: 16,
-    fontWeight: '600',
+    backgroundColor: uiColors.background,
   },
   weekSelectorBar: {
     flexDirection: 'row',
@@ -632,46 +584,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderBottomWidth: 1,
     borderBottomColor: '#1F1F23',
   },
   weekNavBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#1E1E22',
+    borderRadius: uiRadius.control,
+    backgroundColor: uiColors.raised,
   },
   weekNavBtnDisabled: {
     opacity: 0.3,
   },
   weekNavBtnText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 12,
     fontWeight: '700',
   },
   weekNavBtnTextDisabled: {
-    color: '#71717A',
+    color: uiColors.subtle,
   },
   weekRangeGroup: {
     alignItems: 'center',
   },
   weekRangeText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   currentWeekBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: 'rgba(0, 230, 118, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
     marginTop: 2,
   },
   currentWeekBadgeText: {
-    color: '#00E676',
-    fontSize: 8,
-    fontWeight: '800',
+    lineHeight: 16,
+    color: uiColors.accentText,
+    fontSize: 11,
+    fontWeight: '600',
     letterSpacing: 0.5,
   },
   loadingContainer: {
@@ -681,7 +636,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: {
-    color: '#888888',
+    color: uiColors.muted,
     fontSize: 13,
   },
   scrollBody: {
@@ -698,55 +653,55 @@ const styles = StyleSheet.create({
   },
   kpiBox: {
     width: '48.5%',
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#1E1E22',
+    borderColor: uiColors.border,
     borderRadius: 10,
     padding: 12,
   },
   kpiLabel: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   kpiValue: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 2,
   },
   kpiSub: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 10,
   },
   metricToggleBar: {
     flexDirection: 'row',
-    backgroundColor: '#1C1C1E',
+    backgroundColor: uiColors.raised,
     borderRadius: 8,
     padding: 3,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   metricToggleBtn: {
     flex: 1,
     paddingVertical: 7,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
     justifyContent: 'center',
   },
   metricToggleBtnActive: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   metricToggleText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     fontWeight: '700',
   },
   metricToggleTextActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   coverageBanner: {
     backgroundColor: 'rgba(56, 189, 248, 0.08)',
@@ -763,69 +718,66 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   cardSection: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#1E1E22',
+    borderColor: uiColors.border,
     borderRadius: 12,
     padding: 14,
   },
-  cardSectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
   cardSectionHeaderTouch: {
-    flexDirection: 'row',
+    gap: 12,
+    flexDirection: 'column',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'stretch',
     marginBottom: 8,
   },
   accordionSummaryPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     color: '#38BDF8',
     backgroundColor: '#0C2A38',
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
     fontSize: 10,
     fontWeight: '700',
   },
   accordionChevronText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 12,
     fontWeight: '700',
   },
   collapsedSummaryText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     paddingVertical: 4,
     fontStyle: 'italic',
   },
   cardSectionSubtitle: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   cardSectionTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
     marginTop: 1,
   },
   landmarkLegend: {
-    backgroundColor: '#1C1C1E',
+    backgroundColor: uiColors.raised,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
   },
   legendText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 10,
     fontWeight: '600',
   },
   emptyCardText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 12,
     fontStyle: 'italic',
     paddingVertical: 10,
@@ -852,23 +804,26 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   muscleSetsText: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 12,
     fontWeight: '700',
   },
   muscleTonnageText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
   },
   tierPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   tierPillText: {
-    fontSize: 9,
-    fontWeight: '800',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
   },
   progressBarTrack: {
     height: 5,
@@ -885,7 +840,7 @@ const styles = StyleSheet.create({
   },
   dailyCard: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: uiRadius.card,
     padding: 10,
   },
   dailyCardActive: {
@@ -904,12 +859,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   dailyDayName: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   dailyDayNameActive: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   dailyDateSub: {
     color: '#52525B',
@@ -919,21 +874,21 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   dailyWorkoutName: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
   },
   dailyTonnageValue: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   dailyMetricsRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   dailySubInfo: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
   },
   dailyRestBody: {
@@ -948,7 +903,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#161618',
     borderWidth: 1,
     borderColor: '#242428',
-    borderRadius: 8,
+    borderRadius: uiRadius.card,
     padding: 12,
   },
   intensityCardTitleRow: {
@@ -958,18 +913,20 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   intensityCardLabel: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   intensityBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: '#1E293B',
     color: '#38BDF8',
     fontSize: 8,
-    fontWeight: '800',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 3,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   intensityStatRow: {
     flexDirection: 'row',
@@ -987,16 +944,16 @@ const styles = StyleSheet.create({
   intensityStatVal: {
     color: '#38BDF8',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 2,
   },
   intensityStatLabel: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 9,
     fontWeight: '700',
   },
   distributionTitle: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 10,
     fontWeight: '700',
     marginBottom: 6,
@@ -1011,7 +968,7 @@ const styles = StyleSheet.create({
   },
   bucketLabel: {
     width: 110,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 10,
     fontWeight: '600',
   },
@@ -1029,7 +986,7 @@ const styles = StyleSheet.create({
   bucketPercentText: {
     width: 65,
     textAlign: 'right',
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 10,
     fontWeight: '700',
   },

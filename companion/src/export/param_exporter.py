@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 import json
 import math
 from pathlib import Path
@@ -43,6 +43,7 @@ from src.ingestion.schemas import (
     CalibratedParametersEnvelope,
     Exercise,
     MuscleLandmarkPayload,
+    MesocycleFeedbackPayload,
     ProgramAuditPayload,
     Workout,
     WorkoutExportPayload,
@@ -50,9 +51,59 @@ from src.ingestion.schemas import (
 )
 from src.models.fatigue_banister import compute_daily_banister_series
 from src.models.kalman_1rm import Adaptive1RMKalmanFilter
-from src.models.mesocycle_analyzer import analyze_optimal_mesocycle_length
+from src.models.mesocycle_analyzer import analyze_optimal_mesocycle_length, compute_all_kalman_histories
 from src.models.recommendations import generate_parameter_audits
 from src.models.recovery_modifier import compute_recovery_modifier
+
+
+def training_snapshot_evidence(
+    payload: WorkoutExportPayload,
+) -> Tuple[Dict[str, Dict[str, Any]], List[Tuple[date, date]]]:
+    """Use explicit mobile block membership when available; date-only legacy blocks cannot overlap."""
+    snapshots: Dict[str, Dict[str, Any]] = {}
+    for key, value in payload.user_settings.items():
+        if key.startswith("training_snapshot_"):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    snapshots[key.removeprefix("training_snapshot_")] = parsed
+            except (ValueError, TypeError):
+                continue
+    boundaries: List[Tuple[date, date]] = []
+    previous_end: Optional[date] = None
+    for block in sorted(payload.program_blocks, key=lambda b: b.start_date):
+        if block.end_date is None:
+            continue
+        dates = [date.fromisoformat(str(w.date)[:10]) for w in payload.workouts
+                 if w.status == "completed" and snapshots.get(w.id, {}).get("blockId") == block.id]
+        start = min(dates) if dates else date.fromisoformat(block.start_date[:10])
+        end = max(dates) if dates else date.fromisoformat(block.end_date[:10])
+        if previous_end is not None:
+            start = max(start, previous_end + timedelta(days=1))
+        if (end - start).days >= 14:
+            boundaries.append((start, end))
+            previous_end = end
+    return snapshots, boundaries
+
+
+def strength_observation_sets(payload: WorkoutExportPayload, snapshots: Dict[str, Dict[str, Any]]) -> List[WorkoutSet]:
+    """Recovery work contributes training load but must not recalibrate strength."""
+    painful = {(p.workout_id, p.exercise_id) for p in payload.pain_reports if p.severity >= 7}
+    eligible = []
+    for workout_set in payload.workout_sets:
+        snapshot = snapshots.get(workout_set.workout_id, {})
+        if snapshot.get("deload") or (workout_set.workout_id, workout_set.exercise_id) in painful:
+            continue
+        rows = snapshot.get("exercises", [])
+        if not isinstance(rows, list):
+            rows = []
+        recovery = any(isinstance(row, dict) and (row.get("painRecovery") or row.get("painReturn")) and
+                       isinstance(row.get("prescription"), dict) and
+                       row["prescription"].get("exercise_id") == workout_set.exercise_id
+                       for row in rows)
+        if not recovery:
+            eligible.append(workout_set)
+    return eligible
 
 
 def compute_weekly_volumes_and_slopes_by_muscle(
@@ -202,10 +253,12 @@ def export_calibrated_parameters(
 ) -> CalibratedParametersEnvelope:
     """Calibrates all exercises present in the payload and returns the validated envelope."""
     exercise_map = {e.id: e for e in payload.exercises}
+    snapshots, explicit_blocks = training_snapshot_evidence(payload)
+    observation_sets = strength_observation_sets(payload, snapshots)
 
     # Group all sets by exercise_id
     sets_by_exercise: Dict[str, List[WorkoutSet]] = defaultdict(list)
-    for s in payload.workout_sets:
+    for s in observation_sets:
         sets_by_exercise[s.exercise_id].append(s)
 
     candidate_ids = (
@@ -306,11 +359,17 @@ def export_calibrated_parameters(
     )
     meso_rec = analyze_optimal_mesocycle_length(
         workouts=payload.workouts,
-        workout_sets=payload.workout_sets,
-        kalman_histories={},
+        workout_sets=observation_sets,
+        kalman_histories=compute_all_kalman_histories(
+            workouts=[w for w in payload.workouts if w.status == "completed"],
+            workout_sets=observation_sets,
+            exercises=payload.exercises,
+            default_working_rir=None,
+        ),
         banister_series=daily_banister,
         exercises=payload.exercises,
         energy_balance=rec_state.energy_balance,
+        block_boundaries=explicit_blocks or None,
     )
     pref_duration = (
         int(payload.user_profiles[0].preferred_session_duration_mins)
@@ -356,6 +415,16 @@ def export_calibrated_parameters(
         parameters=parameters,
         muscle_landmarks=muscle_landmarks_payload,
         program_audits=program_audit_payloads if program_audit_payloads else None,
+        mesocycle_feedback=MesocycleFeedbackPayload(
+            recommended_accumulation_weeks=max(3, min(12, round(meso_rec.optimal_accumulation_weeks))),
+            confidence_score=meso_rec.confidence_score,
+            confidence_tier=meso_rec.confidence_tier,
+            detected_blocks_count=meso_rec.detected_blocks_count,
+            explicit_rpe_coverage=meso_rec.explicit_rpe_coverage,
+            observed_through=max((str(w.date)[:10] for w in payload.workouts if w.status == "completed"), default=""),
+            exported_at=now_utc,
+            primary_goal=str(payload.user_profiles[0].primary_goal) if payload.user_profiles else "unknown",
+        ),
     )
     return envelope
 

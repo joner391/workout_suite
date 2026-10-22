@@ -31,6 +31,8 @@ describe('SQLiteProgramRepository', () => {
   };
 
   const sampleTemplateExerciseRow = {
+    rest_seconds: 45,
+    rest_pause_json: JSON.stringify({ mini_sets: 2, mini_reps_min: 3, mini_reps_max: 5, rest_seconds: 30 }),
     id: 'te_1',
     template_id: 'tmpl_push',
     exercise_id: 'barbell_bench_press',
@@ -208,6 +210,8 @@ describe('SQLiteProgramRepository', () => {
       expect(exercises[0].exercise_id).toBe('barbell_bench_press');
       expect(exercises[0].target_sets).toBe(3);
       expect(exercises[0].target_rpe).toBe(8.5);
+        expect(exercises[0].rest_seconds).toBe(45);
+        expect(exercises[0].rest_pause?.rest_seconds).toBe(30);
     });
 
     it('retrieves and parses progression rules from JSON string', async () => {

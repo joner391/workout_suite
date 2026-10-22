@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — Catalog Picker Modal
  *
@@ -90,9 +92,9 @@ export const CatalogPickerModal: React.FC<CatalogPickerModalProps> = ({
           <TouchableOpacity
             testID="close-catalog-picker-btn"
             style={styles.closeBtn}
-            onPress={onClose}
+            onPress={onClose} accessibilityRole="button" accessibilityLabel="Close"
           >
-            <Text style={styles.closeBtnText}>✕</Text>
+            <AppIcon name="close" size={20} color={uiColors.accentText} />
           </TouchableOpacity>
         </View>
 
@@ -102,7 +104,7 @@ export const CatalogPickerModal: React.FC<CatalogPickerModalProps> = ({
             testID="catalog-search-input"
             style={styles.searchInput}
             placeholder="Search exercises by name or muscle..."
-            placeholderTextColor="#71717A"
+            placeholderTextColor={uiColors.subtle}
             value={search}
             onChangeText={setSearch}
           />
@@ -209,7 +211,7 @@ export const CatalogPickerModal: React.FC<CatalogPickerModalProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
     paddingTop: 16,
   },
   header: {
@@ -219,31 +221,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   headerTitle: {
-    color: '#FAFAFA',
-    fontSize: 18,
-    fontWeight: '800',
+    lineHeight: 28,
+    flexShrink: 1,
+    color: uiColors.text,
+    fontSize: 22,
+    fontWeight: '700',
   },
   closeBtn: {
+    width: 44,
+    height: 44,
+    flexShrink: 0,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     padding: 6,
-  },
-  closeBtnText: {
-    color: '#A1A1AA',
-    fontSize: 18,
-    fontWeight: '700',
   },
   searchBox: {
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
   searchInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 8,
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
+    color: uiColors.text,
     fontSize: 14,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -253,7 +257,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   filterLabel: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     fontWeight: '700',
     marginBottom: 4,
@@ -262,25 +266,28 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   filterPill: {
-    backgroundColor: '#18181B',
+    minHeight: 26,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 14,
+    paddingHorizontal: 8,
+    borderRadius: uiRadius.badge,
   },
   filterPillActive: {
-    backgroundColor: '#00E676',
-    borderColor: '#00E676',
+    backgroundColor: uiColors.accent,
+    borderColor: uiColors.accent,
   },
   filterPillText: {
-    color: '#A1A1AA',
-    fontSize: 12,
+    lineHeight: 16,
+    color: uiColors.muted,
+    fontSize: 11,
     fontWeight: '600',
   },
   filterPillTextActive: {
-    color: '#0A0A0A',
-    fontWeight: '800',
+    color: uiColors.background,
+    fontWeight: '600',
   },
   listContent: {
     paddingHorizontal: 16,
@@ -291,9 +298,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#1E1E22',
+    borderColor: uiColors.border,
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
@@ -302,34 +309,37 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   exerciseItemName: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 14,
     fontWeight: '700',
   },
   exerciseItemMeta: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     marginTop: 2,
   },
   selectPill: {
-    backgroundColor: '#1E1E22',
+    minHeight: 26,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
     paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 6,
+    borderRadius: uiRadius.badge,
   },
   selectPillText: {
-    color: '#00E676',
+    lineHeight: 16,
+    color: uiColors.accentText,
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   emptyContainer: {
     padding: 24,
     alignItems: 'center',
   },
   emptyText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
   },
 });

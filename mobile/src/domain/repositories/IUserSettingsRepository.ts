@@ -10,6 +10,7 @@ export const SETTINGS_KEYS = {
   USER_GENDER: 'user_gender',
   USER_BODYWEIGHT_KG: 'user_bodyweight_kg',
   AUTO_WARMUP_MODE: 'auto_warmup_mode',
+  SMART_WARMUP: 'smart_warmup',
 } as const;
 
 /**

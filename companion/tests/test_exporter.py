@@ -9,12 +9,14 @@ from src.export.param_exporter import (
     calibrate_exercise_stream,
     export_calibrated_parameters,
     export_calibrated_parameters_file,
+    training_snapshot_evidence,
 )
 from src.ingestion.schemas import (
     CalibratedParametersEnvelope,
     Workout,
     WorkoutExportPayload,
     WorkoutSet,
+    ProgramBlock,
 )
 
 
@@ -154,6 +156,72 @@ def test_export_calibrated_parameters_conforms_to_schema(
     raw_dict = json.loads(envelope.model_dump_json())
     # Contract validation against schemas/calibrated_parameters.schema.json
     jsonschema.validate(instance=raw_dict, schema=calibrated_schema)
+
+
+def test_export_includes_mesocycle_evidence(sample_payload: WorkoutExportPayload) -> None:
+    envelope = export_calibrated_parameters(sample_payload)
+    feedback = envelope.mesocycle_feedback
+    assert feedback is not None
+    assert 3 <= feedback.recommended_accumulation_weeks <= 12
+    assert feedback.exported_at == envelope.exported_at
+    assert feedback.observed_through == max(
+        (str(w.date)[:10] for w in sample_payload.workouts if w.status == "completed"), default=""
+    )
+    if feedback.detected_blocks_count == 0:
+        assert feedback.confidence_tier == "LOW"
+
+
+def test_export_passes_actual_strength_histories_to_mesocycle_analysis(
+    sample_payload: WorkoutExportPayload, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import src.export.param_exporter as exporter
+
+    working = next(s for s in sample_payload.workout_sets if s.set_type == "working")
+    sample_payload.workout_sets.extend([
+        working.model_copy(update={"id": f"extra-{i}", "rir": 2.0}) for i in range(6)
+    ])
+    original = exporter.analyze_optimal_mesocycle_length
+    captured: Dict[str, Any] = {}
+
+    def observe(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(exporter, "analyze_optimal_mesocycle_length", observe)
+    export_calibrated_parameters(sample_payload)
+    assert captured["kalman_histories"]
+    assert working.exercise_id in captured["kalman_histories"]
+
+
+def test_recovery_work_cannot_change_calibrated_strength(sample_payload: WorkoutExportPayload) -> None:
+    before = export_calibrated_parameters(sample_payload)
+    source = next(s for s in sample_payload.workout_sets if s.set_type == "working")
+    workout = sample_payload.workouts[0].model_copy(update={"id": "recovery", "date": "2026-10-21", "status": "completed"})
+    sample_payload.workouts.append(workout)
+    sample_payload.workout_sets.append(source.model_copy(update={
+        "id": "recovery-set", "workout_id": "recovery", "weight": 1000.0, "rir": 0.0,
+    }))
+    sample_payload.user_settings["training_snapshot_recovery"] = json.dumps({"deload": True, "exercises": []})
+    after = export_calibrated_parameters(sample_payload)
+    assert [(p.exercise_id, p.calibrated_1rm, p.calibrated_k) for p in before.parameters] == [
+        (p.exercise_id, p.calibrated_1rm, p.calibrated_k) for p in after.parameters
+    ]
+
+
+def test_explicit_block_membership_avoids_boundary_day_overlap(sample_payload: WorkoutExportPayload) -> None:
+    sample_payload.program_blocks = [
+        ProgramBlock(id="one", program_id="p", start_date="2026-09-01", end_date="2026-09-28"),
+        ProgramBlock(id="two", program_id="p", start_date="2026-09-28", end_date="2026-10-21"),
+    ]
+    sample_payload.workouts = []
+    for ident, block, day in [("a", "one", "2026-09-01"), ("b", "one", "2026-09-28"),
+                              ("c", "two", "2026-10-01"), ("d", "two", "2026-10-21")]:
+        sample_payload.workouts.append(Workout(id=ident, date=day, name="Training", status="completed", started_at=f"{day}T12:00:00Z"))
+        sample_payload.user_settings[f"training_snapshot_{ident}"] = json.dumps({"blockId": block})
+    _, boundaries = training_snapshot_evidence(sample_payload)
+    assert len(boundaries) == 2
+    assert str(boundaries[0][1]) == "2026-09-28"
+    assert str(boundaries[1][0]) == "2026-10-01"
 
 
 def test_export_calibrated_parameters_file(calibrated_schema: Dict[str, Any]) -> None:

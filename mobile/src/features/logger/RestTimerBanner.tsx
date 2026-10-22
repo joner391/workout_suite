@@ -1,3 +1,4 @@
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — RestTimerBanner
  *
@@ -182,10 +183,10 @@ export const RestTimerBanner: React.FC<RestTimerBannerProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     marginHorizontal: 12,
     marginVertical: 6,
     overflow: 'hidden',
@@ -197,13 +198,13 @@ const styles = StyleSheet.create({
     borderColor: '#B45309', // Dark amber border
   },
   completedContainer: {
-    borderColor: '#00E676', // Vivid green glow
-    backgroundColor: '#052E16',
+    borderColor: uiColors.accent, // Vivid green glow
+    backgroundColor: uiColors.onAccent,
   },
   progressBarBackground: {
     height: 4,
     width: '100%',
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   progressBarFill: {
     height: '100%',
@@ -213,7 +214,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F59E0B',
   },
   completedProgressFill: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
   },
   contentRow: {
     flexDirection: 'row',
@@ -228,8 +229,8 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 24,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
     fontFamily: 'monospace',
     letterSpacing: 1,
   },
@@ -251,12 +252,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#F59E0B',
   },
   statusDotCompleted: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
   },
   statusLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#A1A1AA',
+    color: uiColors.muted,
     textTransform: 'uppercase',
   },
   controlsSection: {
@@ -265,10 +266,10 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   adjustButton: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
     paddingVertical: 6,
     paddingHorizontal: 8,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
     borderColor: '#3F3F46',
   },
@@ -281,34 +282,34 @@ const styles = StyleSheet.create({
     backgroundColor: '#3F3F46',
     width: 32,
     height: 32,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
     justifyContent: 'center',
     alignItems: 'center',
   },
   actionButtonText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
   },
   skipButton: {
     backgroundColor: '#3F3F46',
     paddingVertical: 6,
     paddingHorizontal: 8,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   skipButtonText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     fontWeight: '700',
   },
   dismissButton: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   dismissButtonText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

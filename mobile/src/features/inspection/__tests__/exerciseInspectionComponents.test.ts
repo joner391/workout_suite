@@ -309,7 +309,7 @@ describe('Exercise Inspection UI, SBD Tier Widget & Symmetry Radar (Step 3.3)', 
       expect(serialized).not.toContain('lbs lbs');
     });
 
-    it('renders enveloped badge and educational footer when enveloped record is present', () => {
+    it('uses an inline inheritance marker and a shared footnote without adding row badges', () => {
       const recordsWithEnvelope: RepMaxRecord[] = [
         {
           reps: 20,
@@ -340,8 +340,11 @@ describe('Exercise Inspection UI, SBD Tier Widget & Symmetry Radar (Step 3.3)', 
         unitSystem: 'kg',
       });
       const serialized = JSON.stringify(tree);
-      expect(serialized).toContain('↑ 21RM');
-      expect(serialized).toContain('Monotonic envelope');
+      expect(serialized).toContain('62.5 kg*');
+      expect(serialized).toContain('proven by a 21-rep set');
+      expect(serialized).toContain('Proven by a higher-rep set');
+      expect(serialized).not.toContain('↑ 21RM');
+      expect(serialized).not.toContain('★ PEAK');
     });
 
     it('does not apply peak highlight or peak badge to an enveloped record sharing setId with peakRecord', () => {
@@ -379,9 +382,7 @@ describe('Exercise Inspection UI, SBD Tier Widget & Symmetry Radar (Step 3.3)', 
       });
 
       const serialized = JSON.stringify(tree);
-      // Exactly ONE occurrence of "★ PEAK" should exist in the tree (for 21RM, never 20RM)
-      const peakMatches = serialized.match(/★ PEAK/g);
-      expect(peakMatches).toHaveLength(1);
+      expect(serialized).not.toContain('★ PEAK');
 
       // Verify the 20RM row does not have peak background style
       const treeAny = tree as any;

@@ -1,3 +1,4 @@
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — ProgressionProposalBanner
  *
@@ -115,7 +116,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   bannerProgress: {
-    backgroundColor: '#052E16',
+    backgroundColor: uiColors.onAccent,
     borderColor: '#22C55E',
   },
   bannerDeload: {
@@ -142,13 +143,13 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   categoryBadge: {
-    color: '#86EFAC',
+    color: uiColors.accentText,
     fontSize: 10,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   exerciseNameText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -165,18 +166,21 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   ddpSetPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    borderRadius: uiRadius.badge,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   ddpSetPillIncrease: {
     borderWidth: 1,
     borderColor: '#22C55E',
   },
   ddpSetPillText: {
-    color: '#D4D4D8',
-    fontSize: 10,
+    lineHeight: 16,
+    color: uiColors.secondaryText,
+    fontSize: 11,
     fontWeight: '600',
   },
   actionRow: {
@@ -192,10 +196,10 @@ const styles = StyleSheet.create({
   dismissBtn: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   dismissBtnText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -203,14 +207,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#22C55E',
     paddingVertical: 6,
     paddingHorizontal: 14,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   acceptBtnDeload: {
     backgroundColor: '#F59E0B',
   },
   acceptBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

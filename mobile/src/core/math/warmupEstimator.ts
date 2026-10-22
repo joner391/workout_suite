@@ -9,6 +9,12 @@
  * - Intra-session neuromuscular fatigue drift back-off drops (5-10%) and Helms step-downs
  */
 
+import type { AutoWarmupMode } from '../types';
+
+export function shouldGenerateWarmups(mode: AutoWarmupMode, exercise: { is_compound: boolean }): boolean {
+  return mode === 'all_exercises' || (mode === 'smart_compounds' && exercise.is_compound);
+}
+
 export type WarmupPerceptionRating = 'light' | 'normal' | 'hard' | 'heavy';
 
 export interface WarmupStep {
@@ -161,7 +167,7 @@ export function calculateWarmupAutoregulation(
     case 'light':
       // Conservative +2.5% if fatigue is flagged, else +5.0%
       rawDeltaPercent = hasRecentFatigueFlag ? 0.025 : 0.05;
-      recommendation = 'Warm-up moved crisply. Modest upward load adjustment applied.';
+      recommendation = 'Warm-up moved crisply. Modest upward load adjustment suggested.';
       break;
     case 'normal':
       rawDeltaPercent = 0.0;
@@ -172,7 +178,7 @@ export function calculateWarmupAutoregulation(
       // More aggressive downward adjustment (-7.5%) if fatigue flagged, else -5.0%
       rawDeltaPercent = hasRecentFatigueFlag ? -0.075 : -0.05;
       recommendation =
-        'Warm-up moved sluggishly. Preventive load reduction applied to protect connective tissue.';
+        'Warm-up moved sluggishly. A lower working load is suggested.';
       break;
   }
 
@@ -192,12 +198,32 @@ export function calculateWarmupAutoregulation(
   }
 
   const rawAdjustedLoad = workingWeightKg * (1 + clampedPercent);
-  const adjustedLoadKg = quantizeLoad(rawAdjustedLoad, minimumIncrementKg);
+  // Maintaining must preserve even loads that are off the default plate grid.
+  // Rounding must also respect the percentage bounds, particularly at light loads.
+  let adjustedLoadKg = workingWeightKg;
+  if (clampedPercent !== 0 && workingWeightKg > 0 && minimumIncrementKg > 0) {
+    const lowestStep = Math.ceil(workingWeightKg * (1 + MAX_DOWNWARD_PERCENT) / minimumIncrementKg - 1e-9);
+    const highestStep = Math.floor(workingWeightKg * (1 + MAX_UPWARD_PERCENT) / minimumIncrementKg + 1e-9);
+    const nearestStep = Math.round(rawAdjustedLoad / minimumIncrementKg);
+    const boundedStep = Math.min(highestStep, Math.max(lowestStep, nearestStep));
+    const rounded = Math.round(boundedStep * minimumIncrementKg * 100) / 100;
+    const roundedPercent = (rounded - workingWeightKg) / workingWeightKg;
+    if (lowestStep <= highestStep && roundedPercent >= MAX_DOWNWARD_PERCENT - 1e-9 &&
+        roundedPercent <= MAX_UPWARD_PERCENT + 1e-9 &&
+        roundedPercent * clampedPercent > 0) {
+      adjustedLoadKg = rounded;
+    }
+    if (adjustedLoadKg === workingWeightKg) {
+      recommendation = 'Maintain planned working load: no load step fits within the adjustment limits.';
+    }
+  }
 
   return {
     originalLoadKg: workingWeightKg,
     adjustedLoadKg,
-    percentageAdjustment: clampedPercent,
+    percentageAdjustment: workingWeightKg > 0
+      ? (adjustedLoadKg - workingWeightKg) / workingWeightKg
+      : 0,
     clamped,
     recommendation,
   };

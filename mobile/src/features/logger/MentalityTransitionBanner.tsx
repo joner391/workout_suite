@@ -1,3 +1,5 @@
+import { colors as uiColors } from '../../ui/theme';
+import { AppIcon } from '../../ui/AppIcon';
 /**
  * Workout Suite — MentalityTransitionBanner
  *
@@ -38,7 +40,7 @@ export const MentalityTransitionBanner: React.FC<MentalityTransitionBannerProps>
       accessibilityLabel={transitionWave.bannerMessage}
     >
       <View style={styles.contentRow}>
-        <Text style={styles.icon}>⚡</Text>
+        <AppIcon name="bolt" size={20} color={uiColors.accentText} />
         <View style={styles.textContainer}>
           <View style={styles.titleRow}>
             <Text style={styles.categoryBadge}>MENTALITY TRANSITION</Text>
@@ -67,7 +69,7 @@ export const MentalityTransitionBanner: React.FC<MentalityTransitionBannerProps>
             accessibilityRole="button"
             accessibilityLabel="Dismiss mentality transition banner"
           >
-            <Text style={styles.dismissButtonText}>✕</Text>
+            <AppIcon name="close" size={20} color={uiColors.accentText} />
           </TouchableOpacity>
         )}
       </View>
@@ -89,11 +91,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
-  icon: {
-    fontSize: 20,
-    marginRight: 8,
-    marginTop: 2,
-  },
   textContainer: {
     flex: 1,
   },
@@ -107,7 +104,7 @@ const styles = StyleSheet.create({
   categoryBadge: {
     color: '#A5B4FC',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
@@ -137,10 +134,5 @@ const styles = StyleSheet.create({
   dismissButton: {
     paddingLeft: 8,
     paddingTop: 2,
-  },
-  dismissButtonText: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

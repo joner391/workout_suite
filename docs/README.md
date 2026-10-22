@@ -14,8 +14,10 @@ For current behavior, inspect source and tests using [CODEMAP.md](CODEMAP.md). [
 | [VALIDATION.md](VALIDATION.md) | Current check selection and commands. |
 | [DECISIONS.md](DECISIONS.md) | Historical rationale; search by topic or ADR number, then read the matching record. [Generated decision index](generated/DECISION_INDEX.md). |
 | [TRAINING_AND_BODY_DATA.md](TRAINING_AND_BODY_DATA.md) | Detailed data/metrics reference and gap analysis; verify claims against source for the affected metric. |
+| [TRAINING_EVOLUTION.md](TRAINING_EVOLUTION.md) | Current automatic evolution, recovery, pain-return and companion evidence policy; includes operational defaults and persistence. |
 | `implementation_plans/` | Historical designs, audits, and proposals with mixed completion status. Old execution rules and verification gates are inactive. |
 | `training_philosophies/` | Scientific/theoretical background; read only for an affected algorithm. Proposals here do not establish implemented behavior. |
+| [Goal-aware generation analysis](implementation_plans/Goal_aware_program_generation_analysis.md) | Audit and current policy: weekly volume, direct arm/core reservations, Fury variations, advanced targets, antagonist pairing, structured myo/DC and shared scheduling. Personal muscle emphasis and strength back fillers remain separate future work. |
 | `archived/` | Superseded sketches and phase notes; historical reference only. |
 | [generated/README.md](generated/README.md) | Generated facts and reproduction instructions; search inventories instead of loading them wholesale. |
 

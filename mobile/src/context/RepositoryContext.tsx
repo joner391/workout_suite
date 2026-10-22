@@ -19,6 +19,7 @@ import {
 } from '../domain/repositories';
 import { ProgramBlockService } from '../services/programBlockService';
 import { ExercisePreferenceService } from '../services/exercisePreferenceService';
+import { CalibratedParamService } from '../services/calibratedParamService';
 
 export interface Repositories {
   workoutRepo: IWorkoutRepository;
@@ -32,6 +33,7 @@ export interface Repositories {
   programBlockService: ProgramBlockService;
   exercisePreferenceRepo?: IExercisePreferenceRepository;
   exercisePreferenceService?: ExercisePreferenceService;
+  calibratedParamService?: CalibratedParamService;
 }
 
 export const RepositoryContext = createContext<Repositories | null>(null);

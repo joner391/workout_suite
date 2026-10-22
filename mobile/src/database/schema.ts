@@ -2,7 +2,7 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { DEFAULT_EXERCISES, DEFAULT_GEAR } from './seeds/defaultExercises';
 
 export const DATABASE_NAME = 'workout_suite.db';
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 /**
  * Minimal abstraction matching the modern expo-sqlite async interface.
@@ -100,7 +100,9 @@ CREATE TABLE IF NOT EXISTS template_exercises (
     target_rir REAL,
     order_index INTEGER NOT NULL,
     exercise_group_id TEXT,
-    set_type TEXT DEFAULT 'working'
+    set_type TEXT DEFAULT 'working',
+    rest_seconds INTEGER,
+    rest_pause_json TEXT
 );
 
 -- Progression Rules (declarative condition-action engine)
@@ -641,9 +643,32 @@ export async function migrateDatabase(db: ISQLiteDatabase): Promise<void> {
         }
       }
 
-      await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
+      await db.execAsync('PRAGMA user_version = 10;');
       await db.execAsync('COMMIT;');
-      currentVersion = CURRENT_SCHEMA_VERSION;
+      currentVersion = 10;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+  if (currentVersion < 11) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      await db.execAsync('ALTER TABLE template_exercises ADD COLUMN rest_seconds INTEGER;');
+      await db.execAsync('PRAGMA user_version = 11;');
+      await db.execAsync('COMMIT;');
+      currentVersion = 11;
+    } catch (err) {
+      await db.execAsync('ROLLBACK;');
+      throw err;
+    }
+  }
+  if (currentVersion < 12) {
+    await db.execAsync('BEGIN TRANSACTION;');
+    try {
+      await db.execAsync('ALTER TABLE template_exercises ADD COLUMN rest_pause_json TEXT;');
+      await db.execAsync('PRAGMA user_version = 12;');
+      await db.execAsync('COMMIT;');
     } catch (err) {
       await db.execAsync('ROLLBACK;');
       throw err;

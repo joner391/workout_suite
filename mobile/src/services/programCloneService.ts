@@ -83,6 +83,8 @@ export async function cloneProgramAsCustom(
         target_rir: te.target_rir,
         exercise_group_id: newGroupId,
         set_type: te.set_type ?? 'working',
+        rest_seconds: te.rest_seconds,
+        rest_pause: te.rest_pause ? { ...te.rest_pause } : null,
       };
       await programRepo.createTemplateExercise(clonedTe);
 

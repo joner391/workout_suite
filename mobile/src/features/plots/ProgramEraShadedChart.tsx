@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 import React, { useState, useMemo } from 'react';
 import {
   View,
@@ -188,7 +190,7 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
         style={[styles.emptyContainer, { height }]}
         onLayout={handleLayout}
       >
-        <Text style={styles.emptyIcon}>📊</Text>
+        <AppIcon name="chart" size={32} color={uiColors.accentText} />
         <Text style={styles.emptyText}>{emptyMessage}</Text>
       </View>
     );
@@ -361,14 +363,14 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
               y1={line.y}
               x2={padding.left + plotWidth}
               y2={line.y}
-              stroke="#2A2A2A"
+              stroke={uiColors.border}
               strokeDasharray="3,3"
               strokeWidth={1}
             />
             <SvgText
               x={padding.left - 6}
               y={line.y + 3}
-              fill="#888888"
+              fill={uiColors.muted}
               fontSize={9}
               fontWeight="600"
               textAnchor="end"
@@ -383,7 +385,7 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
           <SvgText
             x={padding.left}
             y={padding.top - 7}
-            fill="#777777"
+            fill={uiColors.subtle}
             fontSize={9}
             fontWeight="bold"
             textAnchor="start"
@@ -402,7 +404,7 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
           const cy = getY(bar.value);
           const barHeight = padding.top + plotHeight - cy;
           const barWidth = Math.max(6, Math.min(22, (plotWidth / bars.length) * 0.6));
-          const color = bar.color || '#00E676';
+          const color = bar.color || uiColors.accent;
 
           return (
             <Rect
@@ -482,8 +484,8 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
                         cx={px}
                         cy={py}
                         r={isSelected ? 6 : s.dotRadius ?? 3.5}
-                        fill={isSelected ? '#FFFFFF' : s.color}
-                        stroke={isSelected ? s.color : '#121212'}
+                        fill={isSelected ? uiColors.text : s.color}
+                        stroke={isSelected ? s.color : uiColors.surface}
                         strokeWidth={isSelected ? 2 : 1}
                         onPress={() => {
                           const era = getEraForDate(ms);
@@ -505,7 +507,7 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
                       cx={getX(parseIsoDateToMs(selectedPoint.date))}
                       cy={getY(selectedPoint.value)}
                       r={6}
-                      fill="#FFFFFF"
+                    fill={uiColors.text}
                       stroke={selectedPoint.color}
                       strokeWidth={2}
                     />
@@ -522,7 +524,7 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
             key={`date-marker-${idx}`}
             x={marker.x}
             y={height - 8}
-            fill="#888888"
+            fill={uiColors.muted}
             fontSize={9}
             fontWeight="500"
             textAnchor={idx === 0 ? 'start' : idx === dateMarkers.length - 1 ? 'end' : 'middle'}
@@ -559,7 +561,7 @@ export const ProgramEraShadedChart: React.FC<ProgramEraShadedChartProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#121212',
+    backgroundColor: uiColors.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#262626',
@@ -579,12 +581,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
-  emptyIcon: {
-    fontSize: 28,
-    marginBottom: 8,
-  },
   emptyText: {
-    color: '#888888',
+    color: uiColors.muted,
     fontSize: 13,
     textAlign: 'center',
   },
@@ -593,7 +591,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     padding: 8,
     backgroundColor: '#1F1F1F',
-    borderRadius: 8,
+    borderRadius: uiRadius.card,
     borderWidth: 1,
     borderColor: '#333333',
   },
@@ -609,7 +607,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   calloutSeriesName: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -619,16 +617,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   calloutDate: {
-    color: '#AAAAAA',
+    color: uiColors.muted,
     fontSize: 11,
   },
   calloutEraBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+    minHeight: 26,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   calloutEraText: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 10,
     fontWeight: '600',
   },

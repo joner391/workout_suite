@@ -44,6 +44,8 @@ interface TemplateExerciseRow {
   order_index: number;
   exercise_group_id: string | null;
   set_type?: string | null;
+  rest_seconds?: number | null;
+  rest_pause_json?: string | null;
 }
 
 interface ProgressionRuleRow {
@@ -95,6 +97,8 @@ function mapRowToTemplateExercise(row: TemplateExerciseRow): TemplateExercise {
     order_index: Number(row.order_index ?? 0),
     exercise_group_id: row.exercise_group_id,
     set_type: (row.set_type as any) ?? 'working',
+    rest_seconds: row.rest_seconds != null ? Number(row.rest_seconds) : null,
+    rest_pause: row.rest_pause_json ? JSON.parse(row.rest_pause_json) : null,
   };
 }
 
@@ -274,8 +278,8 @@ export class SQLiteProgramRepository implements IProgramRepository {
       await this.db.runAsync(
         `INSERT OR REPLACE INTO template_exercises (
            id, template_id, exercise_id, gear_id, target_sets, target_reps_min,
-           target_reps_max, target_rpe, target_rir, order_index, exercise_group_id, set_type
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+           target_reps_max, target_rpe, target_rir, order_index, exercise_group_id, set_type, rest_seconds, rest_pause_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         te.id,
         te.template_id,
         te.exercise_id,
@@ -287,7 +291,9 @@ export class SQLiteProgramRepository implements IProgramRepository {
         te.target_rir,
         te.order_index,
         te.exercise_group_id,
-        te.set_type ?? 'working'
+        te.set_type ?? 'working',
+        te.rest_seconds ?? null,
+        te.rest_pause ? JSON.stringify(te.rest_pause) : null
       );
     }
 
@@ -439,8 +445,8 @@ export class SQLiteProgramRepository implements IProgramRepository {
     await this.db.runAsync(
       `INSERT INTO template_exercises (
          id, template_id, exercise_id, gear_id, target_sets, target_reps_min,
-         target_reps_max, target_rpe, target_rir, order_index, exercise_group_id, set_type
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+         target_reps_max, target_rpe, target_rir, order_index, exercise_group_id, set_type, rest_seconds, rest_pause_json
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       exercise.id,
       exercise.template_id,
       exercise.exercise_id,
@@ -452,7 +458,9 @@ export class SQLiteProgramRepository implements IProgramRepository {
       exercise.target_rir,
       exercise.order_index,
       exercise.exercise_group_id,
-      exercise.set_type ?? 'working'
+      exercise.set_type ?? 'working',
+      exercise.rest_seconds ?? null,
+      exercise.rest_pause ? JSON.stringify(exercise.rest_pause) : null
     );
     return { ...exercise };
   }
@@ -462,7 +470,7 @@ export class SQLiteProgramRepository implements IProgramRepository {
       `UPDATE template_exercises SET
          exercise_id = ?, gear_id = ?, target_sets = ?, target_reps_min = ?,
          target_reps_max = ?, target_rpe = ?, target_rir = ?, order_index = ?,
-         exercise_group_id = ?, set_type = ?
+         exercise_group_id = ?, set_type = ?, rest_seconds = ?, rest_pause_json = ?
        WHERE id = ?;`,
       exercise.exercise_id,
       exercise.gear_id,
@@ -474,6 +482,8 @@ export class SQLiteProgramRepository implements IProgramRepository {
       exercise.order_index,
       exercise.exercise_group_id,
       exercise.set_type ?? 'working',
+      exercise.rest_seconds ?? null,
+      exercise.rest_pause ? JSON.stringify(exercise.rest_pause) : null,
       exercise.id
     );
     return { ...exercise };

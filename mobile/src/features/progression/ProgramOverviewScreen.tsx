@@ -1,3 +1,8 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
+import { Badge } from '../../ui/Badge';
+import { ScreenHeader } from '../../ui/ScreenHeader';
+import { commonStyles } from '../../ui/theme';
 /**
  * Workout Suite — ProgramOverviewScreen
  *
@@ -10,6 +15,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { normalizeExerciseGroups } from '../../core/exerciseGroups';
 import {
   View,
   Text,
@@ -132,6 +138,9 @@ export function formatLifterProgramNotes(rawNotes?: string | null): string | nul
 
   // 2. Map internal archetype identifiers to clean names
   const archetypeMap: Record<string, string> = {
+    archetype_i_pure_strength: 'Strength',
+    archetype_ii_strength_hypertrophy: 'Strength & Hypertrophy',
+    archetype_iii_hypertrophy_strength: 'Hypertrophy & Strength',
     archetype_i_powerlifting: 'Powerlifting (SBD)',
     archetype_ii_strength_primary: 'Strength & Hypertrophy',
     archetype_iii_athletic_power: 'Athletic Power',
@@ -172,6 +181,7 @@ export interface ProgramOverviewScreenProps {
   gearRepo?: IGearRepository;
   initialProgramId?: string;
   onClose?: () => void;
+  onOpenSetup?: () => void;
   onSelectProgram?: (programId: string) => void;
 }
 
@@ -182,13 +192,19 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
   gearRepo,
   initialProgramId,
   onClose,
+  onOpenSetup,
   onSelectProgram,
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [activeInfo, setActiveInfo] = useState<ActiveProgramInfo | null>(null);
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
-  const [programDetails, setProgramDetails] = useState<ProgramWithDetails | null>(null);
+  const [programDetails, setRawProgramDetails] = useState<ProgramWithDetails | null>(null);
+  const setProgramDetails = useCallback((details: ProgramWithDetails | null) => {
+    setRawProgramDetails(details ? { ...details, templates: details.templates.map(template => ({
+      ...template, exercises: normalizeExerciseGroups(template.exercises),
+    })) } : null);
+  }, []);
   const [exerciseCatalog, setExerciseCatalog] = useState<Map<string, Exercise>>(new Map());
   const [catalogList, setCatalogList] = useState<Exercise[]>([]);
   const [availableGear, setAvailableGear] = useState<GearInventory[]>([]);
@@ -668,7 +684,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
   if (loading && programs.length === 0) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#00E676" />
+        <ActivityIndicator size="large" color={uiColors.accent} />
         <Text style={styles.loadingText}>Loading training programs...</Text>
       </View>
     );
@@ -681,32 +697,15 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
   return (
     <View testID="program-overview-screen" style={styles.screen}>
       {/* Top Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Training Programs</Text>
-          <Text style={styles.headerSubtitle}>
-            Meso-cycle splits, daily templates & progression rules
-          </Text>
-        </View>
-        <View style={styles.headerActionRow}>
-          <TouchableOpacity
-            testID="create-new-program-btn"
-            style={styles.addBtn}
-            onPress={() => setShowCreateProgramModal(true)}
-          >
-            <Text style={styles.addBtnText}>+ New</Text>
-          </TouchableOpacity>
-          {onClose && (
-            <TouchableOpacity
-              testID="close-program-overview-btn"
-              style={styles.closeBtn}
-              onPress={onClose}
-            >
-              <Text style={styles.closeBtnText}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <ScreenHeader
+        title="Training programs"
+        subtitle="Your splits, workouts and progression"
+        onClose={onClose}
+        closeTestID="close-program-overview-btn"
+        actions={<><TouchableOpacity testID="create-new-program-btn" style={commonStyles.button} onPress={() => setShowCreateProgramModal(true)}>
+          <Text style={commonStyles.buttonText}>New program</Text>
+        </TouchableOpacity>{onOpenSetup && <TouchableOpacity testID="program-hub-setup-btn" style={commonStyles.button} onPress={onOpenSetup}><Text style={commonStyles.buttonText}>Create / evolve</Text></TouchableOpacity>}</>}
+      />
 
       {/* Program Selector Horizontal Tabs */}
       <View style={styles.programTabBar}>
@@ -725,7 +724,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                 style={[
                   styles.programTab,
                   isSelected && styles.programTabSelected,
-                  { borderColor: isSelected ? p.color_hex : '#27272A' },
+                  { borderColor: isSelected ? p.color_hex : uiColors.border },
                 ]}
                 onPress={() => handleSelectProgram(p.id)}
               >
@@ -765,15 +764,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                 <View style={{ flex: 1 }}>
                   <View style={styles.programTitleRow}>
                     <Text style={styles.programNameText}>{selectedProgram.name}</Text>
-                    {isCustom ? (
-                      <View style={styles.customBadge}>
-                        <Text style={styles.customBadgeText}>CUSTOM</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.presetBadge}>
-                        <Text style={styles.presetBadgeText}>PRESET (PROTECTED)</Text>
-                      </View>
-                    )}
+                    <Badge label={isCustom ? "Custom program" : "Protected preset"} tone={isCustom ? "accent" : "neutral"} />
                   </View>
                   {(() => {
                     const cleanNotes = formatLifterProgramNotes(selectedProgram.notes);
@@ -817,7 +808,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                     style={styles.cloneBtn}
                     onPress={handleCloneProgram}
                   >
-                    <Text style={styles.cloneBtnText}>Duplicate 📋</Text>
+                    <Text style={styles.cloneBtnText}>Duplicate </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     testID={`delete-program-btn-${selectedProgram.id}`}
@@ -870,41 +861,43 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                       <View style={styles.templateHeaderActions}>
                         <TouchableOpacity
                           testID={`template-move-up-${tmpl.id}`}
+                          hitSlop={4}
                           style={[styles.miniControlBtn, isFirst && styles.btnDisabled]}
                           onPress={() => handleMoveTemplate(tmpl.id, 'up')}
-                          disabled={isFirst}
+                          disabled={isFirst} accessibilityRole="button" accessibilityLabel="Move workout up"
                         >
-                          <Text style={styles.miniControlBtnText}>▲</Text>
+                          <AppIcon name="up" size={18} color={uiColors.accentText} />
                         </TouchableOpacity>
 
                         <TouchableOpacity
                           testID={`template-move-down-${tmpl.id}`}
+                          hitSlop={4}
                           style={[styles.miniControlBtn, isLast && styles.btnDisabled]}
                           onPress={() => handleMoveTemplate(tmpl.id, 'down')}
-                          disabled={isLast}
+                          disabled={isLast} accessibilityRole="button" accessibilityLabel="Move workout down"
                         >
-                          <Text style={styles.miniControlBtnText}>▼</Text>
+                          <AppIcon name="down" size={18} color={uiColors.accentText} />
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                          testID={`edit-template-btn-${tmpl.id}`}
+                          hitSlop={4} testID={`edit-template-btn-${tmpl.id}`}
                           style={styles.miniControlBtn}
                           onPress={() =>
                             setEditTemplateModalState({
                               visible: true,
                               template: tmpl,
                             })
-                          }
+                          } accessibilityRole="button" accessibilityLabel="Edit workout"
                         >
-                          <Text style={styles.miniControlBtnText}>✎</Text>
+                          <AppIcon name="edit" size={18} color={uiColors.accentText} />
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                          testID={`delete-template-btn-${tmpl.id}`}
+                          hitSlop={4} testID={`delete-template-btn-${tmpl.id}`}
                           style={styles.miniControlBtnDestructive}
-                          onPress={() => handleDeleteTemplate(tmpl.id)}
+                          onPress={() => handleDeleteTemplate(tmpl.id)} accessibilityRole="button" accessibilityLabel="Delete workout"
                         >
-                          <Text style={styles.miniControlBtnDestructiveText}>✕</Text>
+                          <AppIcon name="trash" size={20} color={uiColors.danger} />
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -931,37 +924,39 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                           >
                             <View style={styles.exerciseInfoCol}>
                               <View style={styles.exerciseNameRow}>
-                                <Text style={styles.exerciseIndexText}>{eIdx + 1}.</Text>
-                                <Text style={styles.exerciseNameText}>{exName}</Text>
-                                {progBadge && (
-                                  <View
-                                    testID={`prog-badge-${te.id}`}
-                                    style={[
-                                      styles.progBadge,
-                                      progBadge === 'LP' && styles.progBadgeLP,
-                                      progBadge === 'DP' && styles.progBadgeDP,
-                                      progBadge === 'DDP' && styles.progBadgeDDP,
-                                      (progBadge === 'Custom' || progBadge === 'Effort') && styles.progBadgeCustom,
-                                    ]}
-                                  >
-                                    <Text
+
+                                <Text style={styles.exerciseNameText}>{eIdx + 1}. {exName}</Text>
+                                <View style={commonStyles.wrapRow}>
+                                  {progBadge && (
+                                    <View
+                                      testID={`prog-badge-${te.id}`}
                                       style={[
-                                        styles.progBadgeText,
-                                        progBadge === 'LP' && styles.progBadgeTextLP,
-                                        progBadge === 'DP' && styles.progBadgeTextDP,
-                                        progBadge === 'DDP' && styles.progBadgeTextDDP,
-                                        (progBadge === 'Custom' || progBadge === 'Effort') && styles.progBadgeTextCustom,
+                                        styles.progBadge,
+                                        progBadge === 'LP' && styles.progBadgeLP,
+                                        progBadge === 'DP' && styles.progBadgeDP,
+                                        progBadge === 'DDP' && styles.progBadgeDDP,
+                                        (progBadge === 'Custom' || progBadge === 'Effort') && styles.progBadgeCustom,
                                       ]}
                                     >
-                                      {progBadge}
-                                    </Text>
-                                  </View>
-                                )}
-                                {te.exercise_group_id && (
-                                  <View style={styles.supersetPill}>
-                                    <Text style={styles.supersetPillText}>SUPERSET</Text>
-                                  </View>
-                                )}
+                                      <Text
+                                        style={[
+                                          styles.progBadgeText,
+                                          progBadge === 'LP' && styles.progBadgeTextLP,
+                                          progBadge === 'DP' && styles.progBadgeTextDP,
+                                          progBadge === 'DDP' && styles.progBadgeTextDDP,
+                                          (progBadge === 'Custom' || progBadge === 'Effort') && styles.progBadgeTextCustom,
+                                        ]}
+                                      >
+                                        {progBadge}
+                                      </Text>
+                                    </View>
+                                  )}
+                                  {te.exercise_group_id && (
+                                    <View style={styles.supersetPill}>
+                                      <Text style={styles.supersetPillText}>SUPERSET</Text>
+                                    </View>
+                                  )}
+                                </View>
                               </View>
 
                               {/* Prescriptions */}
@@ -982,8 +977,8 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                                   {te.target_rpe != null
                                     ? ` @ RPE ${te.target_rpe}`
                                     : te.target_rir != null
-                                    ? ` @ ${te.target_rir} RIR`
-                                    : ''}
+                                      ? ` @ ${te.target_rir} RIR`
+                                      : ''}
                                   {'  '}<Text style={styles.editPencil}>✎ Edit</Text>
                                 </Text>
                               </TouchableOpacity>
@@ -992,7 +987,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                               {hasRules && (
                                 <View style={styles.rulesSummaryRow}>
                                   <Text style={styles.rulesSummaryBadge}>
-                                    ⚙️ {te.rules.length} Rule{te.rules.length > 1 ? 's' : ''}
+                                    {te.rules.length} Rule{te.rules.length > 1 ? 's' : ''}
                                   </Text>
                                 </View>
                               )}
@@ -1011,7 +1006,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                                     })
                                   }
                                 >
-                                  <Text style={styles.configureRulesBtnText}>Rules ⚙️</Text>
+                                  <Text style={styles.configureRulesBtnText}>Rules </Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -1135,7 +1130,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
               <Text style={styles.createModalTitle}>Pair Antagonist Superset</Text>
               <Text style={styles.cardDescription}>
                 Select an exercise to pair into a superset with{' '}
-                <Text style={{ color: '#00E676', fontWeight: 'bold' }}>
+                <Text style={{ color: uiColors.accentText, fontWeight: 'bold' }}>
                   {exerciseCatalog.get(supersetPickerState.sourceExercise.exercise_id)?.name ??
                     supersetPickerState.sourceExercise.exercise_id}
                 </Text>:
@@ -1156,7 +1151,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                         onPress={() => handleLinkSupersetWith(otherTe.id)}
                       >
                         <Text style={styles.supersetChoiceText}>{otherName}</Text>
-                        <Text style={styles.supersetChoiceAction}>Pair 🔗</Text>
+                        <Text style={styles.supersetChoiceAction}>Pair </Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -1191,12 +1186,12 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
               value={newProgramName}
               onChangeText={setNewProgramName}
               placeholder="e.g. 4-Day Upper / Lower Split"
-              placeholderTextColor="#71717A"
+              placeholderTextColor={uiColors.subtle}
             />
 
             <Text style={[styles.inputLabel, { marginTop: 12 }]}>Accent Color</Text>
             <View style={styles.colorPickerRow}>
-              {['#3B82F6', '#00E676', '#EF4444', '#F59E0B', '#8B5CF6', '#EC4899'].map((c) => (
+              {['#3B82F6', uiColors.accent, '#EF4444', '#F59E0B', '#8B5CF6', '#EC4899'].map((c) => (
                 <TouchableOpacity
                   key={c}
                   testID={`color-choice-${c}`}
@@ -1218,7 +1213,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
               value={newProgramNotes}
               onChangeText={setNewProgramNotes}
               placeholder="Program goals, periodization notes..."
-              placeholderTextColor="#71717A"
+              placeholderTextColor={uiColors.subtle}
             />
 
             <View style={styles.modalActionRow}>
@@ -1263,9 +1258,9 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                 <TouchableOpacity
                   onPress={() => setActionMenuState(null)}
                   style={{ padding: 4 }}
-                  accessibilityLabel="Close action menu"
+                  accessibilityLabel="Close action menu" accessibilityRole="button"
                 >
-                  <Text style={styles.actionMenuClose}>✕</Text>
+                  <AppIcon name="close" size={20} color={uiColors.accentText} />
                 </TouchableOpacity>
               </View>
 
@@ -1286,7 +1281,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                   setActionMenuState(null);
                 }}
               >
-                <Text style={styles.actionMenuItemIcon}>▲</Text>
+                <AppIcon name="up" size={20} color={uiColors.accentText} />
                 <Text style={styles.actionMenuItemText}>Move Up</Text>
               </TouchableOpacity>
 
@@ -1307,7 +1302,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                   setActionMenuState(null);
                 }}
               >
-                <Text style={styles.actionMenuItemIcon}>▼</Text>
+                <AppIcon name="down" size={20} color={uiColors.accentText} />
                 <Text style={styles.actionMenuItemText}>Move Down</Text>
               </TouchableOpacity>
 
@@ -1327,7 +1322,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                   });
                 }}
               >
-                <Text style={styles.actionMenuItemIcon}>⇄</Text>
+                <AppIcon name="swap" size={20} color={uiColors.accentText} />
                 <Text style={styles.actionMenuItemText}>Swap Exercise</Text>
               </TouchableOpacity>
 
@@ -1341,7 +1336,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                     setActionMenuState(null);
                   }}
                 >
-                  <Text style={styles.actionMenuItemIcon}>⛓️‍💥</Text>
+                  <AppIcon name="unlink" size={20} color={uiColors.accentText} />
                   <Text style={[styles.actionMenuItemText, { color: '#F59E0B' }]}>
                     Unlink Superset
                   </Text>
@@ -1361,7 +1356,7 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                     });
                   }}
                 >
-                  <Text style={styles.actionMenuItemIcon}>🔗</Text>
+                  <AppIcon name="link" size={20} color={uiColors.accentText} />
                   <Text style={styles.actionMenuItemText}>Pair Superset</Text>
                 </TouchableOpacity>
               )}
@@ -1374,9 +1369,9 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
                   const teId = actionMenuState.templateExercise.id;
                   setActionMenuState(null);
                   handleDeleteTemplateExercise(teId);
-                }}
+                }} accessibilityRole="button" accessibilityLabel="Delete exercise"
               >
-                <Text style={[styles.actionMenuItemIcon, { color: '#EF4444' }]}>✕</Text>
+                <AppIcon name="trash" size={20} color={uiColors.danger} />
                 <Text style={[styles.actionMenuItemText, { color: '#EF4444' }]}>
                   Delete Exercise
                 </Text>
@@ -1392,68 +1387,23 @@ export const ProgramOverviewScreen: React.FC<ProgramOverviewScreenProps> = ({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
   },
   loadingText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     marginTop: 12,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FAFAFA',
-    letterSpacing: -0.5,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#71717A',
-    marginTop: 2,
-  },
-  headerActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  addBtn: {
-    backgroundColor: '#00E676',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  addBtnText: {
-    color: '#0A0A0A',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  closeBtn: {
-    padding: 6,
-  },
-  closeBtnText: {
-    color: '#A1A1AA',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
   programTabBar: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E1E22',
+    borderBottomColor: uiColors.border,
   },
   tabScrollContent: {
     paddingHorizontal: 16,
@@ -1463,14 +1413,14 @@ const styles = StyleSheet.create({
   programTab: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
     borderRadius: 20,
     paddingVertical: 6,
     paddingHorizontal: 12,
   },
   programTabSelected: {
-    backgroundColor: '#27272A',
+    backgroundColor: uiColors.border,
   },
   colorDot: {
     width: 8,
@@ -1479,24 +1429,27 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   programTabText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 12,
     fontWeight: '600',
   },
   programTabTextSelected: {
-    color: '#FAFAFA',
-    fontWeight: '700',
+    color: uiColors.text,
+    fontWeight: '600',
   },
   activePill: {
+    minHeight: 26,
+    justifyContent: 'center',
     marginLeft: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
   },
   activePillText: {
-    color: '#0A0A0A',
-    fontSize: 8,
-    fontWeight: '900',
+    lineHeight: 16,
+    color: uiColors.background,
+    fontSize: 11,
+    fontWeight: '600',
   },
   scrollView: {
     flex: 1,
@@ -1506,54 +1459,35 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   programHeaderCard: {
-    backgroundColor: '#121214',
-    borderRadius: 10,
+    backgroundColor: uiColors.surface,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1E1E22',
+    borderColor: uiColors.border,
   },
   programHeaderRow: {
+    gap: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
   programTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 8,
   },
   programNameText: {
-    color: '#FAFAFA',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  customBadge: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  customBadgeText: {
-    color: '#0A0A0A',
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  presetBadge: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  presetBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 8,
-    fontWeight: '800',
+    flexShrink: 1,
+    lineHeight: 24,
+    color: uiColors.text,
+    fontSize: 18,
+    fontWeight: '700',
   },
   programNotesContainer: {
     marginTop: 6,
-    backgroundColor: '#141416',
+    backgroundColor: uiColors.surface,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -1561,15 +1495,17 @@ const styles = StyleSheet.create({
     borderLeftColor: '#3F3F46',
   },
   programNotesText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
     lineHeight: 16,
   },
   progBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-    backgroundColor: '#1E1E22',
+    minHeight: 26,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
+    backgroundColor: uiColors.raised,
     marginLeft: 6,
     alignSelf: 'center',
     borderWidth: 1,
@@ -1592,9 +1528,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B0764',
   },
   progBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#D4D4D8',
+    lineHeight: 16,
+    fontSize: 11,
+    fontWeight: '600',
+    color: uiColors.secondaryText,
     letterSpacing: 0.5,
   },
   progBadgeTextLP: {
@@ -1610,20 +1547,26 @@ const styles = StyleSheet.create({
     color: '#D8B4FE',
   },
   activeStatusBadge: {
+    minHeight: 26,
+    justifyContent: 'center',
     paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 6,
+    borderRadius: uiRadius.badge,
   },
   activeStatusBadgeText: {
-    color: '#0A0A0A',
-    fontSize: 10,
-    fontWeight: '900',
+    lineHeight: 16,
+    color: uiColors.background,
+    fontSize: 11,
+    fontWeight: '600',
   },
   setActiveBtn: {
+    minHeight: 40,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
   },
   setActiveBtnText: {
     fontSize: 11,
@@ -1636,10 +1579,10 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#1E1E22',
+    borderTopColor: uiColors.border,
   },
   programMetaText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     fontWeight: '500',
   },
@@ -1649,12 +1592,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cloneBtn: {
-    backgroundColor: '#18181B',
+    minHeight: 40,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
     borderColor: '#38BDF8',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
   },
   cloneBtnText: {
     color: '#38BDF8',
@@ -1673,148 +1618,147 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sectionTitle: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 1,
   },
   addTemplateBtn: {
-    backgroundColor: '#1E1E22',
+    minHeight: 40,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#00E676',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 6,
+    borderColor: uiColors.accent,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
   },
   addTemplateBtnText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 11,
     fontWeight: '700',
   },
   templateCard: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#1E1E22',
-    borderRadius: 10,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 12,
     marginBottom: 12,
   },
   templateHeader: {
-    flexDirection: 'row',
+    gap: 12,
+    flexDirection: 'column',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'stretch',
     marginBottom: 6,
   },
   templateHeaderLeft: {
+    width: '100%',
+    minWidth: 0,
     flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
+    alignItems: 'flex-start',
+    flex: 0,
   },
   templateOrderPill: {
-    backgroundColor: '#27272A',
-    color: '#A1A1AA',
+    minHeight: 26,
+    justifyContent: 'center',
+    backgroundColor: uiColors.border,
+    color: uiColors.muted,
     fontSize: 10,
     fontWeight: '700',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
     marginRight: 8,
   },
   templateName: {
-    color: '#FAFAFA',
-    fontSize: 14,
+    minWidth: 0,
+    lineHeight: 22,
+    color: uiColors.text,
+    fontSize: 16,
     fontWeight: '700',
     flex: 1,
   },
   templateHeaderActions: {
+    flexWrap: 'wrap',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
   },
   miniControlBtn: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    width: 26,
-    height: 26,
-    borderRadius: 5,
+    borderColor: uiColors.border,
+    width: 36,
+    height: 36,
+    borderRadius: uiRadius.control,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  miniControlBtnText: {
-    color: '#D4D4D8',
-    fontSize: 11,
-    fontWeight: '700',
   },
   miniControlBtnDestructive: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
     borderColor: '#7F1D1D',
-    width: 26,
-    height: 26,
-    borderRadius: 5,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  miniControlBtnDestructiveText: {
-    color: '#EF4444',
-    fontSize: 11,
-    fontWeight: '700',
-  },
   templateNotes: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     marginBottom: 8,
   },
   exerciseList: {
     borderTopWidth: 1,
-    borderTopColor: '#1E1E22',
+    borderTopColor: uiColors.border,
     paddingTop: 8,
   },
   exerciseRow: {
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   exerciseInfoCol: {
     marginBottom: 6,
   },
   exerciseNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  exerciseIndexText: {
-    color: '#71717A',
-    fontSize: 12,
-    fontWeight: '700',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   exerciseNameText: {
+    lineHeight: 22,
     color: '#E4E4E7',
     fontSize: 13,
     fontWeight: '600',
   },
   supersetPill: {
+    minHeight: 26,
+    justifyContent: 'center',
     backgroundColor: '#3B82F6',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: uiRadius.badge,
     marginLeft: 4,
   },
   supersetPillText: {
-    color: '#FFFFFF',
-    fontSize: 8,
-    fontWeight: '800',
+    lineHeight: 16,
+    color: uiColors.text,
+    fontSize: 11,
+    fontWeight: '600',
   },
   prescriptionTapTarget: {
     marginTop: 2,
   },
   exerciseTargetText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 11,
   },
   editPencil: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 10,
     fontWeight: '600',
   },
@@ -1835,103 +1779,71 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 4,
   },
-  smallBtn: {
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    borderRadius: 5,
-  },
-  smallBtnText: {
-    color: '#D4D4D8',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  smallBtnDestructive: {
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#7F1D1D',
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    borderRadius: 5,
-  },
-  smallBtnDestructiveText: {
-    color: '#EF4444',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  supersetBtnActive: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#38BDF8',
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    borderRadius: 5,
-  },
-  supersetBtnActiveText: {
-    color: '#38BDF8',
-    fontSize: 10,
-    fontWeight: '700',
-  },
   configureRulesBtn: {
-    backgroundColor: '#1E1E22',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 5,
+    minHeight: 40,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   configureRulesBtnText: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 10,
     fontWeight: '600',
   },
   addExerciseBtn: {
-    backgroundColor: '#18181B',
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: 10,
     paddingVertical: 8,
     alignItems: 'center',
     marginTop: 8,
   },
   addExerciseBtnText: {
-    color: '#00E676',
+    color: uiColors.accentText,
     fontSize: 12,
     fontWeight: '700',
   },
   emptyCard: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     padding: 16,
-    borderRadius: 10,
+    borderRadius: uiRadius.card,
     alignItems: 'center',
   },
   emptyText: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 13,
     fontWeight: '600',
   },
   emptySubtext: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     marginTop: 4,
     textAlign: 'center',
   },
   inlineAddBtn: {
+    minHeight: 40,
+    justifyContent: 'center',
     marginTop: 10,
-    backgroundColor: '#00E676',
-    paddingVertical: 6,
+    backgroundColor: uiColors.raised,
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 6,
+    borderRadius: 10,
   },
   inlineAddBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   cardDescription: {
-    color: '#A1A1AA',
+    color: uiColors.muted,
     fontSize: 12,
     marginBottom: 8,
   },
@@ -1939,15 +1851,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     padding: 10,
     borderRadius: 6,
     marginBottom: 6,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   supersetChoiceText: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -1963,30 +1875,30 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   createModalContent: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderRadius: 12,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   createModalTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 14,
   },
   inputLabel: {
-    color: '#D4D4D8',
+    color: uiColors.secondaryText,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 6,
   },
   modalTextInput: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
-    color: '#FAFAFA',
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
+    color: uiColors.text,
     fontSize: 13,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -1999,11 +1911,11 @@ const styles = StyleSheet.create({
   colorChoiceBtn: {
     width: 28,
     height: 28,
-    borderRadius: 14,
+    borderRadius: uiRadius.control,
   },
   colorChoiceActive: {
     borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderColor: uiColors.text,
   },
   modalActionRow: {
     flexDirection: 'row',
@@ -2017,29 +1929,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelBtnText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 13,
     fontWeight: '600',
   },
   confirmBtn: {
-    backgroundColor: '#00E676',
+    backgroundColor: uiColors.accent,
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 6,
+    borderRadius: uiRadius.control,
   },
   confirmBtnText: {
-    color: '#0A0A0A',
+    color: uiColors.background,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   btnDisabled: {
     opacity: 0.3,
   },
   overflowMenuBtn: {
-    backgroundColor: '#18181B',
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.control,
     paddingVertical: 5,
     paddingHorizontal: 10,
     justifyContent: 'center',
@@ -2048,7 +1960,7 @@ const styles = StyleSheet.create({
   overflowMenuBtnText: {
     color: '#E4E4E7',
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 1,
   },
   actionMenuOverlay: {
@@ -2057,11 +1969,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   actionMenuCard: {
-    backgroundColor: '#121214',
+    backgroundColor: uiColors.surface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     padding: 16,
     paddingBottom: 32,
   },
@@ -2070,21 +1982,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
+    borderBottomColor: uiColors.border,
     paddingBottom: 12,
     marginBottom: 8,
   },
   actionMenuTitle: {
-    color: '#FAFAFA',
+    color: uiColors.text,
     fontSize: 15,
-    fontWeight: '800',
-    flex: 1,
-  },
-  actionMenuClose: {
-    color: '#71717A',
-    fontSize: 16,
     fontWeight: '700',
-    padding: 4,
+    flex: 1,
   },
   actionMenuItem: {
     flexDirection: 'row',
@@ -2092,7 +1998,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
     gap: 12,
   },
   actionMenuItemDisabled: {
@@ -2102,15 +2008,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
     marginTop: 4,
   },
-  actionMenuItemIcon: {
-    fontSize: 16,
-    color: '#FAFAFA',
-    width: 24,
-    textAlign: 'center',
-  },
   actionMenuItemText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
 });

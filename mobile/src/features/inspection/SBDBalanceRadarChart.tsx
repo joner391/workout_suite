@@ -1,3 +1,5 @@
+import { AppIcon } from '../../ui/AppIcon';
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
 /**
  * Workout Suite — SBDBalanceRadarChart
  *
@@ -125,9 +127,9 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
             testID="close-sbd-radar-btn"
             style={styles.closeBtn}
             onPress={onClose}
-            activeOpacity={0.7}
+            activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Close"
           >
-            <Text style={styles.closeBtnText}>✕</Text>
+            <AppIcon name="close" size={20} color={uiColors.accentText} />
           </TouchableOpacity>
         )}
       </View>
@@ -141,35 +143,77 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
               <Polygon
                 key={`grid-ring-${idx}`}
                 points={pointsStr}
-                fill={idx === 3 ? '#121215' : 'transparent'}
-                stroke="#27272A"
+                fill={idx === 3 ? uiColors.surface : 'transparent'}
+                stroke={uiColors.border}
                 strokeWidth={idx === 3 ? 1.5 : 1}
               />
             ))}
 
             {/* Radial Axis Lines */}
-            <Line x1={cx} y1={cy} x2={tipSquat[0]} y2={tipSquat[1]} stroke="#3F3F46" strokeWidth={1.5} />
-            <Line x1={cx} y1={cy} x2={tipBench[0]} y2={tipBench[1]} stroke="#3F3F46" strokeWidth={1.5} />
-            <Line x1={cx} y1={cy} x2={tipDeadlift[0]} y2={tipDeadlift[1]} stroke="#3F3F46" strokeWidth={1.5} />
+            <Line
+              x1={cx}
+              y1={cy}
+              x2={tipSquat[0]}
+              y2={tipSquat[1]}
+              stroke="#3F3F46"
+              strokeWidth={1.5}
+            />
+            <Line
+              x1={cx}
+              y1={cy}
+              x2={tipBench[0]}
+              y2={tipBench[1]}
+              stroke="#3F3F46"
+              strokeWidth={1.5}
+            />
+            <Line
+              x1={cx}
+              y1={cy}
+              x2={tipDeadlift[0]}
+              y2={tipDeadlift[1]}
+              stroke="#3F3F46"
+              strokeWidth={1.5}
+            />
 
             {/* User Data Polygon */}
             <Polygon
               points={userPolygon}
               fill="rgba(0, 230, 118, 0.28)"
-              stroke="#00E676"
+              stroke={uiColors.accent}
               strokeWidth={2.5}
             />
 
             {/* Vertex Markers */}
-            <Circle cx={userPointSquat[0]} cy={userPointSquat[1]} r={5} fill="#00E676" stroke="#000000" strokeWidth={2} />
-            <Circle cx={userPointBench[0]} cy={userPointBench[1]} r={5} fill="#00E676" stroke="#000000" strokeWidth={2} />
-            <Circle cx={userPointDeadlift[0]} cy={userPointDeadlift[1]} r={5} fill="#00E676" stroke="#000000" strokeWidth={2} />
+            <Circle
+              cx={userPointSquat[0]}
+              cy={userPointSquat[1]}
+              r={5}
+              fill={uiColors.accent}
+              stroke={uiColors.background}
+              strokeWidth={2}
+            />
+            <Circle
+              cx={userPointBench[0]}
+              cy={userPointBench[1]}
+              r={5}
+              fill={uiColors.accent}
+              stroke={uiColors.background}
+              strokeWidth={2}
+            />
+            <Circle
+              cx={userPointDeadlift[0]}
+              cy={userPointDeadlift[1]}
+              r={5}
+              fill={uiColors.accent}
+              stroke={uiColors.background}
+              strokeWidth={2}
+            />
 
             {/* Axis Corner Labels */}
             <SvgText
               x={tipSquat[0]}
               y={tipSquat[1] - 12}
-              fill="#FAFAFA"
+              fill={uiColors.text}
               fontSize={11}
               fontWeight="bold"
               textAnchor="middle"
@@ -180,7 +224,7 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
             <SvgText
               x={tipBench[0] + 8}
               y={tipBench[1] + 16}
-              fill="#FAFAFA"
+              fill={uiColors.text}
               fontSize={11}
               fontWeight="bold"
               textAnchor="start"
@@ -191,7 +235,7 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
             <SvgText
               x={tipDeadlift[0] - 8}
               y={tipDeadlift[1] + 16}
-              fill="#FAFAFA"
+              fill={uiColors.text}
               fontSize={11}
               fontWeight="bold"
               textAnchor="end"
@@ -280,7 +324,7 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
           </View>
         ) : (
           <View style={styles.noBwCard} testID="sbd-radar-no-bw">
-            <Text style={styles.noBwIcon}>⚖️</Text>
+              <AppIcon name="scale" size={20} color={uiColors.accentText} />
             <View style={styles.noBwContent}>
               <Text style={styles.noBwTitle}>DOTS Score Requires Bodyweight</Text>
               <Text style={styles.noBwSubtext}>
@@ -312,7 +356,7 @@ export const SBDBalanceRadarChart: React.FC<SBDBalanceRadarChartProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: uiColors.background,
   },
   header: {
     flexDirection: 'row',
@@ -322,43 +366,42 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: uiColors.border,
   },
   headerTitleCol: {
+    minWidth: 0,
     flex: 1,
     paddingRight: 10,
   },
   superTitle: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.6,
   },
   title: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#FAFAFA',
+    lineHeight: 28,
+    flexShrink: 1,
+    fontSize: 22,
+    fontWeight: '700',
+    color: uiColors.text,
     marginTop: 2,
   },
   subtitle: {
     fontSize: 12,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
   },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#18181B',
+    flexShrink: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: uiColors.raised,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  closeBtnText: {
-    fontSize: 14,
-    color: '#FAFAFA',
-    fontWeight: '700',
   },
   scrollContent: {
     padding: 16,
@@ -378,31 +421,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   symmetryBadge: {
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    minHeight: 26,
+    justifyContent: 'center',
+    borderRadius: uiRadius.badge,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderWidth: 1,
   },
   symmetryBadgeAccent: {
     backgroundColor: 'rgba(0, 230, 118, 0.12)',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   symmetryBadgeWarning: {
     backgroundColor: 'rgba(245, 158, 11, 0.12)',
     borderColor: '#F59E0B',
   },
   symmetryBadgeNeutral: {
-    backgroundColor: '#18181B',
-    borderColor: '#27272A',
+    backgroundColor: uiColors.raised,
+    borderColor: uiColors.border,
   },
   symmetryBadgeText: {
+    lineHeight: 16,
     fontSize: 11,
-    fontWeight: '800',
-    color: '#A1A1AA',
+    fontWeight: '600',
+    color: uiColors.muted,
     letterSpacing: 0.4,
   },
   symmetryBadgeTextAccent: {
-    color: '#00E676',
+    color: uiColors.accentText,
   },
   symmetryBadgeTextWarning: {
     color: '#F59E0B',
@@ -415,37 +461,37 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     flex: 1,
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 12,
   },
   metricLabel: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#71717A',
+    fontWeight: '700',
+    color: uiColors.subtle,
     letterSpacing: 0.4,
     marginBottom: 4,
   },
   metricValuePrimary: {
     fontSize: 18,
-    fontWeight: '900',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   metricValueAccent: {
     fontSize: 18,
-    fontWeight: '900',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
   },
   metricValueUnit: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#71717A',
+    color: uiColors.subtle,
   },
   metricSubtext: {
     fontSize: 10,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 4,
   },
   dotsCard: {
@@ -453,7 +499,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 230, 118, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(0, 230, 118, 0.3)',
-    borderRadius: 12,
+    borderRadius: uiRadius.card,
     padding: 14,
     marginVertical: 6,
   },
@@ -473,34 +519,31 @@ const styles = StyleSheet.create({
   },
   dotsCardTitle: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#FAFAFA',
+    fontWeight: '700',
+    color: uiColors.text,
   },
   dotsCardSubtext: {
     fontSize: 10,
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginTop: 2,
   },
   dotsCardScore: {
     fontSize: 22,
-    fontWeight: '900',
-    color: '#00E676',
+    fontWeight: '700',
+    color: uiColors.accentText,
     marginLeft: 8,
   },
   noBwCard: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    backgroundColor: '#121215',
+    backgroundColor: uiColors.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 12,
+    borderColor: uiColors.border,
+    borderRadius: uiRadius.card,
     padding: 12,
     gap: 10,
     marginVertical: 6,
-  },
-  noBwIcon: {
-    fontSize: 20,
   },
   noBwContent: {
     flex: 1,
@@ -508,30 +551,30 @@ const styles = StyleSheet.create({
   noBwTitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FAFAFA',
+    color: uiColors.text,
   },
   noBwSubtext: {
     fontSize: 10,
-    color: '#71717A',
+    color: uiColors.subtle,
     marginTop: 2,
     lineHeight: 14,
   },
   noBwActionBtn: {
-    backgroundColor: '#00E676',
-    borderRadius: 6,
+    backgroundColor: uiColors.accent,
+    borderRadius: uiRadius.control,
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
   noBwActionBtnText: {
-    color: '#000000',
+    color: uiColors.background,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   infoBox: {
     width: '100%',
-    backgroundColor: '#09090B',
+    backgroundColor: uiColors.background,
     borderWidth: 1,
-    borderColor: '#18181B',
+    borderColor: uiColors.border,
     borderRadius: 10,
     padding: 12,
     marginTop: 10,
@@ -539,12 +582,12 @@ const styles = StyleSheet.create({
   infoTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#A1A1AA',
+    color: uiColors.muted,
     marginBottom: 4,
   },
   infoText: {
     fontSize: 11,
-    color: '#71717A',
+    color: uiColors.subtle,
     lineHeight: 16,
   },
 });

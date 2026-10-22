@@ -1,3 +1,6 @@
+import { colors as uiColors, radius as uiRadius } from '../../ui/theme';
+import { ScreenHeader } from '../../ui/ScreenHeader';
+import { commonStyles } from '../../ui/theme';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
@@ -214,7 +217,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
         {
           id: 'e1rm_series',
           name: 'e1RM Trend',
-          color: '#00E676',
+          color: uiColors.accentText,
           data: pts,
           strokeWidth: 2.5,
         },
@@ -256,7 +259,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
         {
           id: 'sma7_weight',
           name: '7-Day Avg (SMA)',
-          color: '#00E676',
+          color: uiColors.accentText,
           data: smaPoints,
           strokeWidth: 2.5,
           dotRadius: 3.5,
@@ -279,7 +282,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       series.push({
         id: 'navy_bf',
         name: 'Navy Formula',
-        color: '#00E676',
+        color: uiColors.accentText,
         data: navyPts,
         strokeWidth: 2.5,
       });
@@ -761,34 +764,17 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
     >
       {/* Optional Modal Header */}
       {!isInline && (
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.headerSubtitle}>LONGITUDINAL PERFORMANCE</Text>
-            <Text style={styles.headerTitle}>Progress Analytics</Text>
-          </View>
-
-          <View style={styles.headerActions}>
-            {onNavigateToBodyMetrics && (
-              <TouchableOpacity
-                testID="nav-body-metrics-btn"
-                style={styles.actionBtn}
-                onPress={onNavigateToBodyMetrics}
-              >
-                <Text style={styles.actionBtnText}>Log Body ⚖️</Text>
-              </TouchableOpacity>
-            )}
-
-            {onClose && (
-              <TouchableOpacity
-                testID="plots-close-btn"
-                style={styles.closeBtn}
-                onPress={onClose}
-              >
-                <Text style={styles.closeBtnText}>✕</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+        <ScreenHeader
+          title={effectiveGroup === 'performance' ? 'Performance analytics' : 'Body trends'}
+          subtitle={effectiveGroup === 'performance'
+            ? 'Estimated strength and training volume over time.'
+            : 'Bodyweight, body composition and tape measurements over time.'}
+          onClose={onClose}
+          closeTestID="plots-close-btn"
+          actions={effectiveGroup === 'body_composition' && onNavigateToBodyMetrics && <TouchableOpacity testID="nav-body-metrics-btn" style={commonStyles.button} onPress={onNavigateToBodyMetrics}>
+            <Text style={commonStyles.buttonText}>Log body metrics</Text>
+          </TouchableOpacity>}
+        />
       )}
 
       {/* Group Selector Switcher (when targetGroup is not locked) */}
@@ -813,7 +799,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                 effectiveGroup === 'performance' && styles.groupSwitchTextActive,
               ]}
             >
-              ⚡ Strength & Performance
+              Strength & Performance
             </Text>
           </TouchableOpacity>
 
@@ -836,7 +822,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                 effectiveGroup === 'body_composition' && styles.groupSwitchTextActive,
               ]}
             >
-              ⚖️ Body Composition
+              Body Composition
             </Text>
           </TouchableOpacity>
         </View>
@@ -845,6 +831,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       {/* Segment / Pill Selector (Filtered by active group) */}
       <ScrollView
         horizontal
+        style={styles.selectorRow}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.pillsContainer}
       >
@@ -864,7 +851,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                   activeTab === 'bodyweight' && styles.pillTextActive,
                 ]}
               >
-                ⚖️ Bodyweight
+                Bodyweight
               </Text>
             </TouchableOpacity>
 
@@ -894,7 +881,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                   activeTab === 'elbm' && styles.pillTextActive,
                 ]}
               >
-                💪 eLBM
+                eLBM
               </Text>
             </TouchableOpacity>
 
@@ -931,7 +918,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                   activeTab === 'e1rm' && styles.pillTextActive,
                 ]}
               >
-                📈 e1RM Trends
+                e1RM Trends
               </Text>
             </TouchableOpacity>
 
@@ -946,7 +933,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                   activeTab === 'volume' && styles.pillTextActive,
                 ]}
               >
-                📊 Volume Tonnage
+                Volume Tonnage
               </Text>
             </TouchableOpacity>
           </>
@@ -957,6 +944,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       {activeTab === 'e1rm' && compoundExercises.length > 0 && (
         <ScrollView
           horizontal
+          style={styles.selectorRow}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.subPillsContainer}
         >
@@ -986,6 +974,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       {activeTab === 'circumferences' && (
         <ScrollView
           horizontal
+          style={styles.selectorRow}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.subPillsContainer}
         >
@@ -1018,6 +1007,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       <View style={styles.timeSpanRow} testID="plot-timespan-selector">
         <ScrollView
           horizontal
+          style={styles.selectorRow}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.timeSpanContainer}
         >
@@ -1051,7 +1041,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
       {/* Loading Indicator */}
       {loading ? (
         <View style={styles.loadingBox}>
-          <ActivityIndicator size="small" color="#00E676" />
+          <ActivityIndicator size="small" color={uiColors.accent} />
           <Text style={styles.loadingText}>Rendering longitudinal curves...</Text>
         </View>
       ) : (
@@ -1071,7 +1061,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                     <Text style={styles.statLabel}>
                       {selectedTimeSpan === 'all' ? 'ALL-TIME PEAK' : 'PERIOD PEAK'}
                     </Text>
-                    <Text style={[styles.statValue, { color: '#00E676' }]}>
+                      <Text style={[styles.statValue, { color: uiColors.accentText }]}>
                       {formatWeight(e1rmSummary.peak, unitSystem)}
                     </Text>
                   </View>
@@ -1083,7 +1073,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                         {
                           color:
                             e1rmSummary.current >= e1rmSummary.start
-                              ? '#00E676'
+                              ? uiColors.accent
                               : '#EF4444',
                         },
                       ]}
@@ -1123,7 +1113,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                   </View>
                   <View style={styles.statBox}>
                     <Text style={styles.statLabel}>7-DAY ROLLING AVG</Text>
-                    <Text style={[styles.statValue, { color: '#00E676' }]}>
+                      <Text style={[styles.statValue, { color: uiColors.accentText }]}>
                       {formatWeight(bodyweightSummary.sma7, unitSystem)}
                     </Text>
                   </View>
@@ -1158,7 +1148,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                 <View style={styles.summaryStatsRow}>
                   <View style={styles.statBox}>
                     <Text style={styles.statLabel}>NAVY ESTIMATE</Text>
-                    <Text style={[styles.statValue, { color: '#00E676' }]}>
+                      <Text style={[styles.statValue, { color: uiColors.accentText }]}>
                       {bodyFatSummary.latestNavy != null
                         ? `${bodyFatSummary.latestNavy.toFixed(1)}%`
                         : '—'}
@@ -1269,7 +1259,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                         {
                           color:
                             circumferenceSummary.delta >= 0
-                              ? '#00E676'
+                              ? uiColors.accent
                               : '#F59E0B',
                         },
                       ]}
@@ -1315,7 +1305,7 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
                   </View>
                   <View style={styles.statBox}>
                     <Text style={styles.statLabel}>PEAK WEEK</Text>
-                    <Text style={[styles.statValue, { color: '#00E676' }]}>
+                      <Text style={[styles.statValue, { color: uiColors.accentText }]}>
                       {volumeSummary.peakWeek.toLocaleString()} {unitSystem}
                     </Text>
                   </View>
@@ -1343,124 +1333,93 @@ export const PlotsScreen: React.FC<PlotsScreenProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#0A0A0A',
+    backgroundColor: uiColors.background,
     flex: 1,
-    paddingHorizontal: 14,
-    paddingTop: 12,
+    paddingHorizontal: 0,
+    paddingTop: 0,
   },
   inlineContainer: {
     paddingHorizontal: 0,
     paddingTop: 0,
     backgroundColor: 'transparent',
   },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  headerSubtitle: {
-    color: '#00E676',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  actionBtn: {
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  actionBtnText: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  closeBtn: {
-    backgroundColor: '#1C1C1E',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeBtnText: {
-    color: '#AAAAAA',
-    fontSize: 16,
-    fontWeight: 'bold',
+  selectorRow: {
+    flexGrow: 0,
+    flexShrink: 0,
   },
   pillsContainer: {
+    paddingHorizontal: 16,
     flexDirection: 'row',
     gap: 8,
-    paddingVertical: 4,
-    marginBottom: 8,
+    paddingVertical: 10,
+    marginBottom: 10,
   },
   pill: {
-    backgroundColor: '#181818',
+    minHeight: 40,
+    justifyContent: 'center',
+    backgroundColor: uiColors.raised,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: uiColors.border,
   },
   pillActive: {
     backgroundColor: '#14291B',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   pillText: {
-    color: '#888888',
+    lineHeight: 18,
+    color: uiColors.muted,
     fontSize: 12,
     fontWeight: '600',
   },
   pillTextActive: {
-    color: '#00E676',
-    fontWeight: '700',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
   subPillsContainer: {
+    paddingHorizontal: 16,
     flexDirection: 'row',
     gap: 6,
-    paddingVertical: 2,
-    marginBottom: 8,
+    paddingVertical: 6,
+    marginBottom: 12,
   },
   subPill: {
-    backgroundColor: '#141414',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    minHeight: 32,
+    justifyContent: 'center',
+    backgroundColor: uiColors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: uiRadius.badge,
     borderWidth: 1,
-    borderColor: '#242424',
+    borderColor: uiColors.border,
   },
   subPillActive: {
     backgroundColor: '#262626',
-    borderColor: '#FFFFFF',
+    borderColor: uiColors.text,
   },
   subPillText: {
-    color: '#777777',
+    lineHeight: 16,
+    fontWeight: '600',
+    color: uiColors.subtle,
     fontSize: 11,
   },
   subPillTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+    color: uiColors.text,
+    fontWeight: '600',
   },
   chartWrapper: {
+    marginHorizontal: 16,
     marginTop: 2,
   },
   summaryStatsRow: {
+    marginHorizontal: 0,
+    flexWrap: 'wrap',
+    gap: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#141414',
+    backgroundColor: uiColors.surface,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#222222',
@@ -1472,16 +1431,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statLabel: {
-    color: '#777777',
+    color: uiColors.subtle,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   statValue: {
-    color: '#FFFFFF',
+    color: uiColors.text,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   loadingBox: {
     height: 180,
@@ -1490,12 +1449,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   loadingText: {
-    color: '#888888',
+    color: uiColors.muted,
     fontSize: 12,
   },
   groupSwitchRow: {
+    marginHorizontal: 16,
     flexDirection: 'row',
-    backgroundColor: '#181818',
+    backgroundColor: uiColors.raised,
     borderRadius: 10,
     padding: 3,
     marginBottom: 10,
@@ -1503,53 +1463,61 @@ const styles = StyleSheet.create({
     borderColor: '#262626',
   },
   groupSwitchBtn: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
     flex: 1,
     paddingVertical: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 7,
+    borderRadius: uiRadius.control,
   },
   groupSwitchBtnActive: {
     backgroundColor: '#262626',
     borderWidth: 1,
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   groupSwitchText: {
+    textAlign: 'center',
     fontSize: 12,
     fontWeight: '600',
-    color: '#888888',
+    color: uiColors.muted,
   },
   groupSwitchTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+    color: uiColors.text,
+    fontWeight: '600',
   },
   timeSpanRow: {
     marginBottom: 8,
   },
   timeSpanContainer: {
+    paddingHorizontal: 16,
     flexDirection: 'row',
     gap: 6,
-    paddingVertical: 2,
+    paddingVertical: 6,
   },
   timeSpanBtn: {
-    backgroundColor: '#141416',
+    minHeight: 36,
+    justifyContent: 'center',
+    backgroundColor: uiColors.surface,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: uiRadius.control,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: uiColors.border,
   },
   timeSpanBtnActive: {
     backgroundColor: '#14291B',
-    borderColor: '#00E676',
+    borderColor: uiColors.accent,
   },
   timeSpanText: {
-    color: '#71717A',
+    color: uiColors.subtle,
     fontSize: 11,
     fontWeight: '600',
   },
   timeSpanTextActive: {
-    color: '#00E676',
-    fontWeight: '700',
+    color: uiColors.accentText,
+    fontWeight: '600',
   },
 });

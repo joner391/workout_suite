@@ -15,6 +15,9 @@
  * - Program summary metadata
  */
 
+import { normalizeTrainingGoals } from '../rules/trainingGoals';
+import { isStrengthMain } from '../rules/trainingAdaptation';
+import { planProgramVolume, weeklyMuscleEReps, weeklyMiniSetCounts } from './programVolumePlanner';
 import {
   UserProfile,
   TrainingMentality,
@@ -175,7 +178,7 @@ export function computeTargetSetsFromExertion(
  *
  * Implements Pillar 7 & Resistance Training Archetype Continuum:
  * - Archetype I (Pure Strength): Heavy SBD specialization, linear / emerging strategies
- * - Archetype II (Powerbuilding): SBD anchors + developmental variants + DDP accessories
+ * - Archetype II (Strength + Hypertrophy): Strength main lifts + bodybuilding accessories
  * - Archetype III (Hypertrophy + Minor Strength): Balanced compounds + DDP accessories
  * - Archetype IV (Pure Hypertrophy): High SFR cables/machines, zero compulsory SBD, DDP
  */
@@ -187,7 +190,7 @@ export function resolveArchetype(
   // If alphaSbd is explicitly specified:
   if (alphaSbd !== undefined) {
     if (alphaSbd >= 0.70) return 'archetype_i_pure_strength';
-    if (alphaSbd >= 0.40) return 'archetype_ii_powerbuilding';
+    if (alphaSbd >= 0.40) return 'archetype_ii_strength_hypertrophy';
     if (alphaSbd >= 0.20) return 'archetype_iii_hypertrophy_strength';
     return 'archetype_iv_pure_hypertrophy';
   }
@@ -195,13 +198,9 @@ export function resolveArchetype(
   // Otherwise infer from primaryGoal and secondaryGoals:
   if (primaryGoal === 'strength') {
     if (secondaryGoals.includes('hypertrophy')) {
-      return 'archetype_ii_powerbuilding';
+      return 'archetype_ii_strength_hypertrophy';
     }
     return 'archetype_i_pure_strength';
-  }
-
-  if (primaryGoal === 'powerbuilding') {
-    return 'archetype_ii_powerbuilding';
   }
 
   if (primaryGoal === 'hypertrophy') {
@@ -255,6 +254,11 @@ function resolveExerciseId(
         return true;
     }
   };
+  const matchesTarget = (ex: Exercise): boolean =>
+    ['barbell_deadlift', 'barbell_sumo_deadlift'].includes(slot.preferredId)
+      ? ex.standard_lift_type === 'deadlift' || ['Hamstrings', 'Glutes'].includes(ex.muscle_group)
+      : ex.muscle_group.toLowerCase() === slot.muscleGroup.toLowerCase() ||
+        (slot.muscleGroup === 'Biceps' && /hammer curl/i.test(ex.name));
 
   // First, evaluate candidates explicitly specified in the slot (preferredId and fallbackIds)
   const slotCandidateIds = [slot.preferredId, ...slot.fallbackIds];
@@ -263,7 +267,7 @@ function resolveExerciseId(
 
   for (const candId of slotCandidateIds) {
     const ex = catalogMap.get(candId);
-    if (ex && isEligible(ex) && !seenIds.has(ex.id)) {
+    if (ex && isEligible(ex) && matchesTarget(ex) && !seenIds.has(ex.id)) {
       seenIds.add(ex.id);
       slotCandidates.push(ex);
     }
@@ -271,12 +275,12 @@ function resolveExerciseId(
 
   // If no slot candidates were eligible, expand to all catalog exercises for this muscle group
   let candidatePool = slotCandidates;
-  if (candidatePool.length === 0) {
+  if (candidatePool.length === 0 || scoringContext?.hasAxialFatigueSensitivity || scoringContext?.isCaloricDeficit) {
     for (const ex of catalogMap.values()) {
       if (
         isEligible(ex) &&
         !seenIds.has(ex.id) &&
-        ex.muscle_group.toLowerCase() === slot.muscleGroup.toLowerCase()
+        matchesTarget(ex)
       ) {
         seenIds.add(ex.id);
         candidatePool.push(ex);
@@ -289,6 +293,7 @@ function resolveExerciseId(
 
   for (const ex of candidatePool) {
     const pref = preferenceMap?.get(ex.id) || null;
+    if (pref?.sentiment === 'disliked' || pref?.sentiment === 'blacklisted') continue;
     const candidateCtx: CandidateScoringContext = {
       ...(scoringContext || {}),
       preference: pref,
@@ -363,15 +368,16 @@ function resolveExerciseId(
 
   // Fallback: If all candidates were excluded, try any eligible non-blacklisted exercise in the catalog
   for (const ex of catalogMap.values()) {
-    if (isEligible(ex)) {
+    if (isEligible(ex) && matchesTarget(ex)) {
       const pref = preferenceMap?.get(ex.id);
-      if (pref?.sentiment !== 'blacklisted' && (pref?.affinity_score ?? 0) > -900) {
+      if (pref?.sentiment !== 'blacklisted' && pref?.sentiment !== 'disliked' && (pref?.affinity_score ?? 0) > -900 &&
+        !computeCandidateScore(ex, { ...scoringContext, preference: pref }).isExcluded) {
         return ex.id;
       }
     }
   }
 
-  return slot.preferredId;
+  return ''; // Missing coverage is reported explicitly by the weekly planner.
 }
 
 // ============================================================================
@@ -992,6 +998,7 @@ export function synthesizeProgram(
   profile: UserProfile,
   options: ProgramSynthesizerOptions = {}
 ): SynthesizedProgram {
+  profile = { ...profile, ...normalizeTrainingGoals(profile.primary_goal, profile.secondary_goals) };
   const {
     availableExercises = DEFAULT_EXERCISES,
     programId = `prog-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
@@ -1038,10 +1045,6 @@ export function synthesizeProgram(
     case 'hypertrophy':
       defaultName = 'Hypertrophy Volume Blueprint';
       defaultColor = '#3B82F6'; // Blue
-      break;
-    case 'powerbuilding':
-      defaultName = 'Powerbuilding Hyper-Strength Split';
-      defaultColor = '#8B5CF6'; // Purple
       break;
     case 'endurance':
       defaultName = 'Muscular Endurance & Density';
@@ -1094,86 +1097,16 @@ export function synthesizeProgram(
     created_at: new Date().toISOString(),
   };
 
-  // 3. Antagonist Superset Pairing Trigger
-  const shouldPairSupersets =
-    is15MinRoutine ||
-    isGetOut ||
-    (profile.preferred_session_duration_mins != null &&
-      profile.preferred_session_duration_mins <= 45);
+  const hasStrengthGoal = profile.primary_goal === 'strength' || profile.secondary_goals?.includes('strength');
+  const hasHypertrophyGoal = profile.primary_goal === 'hypertrophy' || profile.secondary_goals?.includes('hypertrophy');
 
-  // 4. Session Duration Volume Constraint (limit exercise count if short session)
-  const maxExercisesPerSession = is15MinRoutine
-    ? 4
-    : profile.preferred_session_duration_mins && profile.preferred_session_duration_mins <= 35
-    ? 4
-    : profile.preferred_session_duration_mins && profile.preferred_session_duration_mins <= 45
-    ? 5
-    : 8;
-
-  // 5. Volume & Exertion Parameters (Pillars 1, 2, and 8)
-  let compoundSetCount: number;
-  let accessorySetCount: number;
-  let compoundTargetRpe: number;
-  let compoundTargetRir: number;
-  let accessoryTargetRpe: number;
-  let accessoryTargetRir: number;
-
-  if (isBeginner) {
-    // Pillar 2: Novice Bifurcated Structure
-    // Tier 1 Practice: 4 sets x 3-5 reps @ RPE 7.0 (3.0 RIR)
-    compoundTargetRpe = 7.0;
-    compoundTargetRir = 3.0;
-    compoundSetCount = computeTargetSetsFromExertion(3.0, 2, true, targetWeeklyEReps);
-
-    // Tier 2 Drivers: 3 sets x 10-15 reps @ RPE 9.0 (1.0 RIR)
-    accessoryTargetRpe = 9.0;
-    accessoryTargetRir = 1.0;
-    accessorySetCount = computeTargetSetsFromExertion(1.0, 2, false, 24);
-  } else if (is15MinRoutine) {
-    compoundTargetRpe = isFury ? 8.5 : 8.0;
-    compoundTargetRir = isFury ? 1.5 : 2.0;
-    accessoryTargetRpe = isFury ? 9.5 : 8.5;
-    accessoryTargetRir = isFury ? 0.5 : 1.5;
-    compoundSetCount = computeTargetSetsFromExertion(compoundTargetRir, 2, false, 12);
-    accessorySetCount = computeTargetSetsFromExertion(accessoryTargetRir, 2, false, 16);
-  } else if (isFury) {
-    // Pillar 8: Compounds preserved at 7.5-8.5 during accumulation; accessories pushed to 9.5
-    compoundTargetRpe = 8.0;
-    compoundTargetRir = 2.0;
-    accessoryTargetRpe = 9.5;
-    accessoryTargetRir = 0.5;
-    compoundSetCount = computeTargetSetsFromExertion(compoundTargetRir, 2, false, 12);
-    accessorySetCount = computeTargetSetsFromExertion(accessoryTargetRir, 2, false, 10);
-  } else if (isVolumeAccumulator) {
-    compoundTargetRpe = 7.5;
-    compoundTargetRir = 2.5;
-    accessoryTargetRpe = 7.5;
-    accessoryTargetRir = 2.5;
-    compoundSetCount = computeTargetSetsFromExertion(compoundTargetRir, 2, false, 24);
-    accessorySetCount = computeTargetSetsFromExertion(accessoryTargetRir, 2, false, 18);
-  } else if (isPrecision) {
-    compoundTargetRpe = 8.0;
-    compoundTargetRir = 2.0;
-    accessoryTargetRpe = 8.0;
-    accessoryTargetRir = 2.0;
-    compoundSetCount = computeTargetSetsFromExertion(compoundTargetRir, 2, false, 24);
-    accessorySetCount = computeTargetSetsFromExertion(accessoryTargetRir, 2, false, 18);
-  } else if (isGetOut) {
-    compoundTargetRpe = 8.5;
-    compoundTargetRir = 1.5;
-    accessoryTargetRpe = 8.5;
-    accessoryTargetRir = 1.5;
-    compoundSetCount = computeTargetSetsFromExertion(compoundTargetRir, 2, false, 16);
-    accessorySetCount = computeTargetSetsFromExertion(accessoryTargetRir, 2, false, 16);
-  } else {
-    // balanced fallback
-    compoundTargetRpe = 8.5;
-    compoundTargetRir = 1.5;
-    accessoryTargetRpe = 8.5;
-    accessoryTargetRir = 1.5;
-    compoundSetCount = computeTargetSetsFromExertion(compoundTargetRir, 2, false, 22);
-    accessorySetCount = computeTargetSetsFromExertion(accessoryTargetRir, 2, false, 16);
-  }
+  // Starting sets are allocated against weekly targets, independently of mood.
+  const compoundSetCount = hasStrengthGoal ? 3 : 2;
+  const accessorySetCount = 2;
+  const compoundTargetRpe = isBeginner ? 7 : 8;
+  const compoundTargetRir = 10 - compoundTargetRpe;
+  const accessoryTargetRpe = isBeginner ? 8 : isFury ? 9 : 8;
+  const accessoryTargetRir = 10 - accessoryTargetRpe;
 
   // 6. Build WorkoutTemplates, TemplateExercises & ProgressionRules
   const templates: WorkoutTemplate[] = [];
@@ -1205,6 +1138,31 @@ export function synthesizeProgram(
 
   // Step 9.3: Regional Muscle Bias Balancer across weekly split
   const coveredSubTargetsByMuscle = new Map<string, Set<string>>();
+  const protectedIds = new Set<string>();
+
+  // Reserve direct arms/core across the week before applying any time constraints.
+  if (hasHypertrophyGoal) {
+    const supplements: ExerciseSlotConfig[] = [
+      { preferredId: 'dumbbell_bicep_curl', fallbackIds: ['cable_bicep_curl', 'barbell_bicep_curl'], muscleGroup: 'Biceps', antagonistTag: 'bicep' },
+      { preferredId: 'cable_tricep_pushdown', fallbackIds: ['barbell_skull_crusher'], muscleGroup: 'Triceps', antagonistTag: 'tricep' },
+      { preferredId: 'bodyweight_hanging_knee_raise', fallbackIds: [], muscleGroup: 'Abs', antagonistTag: 'abs' },
+      { preferredId: 'machine_standing_calf_raise', fallbackIds: [], muscleGroup: 'Calves', antagonistTag: 'calves' },
+      { preferredId: 'barbell_hip_thrust', fallbackIds: [], muscleGroup: 'Glutes' },
+    ];
+    for (const slot of supplements) {
+      const desiredExposures = Math.min(2, blueprints.length);
+      while (blueprints.filter(bp => bp.slots.some(s => s.muscleGroup === slot.muscleGroup)).length < desiredExposures) {
+        const candidates = blueprints.filter(bp => !bp.slots.some(s => s.muscleGroup === slot.muscleGroup));
+        candidates.sort((a, b) => {
+          const lower = ['Abs', 'Calves', 'Glutes'].includes(slot.muscleGroup);
+          const score = (bp: TemplateBlueprint) => bp.slots.filter(s => lower
+            ? ['Quads', 'Hamstrings'].includes(s.muscleGroup) : ['Chest', 'Back'].includes(s.muscleGroup)).length;
+          return score(b) - score(a) || a.slots.length - b.slots.length;
+        });
+        candidates[0].slots.push({ ...slot });
+      }
+    }
+  }
 
   blueprints.forEach((bp, templateIdx) => {
     const templateId = `tpl-${programId}-${templateIdx + 1}`;
@@ -1219,31 +1177,7 @@ export function synthesizeProgram(
     };
     templates.push(workoutTemplate);
 
-    // Filter slots: Handle optional accessories in Upper/Lower and session duration limits
-    const activeSlots = bp.slots
-      .filter((slot) => {
-        if (!slot.isOptional) return true;
-        // If athlete is on a short duration budget (<= 45 mins), omit optional accessories
-        if (profile.preferred_session_duration_mins && profile.preferred_session_duration_mins <= 45) {
-          return false;
-        }
-        // If athlete has 75+ mins, include all accessories
-        if (profile.preferred_session_duration_mins && profile.preferred_session_duration_mins >= 75) {
-          return true;
-        }
-        // In standard ~60 min budget:
-        // Capping total working sets between 16-20 sets:
-        // If accessory volume per exercise is moderate (<= 2 sets, e.g. balanced), including the 2 optional
-        // arm accessories yields exactly 16 working sets (2*3 + 3*2 + 2*2 = 16), fitting the 16-20 cap.
-        // If accessory volume is high (>= 3 sets, e.g. precision / volume accumulation), 5 primary movements
-        // already yield 17 working sets (2*4 + 3*3 = 17); adding 2 accessories with 3 sets would push it to 23 sets.
-        return accessorySetCount <= 2;
-      })
-      .slice(0, maxExercisesPerSession);
-
-    // Grouping index tracker for antagonist supersets
-    let supersetCounter = 1;
-    const antagonistPairs = new Map<string, string>(); // e.g. 'chest' -> groupId
+    const activeSlots = bp.slots;
 
     const templateExercisesForBp: TemplateExercise[] = [];
 
@@ -1257,8 +1191,10 @@ export function synthesizeProgram(
         preferenceMap,
         coveredSubTargetsByMuscle
       );
+      if (!exerciseId) return;
       const isPrimaryCompound = slot.isPrimaryCompound === true;
       const teId = `te-${templateId}-${slotIdx + 1}`;
+      if (hasStrengthGoal && (isPrimaryCompound || (!hasHypertrophyGoal && isStrengthMain('strength', catalogMap.get(exerciseId))))) protectedIds.add(teId);
 
       // Set count
       const sets = isPrimaryCompound ? compoundSetCount : accessorySetCount;
@@ -1284,8 +1220,8 @@ export function synthesizeProgram(
               repsMin = 3;
               repsMax = 5;
             } else {
-              repsMin = 6;
-              repsMax = 8;
+              repsMin = hasHypertrophyGoal ? 10 : 6;
+              repsMax = hasHypertrophyGoal ? 15 : 10;
             }
             break;
 
@@ -1296,16 +1232,6 @@ export function synthesizeProgram(
             } else {
               repsMin = 10;
               repsMax = 15;
-            }
-            break;
-
-          case 'powerbuilding':
-            if (isPrimaryCompound) {
-              repsMin = 4;
-              repsMax = 6;
-            } else {
-              repsMin = 8;
-              repsMax = 12;
             }
             break;
 
@@ -1327,37 +1253,6 @@ export function synthesizeProgram(
         }
       }
 
-      // Handle Antagonist Superset Group ID
-      let exerciseGroupId: string | null = null;
-      // Pair if global supersets enabled OR if this is an optional antagonist accessory pair (arm superset)
-      const isArmAccessoryPair =
-        slot.isOptional === true &&
-        (slot.antagonistTag === 'bicep' || slot.antagonistTag === 'tricep') &&
-        profile.training_enjoyment !== 'enthusiast';
-
-      if ((shouldPairSupersets || isArmAccessoryPair) && slot.antagonistTag) {
-        const tag = slot.antagonistTag;
-        let partnerTag: string | null = null;
-        if (tag === 'chest') partnerTag = 'back';
-        else if (tag === 'back') partnerTag = 'chest';
-        else if (tag === 'quad') partnerTag = 'hamstring';
-        else if (tag === 'hamstring') partnerTag = 'quad';
-        else if (tag === 'bicep') partnerTag = 'tricep';
-        else if (tag === 'tricep') partnerTag = 'bicep';
-        else if (tag === 'calves') partnerTag = 'abs';
-        else if (tag === 'abs') partnerTag = 'calves';
-        else if (tag === 'delts') partnerTag = 'rear_delts';
-        else if (tag === 'rear_delts') partnerTag = 'delts';
-
-        if (partnerTag && antagonistPairs.has(partnerTag)) {
-          exerciseGroupId = antagonistPairs.get(partnerTag)!;
-          antagonistPairs.delete(partnerTag);
-        } else {
-          exerciseGroupId = `ss-${templateId}-${supersetCounter++}`;
-          antagonistPairs.set(tag, exerciseGroupId);
-        }
-      }
-
       const templateExercise: TemplateExercise = {
         id: teId,
         template_id: templateId,
@@ -1369,7 +1264,7 @@ export function synthesizeProgram(
         target_rpe: targetRpe,
         target_rir: targetRir,
         order_index: slotIdx,
-        exercise_group_id: exerciseGroupId,
+        exercise_group_id: null,
         set_type: 'working',
       };
       templateExercisesForBp.push(templateExercise);
@@ -1430,70 +1325,31 @@ export function synthesizeProgram(
       }
     });
 
-    // Pillar 6: Time-Budget Evaluation & Dynamic Myo-Rep Conversion
-    const targetDurationMins = profile.preferred_session_duration_mins || 60;
-
-    const estimateTemplateDurationMins = (exList: TemplateExercise[]): number => {
-      let totalSeconds = 300; // 5 min warmup
-      exList.forEach((te) => {
-        if (te.set_type === 'myorep') {
-          totalSeconds += 90; // 1 activation set + 3 mini-sets = 90s
-        } else {
-          const s = te.target_sets ?? 3;
-          const tut = 40;
-          const isSuperset = te.exercise_group_id != null;
-          const rest = isSuperset ? 45 : (te.target_rpe && te.target_rpe >= 8.5 ? 120 : 90);
-          totalSeconds += s * tut + Math.max(0, s - 1) * rest;
-        }
-      });
-      return totalSeconds / 60;
-    };
-
-    let estimatedMins = estimateTemplateDurationMins(templateExercisesForBp);
-
-    if (estimatedMins > targetDurationMins) {
-      // Convert candidate accessory straight sets to Myo-reps in reverse order (isolations first)
-      for (let i = templateExercisesForBp.length - 1; i >= 0; i--) {
-        const candidateTe = templateExercisesForBp[i];
-        const isPrimary = activeSlots[i]?.isPrimaryCompound === true;
-        if (!isPrimary && candidateTe.set_type !== 'myorep') {
-          candidateTe.set_type = 'myorep';
-          candidateTe.target_sets = 1;
-          candidateTe.target_rpe = 10.0;
-          candidateTe.target_rir = 0.0;
-          candidateTe.target_reps_min = 10;
-          candidateTe.target_reps_max = 15;
-
-          // Replace progression rule for this converted slot with DDP
-          const existingRuleIndices: number[] = [];
-          progressionRules.forEach((r, idx) => {
-            if (r.template_exercise_id === candidateTe.id && r.priority !== 3) {
-              existingRuleIndices.push(idx);
-            }
-          });
-          if (existingRuleIndices.length > 0) {
-            const firstIdx = existingRuleIndices[0];
-            progressionRules.splice(
-              firstIdx,
-              existingRuleIndices.length,
-              ...createDynamicDoubleProgressionRule(candidateTe.id, { incrementKg: 1.25 })
-            );
-          }
-
-          estimatedMins = estimateTemplateDurationMins(templateExercisesForBp);
-          if (estimatedMins <= targetDurationMins) {
-            break;
-          }
-        }
-      }
-    }
-
     templateExercises.push(...templateExercisesForBp);
     templateExercisesForBp.forEach((te) => {
       totalWeeklySets += te.target_sets ?? 0;
     });
   });
 
+  const planned = planProgramVolume({ ...profile, experience_level: experienceLevel }, templates, templateExercises, catalogMap, protectedIds,
+    { preferences: preferenceMap, scoringContext });
+  templateExercises.splice(0, templateExercises.length, ...planned.rows);
+  const retained = new Set(templateExercises.map(te => te.id));
+  for (let i = progressionRules.length - 1; i >= 0; i--) {
+    if (!retained.has(progressionRules[i].template_exercise_id)) progressionRules.splice(i, 1);
+  }
+  const ruled = new Set(progressionRules.map(rule => rule.template_exercise_id));
+  for (const te of templateExercises.filter(row => !ruled.has(row.id))) {
+    progressionRules.push(...createDynamicDoubleProgressionRule(te.id, { incrementKg: 1.25 }));
+    if (!isBeginner) progressionRules.push(createEstimatedCapacityProgressionRule(te.id, 1.25));
+  }
+  totalWeeklySets = templateExercises.reduce((sum, te) => sum + (te.target_sets ?? 0), 0);
+  templates.forEach((template, index) => {
+    if (profile.training_mentality === 'get_out') template.name = `Day ${index + 1} — Time-efficient training`;
+    template.notes = `Estimated ${planned.minutes[index]} minutes including warm-up, setup and prescribed rest.`;
+  });
+  program.notes += `\nSession estimates: ${planned.minutes.join(", ")} minutes.`;
+  if (planned.warnings.length) program.notes += `\nTime/equipment tradeoffs:\n${planned.warnings.join("\n")}`;
   // 8. Summary Information
   let progressionSummary = 'Standard Double Progression (DP)';
   if (isBeginner) {
@@ -1511,14 +1367,15 @@ export function synthesizeProgram(
   const summary: SynthesizedProgramSummary = {
     splitType,
     daysPerWeek,
-    estimatedSessionDurationMins: is15MinRoutine
-      ? 15
-      : Math.min(
-          profile.preferred_session_duration_mins || 60,
-          shouldPairSupersets ? 45 : 75
-        ),
+    estimatedSessionDurationMins: Math.max(...planned.minutes),
+    sessionDurationsMins: planned.minutes,
+    planningWarnings: planned.warnings,
+    weeklyMuscleSets: planned.coverage,
+    weeklyMuscleEReps: weeklyMuscleEReps(templateExercises, catalogMap),
+    weeklyMiniSets: weeklyMiniSetCounts(templateExercises, catalogMap),
+    totalWeeklyMiniSets: templateExercises.reduce((sum, te) => sum + (te.target_sets ?? 0) * (te.rest_pause?.mini_sets ?? 0), 0),
     totalWeeklySets,
-    hasSupersets: shouldPairSupersets,
+    hasSupersets: templateExercises.some(te => te.exercise_group_id != null),
     progressionSchemeSummary: progressionSummary,
     archetype,
   };

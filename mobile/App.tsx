@@ -1,3 +1,4 @@
+import { BottomTabBar } from './src/ui/BottomTabBar';
 /**
  * Workout Suite — Mobile Application Entry & Root Navigation
  *
@@ -50,6 +51,8 @@ import {
 } from './src/database';
 import { ProgramBlockService } from './src/services/programBlockService';
 import { ExercisePreferenceService } from './src/services/exercisePreferenceService';
+import { CalibratedParamService } from './src/services/calibratedParamService';
+import { removeDiscardedWorkouts } from './src/services/workoutDiscardService';
 import { WorkoutTabRouter } from './src/features/logger';
 import { HomeScreen } from './src/features/home';
 import { CalendarScreen } from './src/features/calendar';
@@ -234,6 +237,7 @@ export default function App({
           exercisePreferenceRepo: prefRepo,
           exercisePreferenceService: prefService,
           programBlockService: pbService,
+          calibratedParamService: new CalibratedParamService(db),
         });
 
         // Check if an active session is in progress
@@ -259,6 +263,13 @@ export default function App({
       isMounted = false;
     };
   }, [repos, currentWorkoutId]);
+
+  // Older versions retained discarded sessions. Remove them once repositories are ready.
+  useEffect(() => {
+    if (!repos || !dbReady) return;
+    removeDiscardedWorkouts(repos.workoutRepo, repos.userSettingsRepo)
+      .catch(error => console.warn('Could not remove discarded workouts:', error));
+  }, [repos, dbReady]);
 
   // Periodic or event-driven check for active in-progress workout
   const checkActiveWorkout = useCallback(async () => {
@@ -352,19 +363,8 @@ export default function App({
             <View style={[styles.tabContentContainer, styles.visibleContent]}>
               {activeSubScreen === 'calendar' ? (
                 <View style={styles.subScreenContainer}>
-                  <View style={styles.subScreenHeader}>
-                    <TouchableOpacity
-                      testID="subscreen-back-btn"
-                      style={styles.subScreenBackBtn}
-                      onPress={() => setActiveSubScreen(null)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.subScreenBackBtnText}>← Back</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.subScreenHeaderTitle}>Calendar & Periodization</Text>
-                    <View style={{ width: 60 }} />
-                  </View>
                   <CalendarScreen
+                      onClose={() => setActiveSubScreen(null)}
                     workoutRepo={repos.workoutRepo}
                     exerciseRepo={repos.exerciseRepo}
                     gearRepo={repos.gearRepo}
@@ -374,31 +374,13 @@ export default function App({
                       setActiveSubScreen(null);
                       handleNavigateToTab('workout');
                     }}
-                    onSelectWorkout={(workoutId) => {
-                      setCurrentWorkoutId(workoutId);
-                      setHasActiveWorkout(true);
-                      setActiveSubScreen(null);
-                      handleNavigateToTab('workout');
-                    }}
+                    onSelectWorkout={handleStartSession}
                   />
                 </View>
               ) : activeSubScreen === 'analytics' ? (
                 <View style={styles.subScreenContainer}>
-                  <View style={styles.subScreenHeader}>
-                    <TouchableOpacity
-                      testID="subscreen-back-btn"
-                      style={styles.subScreenBackBtn}
-                      onPress={() => setActiveSubScreen(null)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.subScreenBackBtnText}>← Back</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.subScreenHeaderTitle}>
-                      {analyticsGroup === 'body_composition' ? 'Body Composition' : 'Performance Analytics'}
-                    </Text>
-                    <View style={{ width: 60 }} />
-                  </View>
                   <PlotsScreen
+                        onClose={() => setActiveSubScreen(null)}
                     workoutRepo={repos.workoutRepo}
                     exerciseRepo={repos.exerciseRepo}
                     bodyMetricsRepo={repos.bodyMetricsRepo}
@@ -510,132 +492,12 @@ export default function App({
           )}
         </View>
 
-        {/* High-Contrast 4-Hub Bottom Tab Navigation Bar */}
-        <View testID="root-bottom-tab-bar" style={styles.bottomTabBar}>
-          {/* 1. Home Tab */}
-          <TouchableOpacity
-            testID="tab-btn-home"
-            style={styles.tabButton}
-            onPress={() => handleNavigateToTab('home')}
-            activeOpacity={0.7}
-            accessibilityLabel="Home Tab"
-          >
-            <View style={styles.iconContainer}>
-              <Text
-                style={[
-                  styles.tabIconText,
-                  currentTab === 'home' && styles.tabIconTextActive,
-                ]}
-              >
-                🏠
-              </Text>
-            </View>
-            <Text
-              style={[
-                styles.tabLabelText,
-                currentTab === 'home' && styles.tabLabelTextActive,
-              ]}
-            >
-              Home
-            </Text>
-          </TouchableOpacity>
-
-          {/* 2. Workout Tab */}
-          <TouchableOpacity
-            testID="tab-btn-workout"
-            style={styles.tabButton}
-            onPress={() => handleNavigateToTab('workout')}
-            activeOpacity={0.7}
-            accessibilityLabel="Workout Tab"
-          >
-            <View style={styles.iconContainer}>
-              <Text
-                style={[
-                  styles.tabIconText,
-                  currentTab === 'workout' && styles.tabIconTextActive,
-                ]}
-              >
-                ⚡
-              </Text>
-              {hasActiveWorkout && (
-                <View testID="active-workout-tab-dot" style={styles.activeWorkoutIndicatorDot} />
-              )}
-            </View>
-            <Text
-              style={[
-                styles.tabLabelText,
-                currentTab === 'workout' && styles.tabLabelTextActive,
-              ]}
-            >
-              Workout
-            </Text>
-          </TouchableOpacity>
-
-          {/* 3. Profile Tab */}
-          <TouchableOpacity
-            testID="tab-btn-profile"
-            style={styles.tabButton}
-            onPress={() => handleNavigateToTab('profile')}
-            activeOpacity={0.7}
-            accessibilityLabel="Profile Tab"
-          >
-            <View style={styles.iconContainer}>
-              <Text
-                style={[
-                  styles.tabIconText,
-                  currentTab === 'profile' && styles.tabIconTextActive,
-                ]}
-              >
-                👤
-              </Text>
-            </View>
-            <Text
-              style={[
-                styles.tabLabelText,
-                currentTab === 'profile' && styles.tabLabelTextActive,
-              ]}
-            >
-              Profile
-            </Text>
-          </TouchableOpacity>
-
-          {/* 4. Settings Tab */}
-          <TouchableOpacity
-            testID="tab-btn-settings"
-            style={styles.tabButton}
-            onPress={() => handleNavigateToTab('settings')}
-            activeOpacity={0.7}
-            accessibilityLabel="Settings Tab"
-          >
-            <View style={styles.iconContainer}>
-              <Text
-                style={[
-                  styles.tabIconText,
-                  currentTab === 'settings' && styles.tabIconTextActive,
-                ]}
-              >
-                ⚙️
-              </Text>
-            </View>
-            <Text
-              style={[
-                styles.tabLabelText,
-                currentTab === 'settings' && styles.tabLabelTextActive,
-              ]}
-            >
-              Settings
-            </Text>
-          </TouchableOpacity>
-        </View>
+          <BottomTabBar currentTab={currentTab} hasActiveWorkout={hasActiveWorkout} onSelect={handleNavigateToTab} />
 
         {/* Workout program management and focused generation/evolution setup */}
         {showPrograms && <Modal visible animationType="slide" onRequestClose={() => { setShowPrograms(false); setProgramRevision(n => n + 1); }}>
           <SafeAreaView style={styles.rootContainer}>
-            <View style={styles.subScreenHeader}>
-              <TouchableOpacity accessibilityRole="button" style={styles.subScreenBackBtn} onPress={() => { setShowPrograms(false); setProgramRevision(n => n + 1); }}><Text style={styles.subScreenBackBtnText}>← Back</Text></TouchableOpacity>
-              <TouchableOpacity testID="program-hub-setup-btn" accessibilityRole="button" style={styles.subScreenBackBtn} onPress={() => { setShowPrograms(false); setShowProgramSetup(true); }}><Text style={styles.subScreenBackBtnText}>Create / evolve →</Text></TouchableOpacity>
-            </View>
-            <ProgramOverviewScreen programRepo={repos.programRepo} programBlockService={repos.programBlockService} exerciseRepo={repos.exerciseRepo} gearRepo={repos.gearRepo} onClose={() => { setShowPrograms(false); setProgramRevision(n => n + 1); }} />
+              <ProgramOverviewScreen onOpenSetup={() => { setShowPrograms(false); setShowProgramSetup(true); }} programRepo={repos.programRepo} programBlockService={repos.programBlockService} exerciseRepo={repos.exerciseRepo} gearRepo={repos.gearRepo} onClose={() => { setShowPrograms(false); setProgramRevision(n => n + 1); }} />
           </SafeAreaView>
         </Modal>}
         {showProgramSetup && <Modal visible animationType="slide" onRequestClose={() => { setShowProgramSetup(false); setShowPrograms(true); }}>
@@ -720,86 +582,8 @@ const styles = StyleSheet.create({
   hiddenContent: {
     display: 'none',
   },
-  bottomTabBar: {
-    flexDirection: 'row',
-    backgroundColor: '#09090B',
-    borderTopWidth: 1,
-    borderTopColor: '#27272A',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  tabButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  iconContainer: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 24,
-  },
-  tabIconText: {
-    fontSize: 18,
-    color: '#71717A',
-  },
-  tabIconTextActive: {
-    color: '#00E676',
-  },
-  activeWorkoutIndicatorDot: {
-    position: 'absolute',
-    top: -2,
-    right: -6,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#00E676',
-    borderWidth: 1.5,
-    borderColor: '#09090B',
-  },
-  tabLabelText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#71717A',
-    marginTop: 3,
-  },
-  tabLabelTextActive: {
-    color: '#00E676',
-    fontWeight: '800',
-  },
   subScreenContainer: {
     flex: 1,
     backgroundColor: '#000000',
-  },
-  subScreenHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#09090B',
-    borderBottomWidth: 1,
-    borderBottomColor: '#27272A',
-  },
-  subScreenBackBtn: {
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#27272A',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  subScreenBackBtnText: {
-    color: '#00E676',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  subScreenHeaderTitle: {
-    color: '#FAFAFA',
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.5,
   },
 });

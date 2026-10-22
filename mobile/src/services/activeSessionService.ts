@@ -1,3 +1,5 @@
+import { discardWorkoutRecord } from './workoutDiscardService';
+import { normalizeExerciseGroups } from '../core/exerciseGroups';
 /**
  * Workout Suite — Active Session Service
  *
@@ -212,21 +214,10 @@ export class ActiveSessionService {
   }
 
   /**
-   * Discards an in-progress workout by updating its status to 'discarded'.
+   * Permanently discards a session and its sets; the return value is a receipt only.
    */
   public async discardWorkout(workoutId: string): Promise<Workout> {
-    const workout = await this.workoutRepo.findById(workoutId);
-    if (!workout) {
-      throw new Error(`Workout with ID '${workoutId}' not found.`);
-    }
-
-    const updatedWorkout: Workout = {
-      ...workout,
-      status: 'discarded',
-      completed_at: new Date().toISOString(),
-    };
-
-    return this.workoutRepo.update(updatedWorkout);
+    return discardWorkoutRecord(this.workoutRepo, workoutId);
   }
 
   /**
@@ -247,7 +238,8 @@ export class ActiveSessionService {
    * Retrieves a workout session and all of its associated sets ordered by set_number.
    */
   public async getActiveWorkout(workoutId: string): Promise<WorkoutWithSets | null> {
-    return this.workoutRepo.getWorkoutWithSets(workoutId);
+    const session = await this.workoutRepo.getWorkoutWithSets(workoutId);
+    return session ? { ...session, sets: normalizeExerciseGroups(session.sets) } : null;
   }
 
   // ==========================================================================
@@ -386,8 +378,8 @@ export class ActiveSessionService {
       added_weight: addedWeight ?? (exercise.is_bodyweight ? rawInputWeight : null),
       reps: input.reps !== undefined ? Math.max(0, input.reps) : existingSet.reps,
       reps_right: input.repsRight !== undefined ? input.repsRight : existingSet.reps_right,
-      rpe: input.rpe !== undefined ? input.rpe : existingSet.rpe,
-      rir: input.rir !== undefined ? input.rir : existingSet.rir,
+      rpe: input.rpe !== undefined ? input.rpe : input.rir !== undefined ? null : existingSet.rpe,
+      rir: input.rir !== undefined ? input.rir : input.rpe !== undefined ? null : existingSet.rir,
       set_type: input.setType !== undefined ? input.setType : existingSet.set_type,
       set_notes: input.setNotes !== undefined ? input.setNotes : existingSet.set_notes,
       exercise_group_id: input.exerciseGroupId !== undefined
@@ -521,7 +513,7 @@ export class ActiveSessionService {
    *
    * Context-Aware Volume Reduction:
    * Attenuates redundant empty-bar steps to at most 1-2 potentiation sets if the exercise's primary muscle group
-   * has already been warmed up earlier in the session.
+   * has completed working sets supplied in options.completedSetIds, or is explicitly marked warmed.
    *
    * Prepend & Renumber:
    * Sets are inserted contiguously at the start of the exercise (set 1..N) and subsequent sets are renumbered.
@@ -533,6 +525,7 @@ export class ActiveSessionService {
     options?: {
       targetWorkingWeightKg?: number;
       alreadyWarmedMuscleGroups?: Set<string>;
+      completedSetIds?: Set<string>;
     }
   ): Promise<WorkoutSet[]> {
     const workout = await this.workoutRepo.findById(workoutId);
@@ -656,7 +649,8 @@ export class ActiveSessionService {
       for (const set of existingSets) {
         if (set.exercise_id !== exerciseId) {
           const ex = await this.resolveExercise(set.exercise_id);
-          if (ex && ex.muscle_group === exercise.muscle_group && set.set_type !== 'warmup') {
+          if (ex && ex.muscle_group === exercise.muscle_group && set.set_type !== 'warmup' &&
+              options?.completedSetIds?.has(set.id)) {
             isMuscleGroupAlreadyWarmed = true;
             break;
           }
@@ -732,6 +726,7 @@ export class ActiveSessionService {
       minimumIncrementKg?: number;
       hasRecentFatigueFlag?: boolean;
       completedSetIds?: Set<string>;
+      plannedWorkingWeightKg?: number;
     }
   ): Promise<{
     adjustment: AutoregulatedLoadAdjustment;
@@ -762,9 +757,9 @@ export class ActiveSessionService {
     }
 
     const firstWorkSet = uncompletedWorkSets[0];
-    const workingWeight = firstWorkSet.raw_input_weight > 0
+    const workingWeight = options?.plannedWorkingWeightKg ?? (firstWorkSet.raw_input_weight > 0
       ? firstWorkSet.raw_input_weight
-      : firstWorkSet.weight;
+      : firstWorkSet.weight);
 
     const minIncrement = options?.minimumIncrementKg ?? 2.5;
     const hasFatigue = options?.hasRecentFatigueFlag ?? false;
@@ -775,6 +770,11 @@ export class ActiveSessionService {
       minIncrement,
       hasFatigue
     );
+
+    // Maintaining preserves varied remaining loads as well as off-grid loads.
+    if (adjustment.adjustedLoadKg === workingWeight) {
+      return { adjustment, updatedSets: [] };
+    }
 
     const gear = firstWorkSet.gear_id ? await this.resolveGear(firstWorkSet.gear_id) : null;
 
@@ -846,7 +846,9 @@ export class ActiveSessionService {
     }
 
     if (setsToUpdate.length > 0) {
-      await this.workoutRepo.saveSets(setsToUpdate);
+      for (const set of setsToUpdate) {
+        await this.workoutRepo.updateSet(set);
+      }
     }
 
     return assignedGroupId;
@@ -904,7 +906,9 @@ export class ActiveSessionService {
     }
 
     if (setsToUpdate.length > 0) {
-      await this.workoutRepo.saveSets(setsToUpdate);
+      for (const set of setsToUpdate) {
+        await this.workoutRepo.updateSet(set);
+      }
     }
   }
 
@@ -930,7 +934,10 @@ export class ActiveSessionService {
       exercise_group_id: null,
     }));
 
-    await this.workoutRepo.saveSets(setsToUpdate);
+    // Updating in place preserves row order for exercises sharing a set number.
+    for (const set of setsToUpdate) {
+      await this.workoutRepo.updateSet(set);
+    }
   }
 
   /**
@@ -952,7 +959,7 @@ export class ActiveSessionService {
 
     const result = new Map<string, string[]>();
     for (const [groupId, exIdSet] of groupMap.entries()) {
-      result.set(groupId, Array.from(exIdSet));
+      if (exIdSet.size >= 2) result.set(groupId, Array.from(exIdSet));
     }
 
     return result;

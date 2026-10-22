@@ -177,12 +177,15 @@ describe('ActiveSessionService', () => {
       expect(inProgress).toBeNull();
     });
 
-    it('discards an in-progress workout', async () => {
+    it('discards an in-progress workout by deleting its record and sets', async () => {
       const workout = await sessionService.startWorkout({ name: 'Chest Day' });
+      await sessionService.addSet(workout.id, { exerciseId: 'barbell_bench', rawInputWeight: 100, reps: 5 });
       const discarded = await sessionService.discardWorkout(workout.id);
 
       expect(discarded.status).toBe('discarded');
       expect(discarded.completed_at).toBeDefined();
+      expect(await workoutRepo.findById(workout.id)).toBeNull();
+      expect(await workoutRepo.getSetsByWorkoutId(workout.id)).toEqual([]);
 
       const inProgress = await sessionService.getInProgressWorkout();
       expect(inProgress).toBeNull();
@@ -596,6 +599,29 @@ describe('ActiveSessionService', () => {
       expect(set2.exercise_group_id).toBe(groupId);
     });
 
+    it.each(['exercise', 'superset'])('preserves exercise order when unlinking a %s with tied set numbers', async (mode) => {
+      const workout = await sessionService.startWorkout({ name: 'Order regression' });
+      const ids = ['barbell_bench', 'cable_crossover', 'db_bench'];
+      for (const exerciseId of ids) {
+        const set = await sessionService.addSet(workout.id, { exerciseId, rawInputWeight: 20, reps: 8 });
+        await workoutRepo.updateSet({ ...set, set_number: 1 });
+      }
+      // Model SQLite INSERT OR REPLACE: replacement rows receive new rowids,
+      // moving behind untouched rows when ORDER BY set_number has ties.
+      jest.spyOn(workoutRepo, 'saveSets').mockImplementation(async rows => {
+        for (const row of rows) await workoutRepo.deleteSet(row.id);
+        for (const row of rows) await workoutRepo.addSet(row);
+        return rows;
+      });
+      const group = await sessionService.groupExercises(workout.id, ids.slice(0, 2));
+      expect((await workoutRepo.getSetsByWorkoutId(workout.id)).map(s => s.exercise_id)).toEqual(ids);
+      if (mode === 'exercise') await sessionService.ungroupExercise(workout.id, ids[0]);
+      else await sessionService.ungroupSuperset(workout.id, group);
+      const after = await workoutRepo.getSetsByWorkoutId(workout.id);
+      expect(after.map(s => s.exercise_id)).toEqual(ids);
+      expect(after.every(s => s.exercise_group_id === null)).toBe(true);
+    });
+
     it('ungroups an entire superset group, setting exercise_group_id to null', async () => {
       const workout = await sessionService.startWorkout({ name: 'Disband Test' });
 
@@ -806,7 +832,7 @@ describe('ActiveSessionService', () => {
     it('attenuates redundant warm-ups to at most 2 potentiation sets if muscle group is already warmed up', async () => {
       const activeWorkout = await sessionService.startWorkout();
       // First chest exercise (bench press)
-      await sessionService.addSet(activeWorkout.id, {
+      const completedBench = await sessionService.addSet(activeWorkout.id, {
         exerciseId: 'barbell_bench',
         rawInputWeight: 100,
         reps: 5,
@@ -824,11 +850,19 @@ describe('ActiveSessionService', () => {
       const warmupsDb = await sessionService.generateWarmupSetsForExercise(
         activeWorkout.id,
         'db_bench',
-        { targetWorkingWeightKg: 60 }
+        { targetWorkingWeightKg: 60, completedSetIds: new Set([completedBench.id]) }
       );
 
       // Because Chest already has completed working set from barbell_bench, capped to at most 2 potentiation sets
       expect(warmupsDb.length).toBeLessThanOrEqual(2);
+    });
+
+    it('does not treat planned but unfinished work as an already warmed muscle group', async () => {
+      const workout = await sessionService.startWorkout();
+      await sessionService.addSet(workout.id, { exerciseId: 'barbell_bench', rawInputWeight: 100, reps: 5 });
+      await sessionService.addSet(workout.id, { exerciseId: 'db_bench', rawInputWeight: 60, reps: 5 });
+      const warmups = await sessionService.generateWarmupSetsForExercise(workout.id, 'db_bench');
+      expect(warmups.length).toBeGreaterThan(2);
     });
 
     it('does not duplicate warm-up sets if already generated for that exercise', async () => {
@@ -855,6 +889,29 @@ describe('ActiveSessionService', () => {
   });
 
   describe('applyWarmupAutoregulation', () => {
+    it('maintaining preserves off-grid and varied remaining loads without saving sets', async () => {
+      const workout = await sessionService.startWorkout();
+      await sessionService.addSet(workout.id, { exerciseId: 'barbell_bench', rawInputWeight: 14, reps: 5 });
+      await sessionService.addSet(workout.id, { exerciseId: 'barbell_bench', rawInputWeight: 12, reps: 8 });
+      const before = await workoutRepo.getSetsByWorkoutId(workout.id);
+      const save = jest.spyOn(workoutRepo, 'saveSets');
+      const result = await sessionService.applyWarmupAutoregulation(workout.id, 'barbell_bench', 'normal');
+      expect(result.adjustment.adjustedLoadKg).toBe(14);
+      expect(result.updatedSets).toEqual([]);
+      expect(save).not.toHaveBeenCalled();
+      expect(await workoutRepo.getSetsByWorkoutId(workout.id)).toEqual(before);
+    });
+
+    it('uses the preview baseline when the planned load came from history', async () => {
+      const workout = await sessionService.startWorkout();
+      await sessionService.addSet(workout.id, { exerciseId: 'barbell_bench', rawInputWeight: 0, reps: 5 });
+      const result = await sessionService.applyWarmupAutoregulation(workout.id, 'barbell_bench', 'light', {
+        plannedWorkingWeightKg: 100,
+      });
+      expect(result.adjustment.adjustedLoadKg).toBe(105);
+      expect((await workoutRepo.getSetsByWorkoutId(workout.id))[0].raw_input_weight).toBe(105);
+    });
+
     it('applies light warm-up rating (+5%) to remaining uncompleted working sets', async () => {
       const activeWorkout = await sessionService.startWorkout();
       // Add warmup set

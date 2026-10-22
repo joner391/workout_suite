@@ -24,6 +24,61 @@
         "$ref": "#/definitions/CalibratedParameter"
       }
     },
+    "mesocycle_feedback": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "recommended_accumulation_weeks",
+        "confidence_score",
+        "confidence_tier",
+        "detected_blocks_count",
+        "explicit_rpe_coverage",
+        "observed_through",
+        "exported_at",
+        "primary_goal"
+      ],
+      "properties": {
+        "recommended_accumulation_weeks": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 12
+        },
+        "confidence_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "confidence_tier": {
+          "enum": [
+            "LOW",
+            "MODERATE",
+            "HIGH"
+          ]
+        },
+        "detected_blocks_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "explicit_rpe_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "observed_through": {
+          "type": "string"
+        },
+        "exported_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "primary_goal": {
+          "type": "string"
+        }
+      }
+    },
     "muscle_landmarks": {
       "description": "Individualized volume landmarks and localized readiness per muscle group.",
       "type": ["object", "null"],
